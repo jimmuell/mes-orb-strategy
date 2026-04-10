@@ -239,8 +239,11 @@ def load_es_data(filepath=None, generate_if_missing=False):
 # Signal generator — stateful, matches pine/mes_orb_v1.pine
 # ---------------------------------------------------------------------------
 
-def mes_orb_signals(df, ema_len=9, retest_pct=0.08, rr_ratio=2.0,
-                    min_orb_range=0.0, max_entry_hour=16):
+def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
+                    min_orb_range=0.0, max_orb_range=9999.0,
+                    max_entry_hour=16, sl_frac=1.0,
+                    # legacy — ignored if retest_ticks is set
+                    retest_pct=None):
     """
     MES Opening Range Breakout signal generator.
 
@@ -252,10 +255,13 @@ def mes_orb_signals(df, ema_len=9, retest_pct=0.08, rr_ratio=2.0,
       4. Entry with TP/SL set at signal time
       5. One trade per day; flatten at session end (15:55 ET)
 
-    Additional filters:
-      - min_orb_range: skip day if ORB high-low < this (points). Default 0 (off).
-      - max_entry_hour: only enter before this hour ET. Default 16 (no filter).
-        E.g. 11 = only enter before 11:00 AM.
+    Parameters:
+      - retest_ticks: retest tolerance in ticks (1 tick = 0.25 pts).
+        Default 2 ticks = 0.50 points.
+      - min_orb_range / max_orb_range: filter days by ORB width (points).
+      - max_entry_hour: only enter before this hour ET. Default 16.
+      - sl_frac: stop-loss as fraction of ORB range. 1.0 = full range (default),
+        0.5 = half range (tighter stop).
     """
     df = df.copy()
     n = len(df)
@@ -365,10 +371,11 @@ def mes_orb_signals(df, ema_len=9, retest_pct=0.08, rr_ratio=2.0,
                 broke_below = True
 
         # ── 6. Retest + confluence + filters ─────────────────────────
-        retest_tol = orb_high * retest_pct / 100.0 if not np.isnan(orb_high) else 0.0
+        retest_tol = retest_ticks * TICK   # e.g. 2 ticks × 0.25 = 0.50 pts
 
-        # Additional filters
-        range_ok = ((orb_high - orb_low) >= min_orb_range
+        # ORB range filters
+        orb_width = (orb_high - orb_low) if not np.isnan(orb_high) else 0.0
+        range_ok = (orb_width >= min_orb_range and orb_width <= max_orb_range
                     if not np.isnan(orb_high) else False)
         time_ok = hours[i] < max_entry_hour
 
@@ -391,18 +398,22 @@ def mes_orb_signals(df, ema_len=9, retest_pct=0.08, rr_ratio=2.0,
         )
 
         # ── 7. Entry signals ──────────────────────────────────────────
+        #    SL = sl_frac × ORB range from the entry side.
+        #    TP = rr_ratio × risk from entry price.
         if long_ok:
             long_entry[i] = True
-            active_sl = orb_low
-            active_tp = closes[i] + rr_ratio * (closes[i] - orb_low)
+            sl_dist = orb_width * sl_frac
+            active_sl = closes[i] - sl_dist
+            active_tp = closes[i] + rr_ratio * sl_dist
             position = 1
             entry_bar_idx = i + 1        # engine fills at next bar's Open
             traded_today = True
 
         if short_ok:
             short_entry[i] = True
-            active_sl = orb_high
-            active_tp = closes[i] - rr_ratio * (orb_high - closes[i])
+            sl_dist = orb_width * sl_frac
+            active_sl = closes[i] + sl_dist
+            active_tp = closes[i] - rr_ratio * sl_dist
             position = -1
             entry_bar_idx = i + 1
             traded_today = True
@@ -437,13 +448,16 @@ def mes_orb_signals(df, ema_len=9, retest_pct=0.08, rr_ratio=2.0,
 # Single backtest run
 # ---------------------------------------------------------------------------
 
-def run_single(df_raw, ema_len=9, retest_pct=0.08, rr_ratio=2.0,
-               min_orb_range=0.0, max_entry_hour=16, verbose=True):
+def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.5,
+               min_orb_range=0.0, max_orb_range=9999.0,
+               max_entry_hour=16, sl_frac=1.0, verbose=True):
     """Run one ORB backtest with the given parameters. Returns kpis dict."""
     df = mes_orb_signals(df_raw.copy(), ema_len=ema_len,
-                         retest_pct=retest_pct, rr_ratio=rr_ratio,
+                         retest_ticks=retest_ticks, rr_ratio=rr_ratio,
                          min_orb_range=min_orb_range,
-                         max_entry_hour=max_entry_hour)
+                         max_orb_range=max_orb_range,
+                         max_entry_hour=max_entry_hour,
+                         sl_frac=sl_frac)
 
     start = str(df_raw.index[0].date())
     end = str(df_raw.index[-1].date() + pd.Timedelta(days=1))
@@ -479,9 +493,13 @@ def run_single(df_raw, ema_len=9, retest_pct=0.08, rr_ratio=2.0,
         print(f"  Slippage:          0 (NOT simulated)")
         print(f"  R:R Ratio:         {rr_ratio} : 1")
         print(f"  EMA Length:        {ema_len}")
-        print(f"  Retest Tolerance:  {retest_pct}%")
+        print(f"  Retest Tol:        {retest_ticks} ticks"
+              f" ({retest_ticks * TICK:.2f} pts)")
+        print(f"  SL Fraction:       {sl_frac:.0%} of ORB range")
         if min_orb_range > 0:
             print(f"  Min ORB Range:     {min_orb_range} pts")
+        if max_orb_range < 9999:
+            print(f"  Max ORB Range:     {max_orb_range} pts")
         if max_entry_hour < 16:
             print(f"  Max Entry Time:    {max_entry_hour}:00 ET")
         print(f"  Signals:           {n_long} long, {n_short} short")
@@ -551,42 +569,70 @@ def monthly_breakdown(kpis):
 
 
 # ---------------------------------------------------------------------------
-# Filter comparison
+# Parameter sweep — v2 (tick-based retest, fractional SL)
 # ---------------------------------------------------------------------------
 
-def run_filter_comparison(df_raw):
-    """Compare baseline vs filtered variants at R:R=1.5."""
-    configs = [
-        ("Baseline (no filters)",           dict(rr_ratio=1.5)),
-        ("+ Min ORB range > 10 pts",        dict(rr_ratio=1.5, min_orb_range=10)),
-        ("+ Entry before 11:00 AM",         dict(rr_ratio=1.5, max_entry_hour=11)),
-        ("+ Both filters combined",         dict(rr_ratio=1.5, min_orb_range=10,
-                                                 max_entry_hour=11)),
-    ]
+def run_sweep_v2(df_raw):
+    """Sweep R:R × sl_frac with tight retest and ORB range filters."""
+    rr_ratios = [1.0, 1.5, 2.0]
+    sl_fracs  = [0.5, 0.75, 1.0]
 
-    print("\n" + "=" * 100)
-    print("  FILTER COMPARISON (R:R = 1.5)")
-    print("=" * 100)
-    print(f"  {'Variant':<35s}  {'Trades':>6}  {'Win%':>6}  {'PF':>7}"
-          f"  {'Net $':>10}  {'Net%':>7}  {'MaxDD%':>7}  {'Avg$':>8}")
-    print("  " + "-" * 96)
+    # Fixed for all runs (the improvements)
+    fixed = dict(
+        retest_ticks=2,        # 0.50 pts — tight retest
+        min_orb_range=20,      # skip choppy opens
+        max_orb_range=60,      # skip gap days
+        max_entry_hour=16,     # no time filter (for comparison below)
+    )
 
     results = []
-    for label, params in configs:
-        kpis = run_single(df_raw, verbose=False, **params)
-        closed = [t for t in kpis.get("trades", [])
-                  if t.exit_date is not None]
-        pf = kpis.get("profit_factor", 0.0)
-        pf_str = f"{pf:.3f}" if pf < 999 else "inf"
-        print(f"  {label:<35s}  {len(closed):>6}  "
-              f"{kpis.get('win_rate', 0):>5.1f}%  {pf_str:>7s}"
-              f"  {kpis.get('net_profit', 0):>+10,.2f}"
-              f"  {kpis.get('net_profit_pct', 0):>+6.2f}%"
-              f"  {abs(kpis.get('max_drawdown_pct', 0)):>6.2f}%"
-              f"  {kpis.get('avg_trade', 0):>+8,.2f}")
-        results.append({"label": label, "params": params, "kpis": kpis})
+    for rr in rr_ratios:
+        for sl in sl_fracs:
+            kpis = run_single(df_raw, rr_ratio=rr, sl_frac=sl,
+                              verbose=False, **fixed)
+            closed = [t for t in kpis.get("trades", [])
+                      if t.exit_date is not None]
+            results.append({
+                "rr": rr, "sl_frac": sl,
+                "trades":     len(closed),
+                "win_rate":   kpis.get("win_rate", 0.0),
+                "pf":         kpis.get("profit_factor", 0.0),
+                "net_profit": kpis.get("net_profit", 0.0),
+                "net_pct":    kpis.get("net_profit_pct", 0.0),
+                "max_dd_pct": kpis.get("max_drawdown_pct", 0.0),
+                "max_dd_usd": kpis.get("max_drawdown", 0.0),
+                "avg_trade":  kpis.get("avg_trade", 0.0),
+                "kpis":       kpis,
+            })
 
+    results.sort(key=lambda r: (r["trades"] > 0, r["pf"]), reverse=True)
     return results
+
+
+def print_sweep_v2(results):
+    """Print the v2 sweep table."""
+    print("\n" + "=" * 100)
+    print("  PARAMETER SWEEP — retest=2 ticks, ORB 20-60 pts")
+    print("=" * 100)
+    print(f"  {'#':>3}  {'R:R':>4}  {'SL%':>4}  {'Trades':>6}"
+          f"  {'Win%':>6}  {'PF':>7}  {'Net $':>10}  {'Net%':>7}"
+          f"  {'MaxDD%':>7}  {'MaxDD$':>10}  {'Avg$':>8}")
+    print("  " + "-" * 88)
+
+    for i, r in enumerate(results, 1):
+        pf_str = f"{r['pf']:.3f}" if r['pf'] < 999 else "inf"
+        sl_lbl = f"{r['sl_frac']:.0%}"
+        print(f"  {i:>3}  {r['rr']:>4.1f}  {sl_lbl:>4s}  {r['trades']:>6d}"
+              f"  {r['win_rate']:>5.1f}%  {pf_str:>7s}"
+              f"  {r['net_profit']:>+10,.2f}  {r['net_pct']:>+6.2f}%"
+              f"  {abs(r['max_dd_pct']):>6.2f}%  {r['max_dd_usd']:>+10,.2f}"
+              f"  {r['avg_trade']:>+8,.2f}")
+
+    if results and results[0]["trades"] > 0:
+        b = results[0]
+        print(f"\n  BEST: R:R={b['rr']:.1f}  SL={b['sl_frac']:.0%}"
+              f"  →  PF={b['pf']:.3f}  Trades={b['trades']}"
+              f"  Win%={b['win_rate']:.1f}  Net=${b['net_profit']:+,.2f}")
 
 
 # ---------------------------------------------------------------------------
@@ -594,47 +640,62 @@ def run_filter_comparison(df_raw):
 # ---------------------------------------------------------------------------
 
 def main():
-    # ── Generate 6-month data if needed ──────────────────────────────
-    data_path = DATA_DIR / "ES_6months.csv"
-    if not data_path.exists():
-        print("Generating 6 months of ES 5-min data...")
-        generate_es_6months(data_path)
-
-    df_raw = load_es_data(data_path)
+    # ── Load real sample data ─────────────────────────────────────────
+    df_raw = load_es_data(SAMPLE_DATA)
 
     orb_bars = df_raw[(df_raw.index.hour == 9) & (df_raw.index.minute == 30)]
-    print(f"\nData: {data_path.name}")
+    print(f"Data: {SAMPLE_DATA.name}")
     print(f"Range: {df_raw.index[0]} to {df_raw.index[-1]}")
     print(f"Total bars: {len(df_raw):,}")
     print(f"Trading days: {len(orb_bars)}")
 
-    # ── 1. Baseline R:R=1.5 (our winner from Run 002) ────────────────
+    # ── 1. Old baseline for comparison ────────────────────────────────
     print("\n" + "#" * 64)
-    print("  BASELINE  (R:R=1.5, no filters, 6-month data)")
+    print("  OLD BASELINE  (R:R=1.5, 0.08% retest, full SL)")
     print("#" * 64)
-    baseline_kpis = run_single(df_raw, rr_ratio=1.5, verbose=True)
-    monthly_breakdown(baseline_kpis)
+    old_kpis = run_single(df_raw, rr_ratio=1.5, retest_ticks=32,
+                          sl_frac=1.0, min_orb_range=0, max_orb_range=9999,
+                          verbose=True)
 
-    # ── 2. Filter comparison ─────────────────────────────────────────
+    # ── 2. New baseline with improvements ─────────────────────────────
     print("\n\n" + "#" * 64)
-    print("  FILTER COMPARISON")
+    print("  NEW BASELINE  (R:R=1.5, 2-tick retest, 50% SL, ORB 20-60)")
     print("#" * 64)
-    filter_results = run_filter_comparison(df_raw)
+    new_kpis = run_single(df_raw, rr_ratio=1.5, retest_ticks=2,
+                          sl_frac=0.5, min_orb_range=20, max_orb_range=60,
+                          verbose=True)
 
-    # ── 3. Detailed run of best filter combo ─────────────────────────
-    # Find best by PF among those with >= 10 trades
-    valid = [r for r in filter_results
-             if len([t for t in r["kpis"].get("trades", [])
-                     if t.exit_date]) >= 10]
-    if valid:
-        best = max(valid, key=lambda r: r["kpis"].get("profit_factor", 0))
+    # ── 3. Full sweep ─────────────────────────────────────────────────
+    print("\n\n" + "#" * 64)
+    print("  PARAMETER SWEEP")
+    print("#" * 64)
+    results = run_sweep_v2(df_raw)
+    print_sweep_v2(results)
+
+    # ── 4. Also sweep on 6-month synthetic ────────────────────────────
+    data_6m = DATA_DIR / "ES_6months.csv"
+    if data_6m.exists():
+        df_6m = load_es_data(data_6m)
+        orb_6m = df_6m[(df_6m.index.hour == 9) & (df_6m.index.minute == 30)]
         print(f"\n\n{'#' * 64}")
-        print(f"  BEST FILTER:  {best['label']}")
+        print(f"  6-MONTH SYNTHETIC SWEEP  ({len(orb_6m)} trading days)")
         print("#" * 64)
-        best_kpis = run_single(df_raw, verbose=True, **best["params"])
-        monthly_breakdown(best_kpis)
+        results_6m = run_sweep_v2(df_6m)
+        print_sweep_v2(results_6m)
 
-    return filter_results
+        # Best combo detailed
+        if results_6m and results_6m[0]["trades"] > 0:
+            b = results_6m[0]
+            print(f"\n\n{'#' * 64}")
+            print(f"  BEST 6M:  R:R={b['rr']}  SL={b['sl_frac']:.0%}")
+            print("#" * 64)
+            best_kpis = run_single(df_6m, rr_ratio=b["rr"],
+                                   sl_frac=b["sl_frac"],
+                                   retest_ticks=2, min_orb_range=20,
+                                   max_orb_range=60, verbose=True)
+            monthly_breakdown(best_kpis)
+
+    return results
 
 
 if __name__ == "__main__":

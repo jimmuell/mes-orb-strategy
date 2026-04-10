@@ -6,6 +6,71 @@ Results will be logged below as backtests are run.
 
 ---
 
+### Run 004 — Tightened Retest + Fractional SL Sweep
+
+**Date:** 2026-04-10
+**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py` (v2 signal generator)
+
+#### Changes from Run 003
+| Parameter | Old (Run 003) | New (Run 004) |
+|---|---|---|
+| Retest tolerance | 0.08% (~5 pts) | **2 ticks (0.50 pts)** |
+| ORB range filter | none / >10 pts | **20-60 pts** |
+| Stop loss | full ORB range | **50% of ORB range** (sweep: 50/75/100%) |
+| R:R sweep | 1.5 only | **1.0, 1.5, 2.0** |
+
+#### Real Data (sample-data/ES_5min_sample.csv, 10 trading days)
+
+Old baseline for comparison (32-tick retest = ~8 pts, full SL, R:R=1.5):
+- 10 trades, 50% win, **PF 1.457**, Net +$424
+
+Sweep results (2-tick retest, ORB 20-60 pts):
+
+| # | R:R | SL% | Trades | Win% | PF | Net $ |
+|---|---|---|---|---|---|---|
+| **1** | **2.0** | **100%** | **2** | **50%** | **2.258** | **+$265** |
+| 2 | 1.5 | 100% | 2 | 50% | 1.693 | +$146 |
+| 3 | 1.0 | 100% | 2 | 50% | 1.128 | +$27 |
+| 4 | 1.0 | 50% | 2 | 50% | 1.075 | +$8 |
+| 5-9 | various | 50-75% | 2 | 0% | 0.000 | losses |
+
+**Issue:** 2-tick retest is too tight for 10 days — only 2 trades qualify (both shorts on Mar 24 and 27). Not enough data for conclusions. Full SL (100%) outperforms tighter SL because the tight retest already puts entries close to the ORB level.
+
+#### 6-Month Synthetic (134 trading days, 51 qualifying trades)
+
+| # | R:R | SL% | Trades | Win% | PF | Net $ | MaxDD% |
+|---|---|---|---|---|---|---|---|
+| **1** | **1.0** | **50%** | **51** | **52.9%** | **0.903** | **-$187** | **2.61%** |
+| 2 | 1.5 | 50% | 51 | 51.0% | 0.846 | -$316 | 2.78% |
+| 3 | 1.0 | 75% | 51 | 51.0% | 0.827 | -$364 | 2.97% |
+| 4 | 2.0 | 50% | 51 | 51.0% | 0.817 | -$376 | 3.02% |
+| 5-9 | various | 75-100% | 51 | 51.0% | 0.794-0.798 | -$424 to -$436 | 3.21-3.26% |
+
+Best 6-month monthly breakdown (R:R=1.0, SL=50%):
+
+| Month | Trades | Win% | PnL |
+|---|---|---|---|
+| 2025-10 | 6 | 50% | -$103 |
+| 2025-11 | 9 | 44% | **-$288** (worst) |
+| 2025-12 | 9 | 56% | -$153 |
+| 2026-01 | 10 | 60% | +$151 |
+| 2026-02 | 6 | 33% | -$171 |
+| 2026-03 | 10 | 60% | **+$327** (best) |
+| 2026-04 | 1 | 100% | +$50 |
+
+#### Key Findings
+1. **Tight retest (2 ticks) dramatically reduces trade count.** From 64 trades to 51 on 6-month data — filters out 20% of loose entries. On 10-day real data, only 2 trades qualify.
+2. **50% SL is the clear winner.** Tighter stop + 1:1 R:R gives the best PF (0.903 vs 0.794 for full SL). Still unprofitable but closest to breakeven.
+3. **R:R=1.0 beats 1.5 and 2.0** with tight retest. When entries are close to the ORB level, a 1:1 target is hit more often. Higher R:R doesn't compensate for lower win rate.
+4. **Strategy is still net-negative on synthetic data** (-$187 over 6 months). The improvements moved PF from 0.656 to 0.903 — significant but not yet profitable.
+5. **ORB range filter worked.** 20-60 pt range filter removed 13 trades (64→51) that were choppy or gap days.
+6. **Months with 60% win rate were profitable** (Jan, Mar 2026). The strategy may have conditional edge in trending markets.
+
+#### Diagnosis
+The tight 2-tick retest requirement forces entries very close to the ORB level, which is the right idea — but the VWAP/EMA confluence filters still add no selectivity. The win rate hovers at 51-53%, barely above coin-flip. The strategy needs either stronger directional filters (e.g., overnight gap direction, pre-market trend) or a fundamentally different entry trigger.
+
+---
+
 ### Run 003 — 6-Month Synthetic + Filter Tests
 
 **Date:** 2026-04-10
