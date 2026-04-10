@@ -1,8 +1,32 @@
-# MES ORB Strategy — Claude Code Instructions
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 Backtesting and optimization of a 9:35 AM Opening Range Breakout (ORB) strategy
 for Micro E-mini S&P 500 Futures (CME_MINI:MES1!) using TradingView Pine Script v6.
+
+---
+
+## Architecture
+
+Two independent systems — a Pine Script strategy for TradingView and a Python backtest engine:
+
+- **`pine/`** — Pine Script v6 strategy source (`mes_orb_v1.pine`). Deployed to TradingView via MCP (see Deploy Workflow below). This is the primary strategy implementation.
+- **`backtest-engine/`** — Standalone Python backtesting engine (pandas/numpy). Has its own `CLAUDE.md` and `MEMORY.md` with detailed conventions. Originally built for crypto EMA-cross strategies; can be adapted. Key files:
+  - `engine/engine.py` — Core `run_backtest()` function replicating TradingView execution semantics (bar-close signals, next-bar-open fills)
+  - `engine/data.py` — Data loading from TradingView CSV exports, Bitstamp API, or ccxt
+  - `strategies/` — Strategy implementations (Python translations of Pine scripts)
+  - `data/` — Cached OHLCV CSVs
+- **`docs/strategy-rules.md`** — Canonical strategy rules reference
+- **`backtests/results.md`** — Iteration log for backtest results
+
+## Backtest Engine Commands
+```bash
+cd backtest-engine/477ffe3a371043a1afa7db321d246e54
+pip install -r requirements.txt
+python -c "from engine import run_backtest, BacktestConfig; ..."
+```
 
 ---
 
@@ -11,7 +35,7 @@ for Micro E-mini S&P 500 Futures (CME_MINI:MES1!) using TradingView Pine Script 
 ### 1. TradingView MCP only works via Claude.ai chat — NOT Claude Code terminal
 The TradingView MCP server connects via CDP to the TradingView desktop app.
 Claude Code in the terminal cannot use TradingView MCP tools.
-Workflow: Write/iterate Pine Script in Claude Code → Deploy via Claude.ai chat MCP.
+Workflow: Write/iterate Pine Script in Claude Code -> Deploy via Claude.ai chat MCP.
 
 ### 2. Chart must be regular Candles — NOT Heikin Ashi
 Heikin Ashi (chartType: 8) completely disables the Strategy Tester.
@@ -98,7 +122,7 @@ Confirm "ETH" is shown in the bottom bar of TradingView.
 ## Parameters to Optimize
 - EMA Length (default: 9) — try 5, 9, 13, 21
 - R:R Ratio (default: 2.0) — try 1.5, 2.0, 2.5
-- Retest Tolerance % (default: 0.08) — try 0.05, 0.08, 0.12, 0.20
+- Retest Tolerance (default: 4 ticks) — try various tick values
 
 ---
 

@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Data files (large CSVs, caches)
+backtest-engine/**/data/
+backtest-engine/**/sample-data/
+backtest-engine/**/.venv/
+
+# OS
+.DS_Store
