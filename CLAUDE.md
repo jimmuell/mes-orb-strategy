@@ -1,0 +1,109 @@
+# MES ORB Strategy — Claude Code Instructions
+
+## Project Overview
+Backtesting and optimization of a 9:35 AM Opening Range Breakout (ORB) strategy
+for Micro E-mini S&P 500 Futures (CME_MINI:MES1!) using TradingView Pine Script v6.
+
+---
+
+## CRITICAL LESSONS LEARNED (2026-04-10)
+
+### 1. TradingView MCP only works via Claude.ai chat — NOT Claude Code terminal
+The TradingView MCP server connects via CDP to the TradingView desktop app.
+Claude Code in the terminal cannot use TradingView MCP tools.
+Workflow: Write/iterate Pine Script in Claude Code → Deploy via Claude.ai chat MCP.
+
+### 2. Chart must be regular Candles — NOT Heikin Ashi
+Heikin Ashi (chartType: 8) completely disables the Strategy Tester.
+Always verify chartType: 1 via tv_health_check before backtesting.
+
+### 3. data_get_strategy_results is broken in this MCP version
+Always returns empty. Use instead:
+- capture_screenshot(region="strategy_tester", filename="run_001")
+- Screenshots save to: /Users/jameslmueller/tradingview-mcp-jackson/screenshots/
+- Open screenshot: open /Users/jameslmueller/tradingview-mcp-jackson/screenshots/run_001.png
+
+### 4. Pine Editor locks to read-only VWAP script
+Fix: Always use pine_new(type="strategy") before pine_set_source().
+Never inject into an existing read-only built-in script.
+
+### 5. Save and add to chart dialog
+When dialog appears: ui_click(by="text", value="Save and add to chart")
+If that fails: pine_compile() triggers it via DOM fallback.
+
+### 6. TradingView Essential plan = ~8 week backtest window only
+No custom date ranges without Premium.
+Available window: approximately Feb 15 to Apr 10, 2026 (~40 trading days).
+This gives ~20 potential ORB setups — enough for preliminary validation.
+
+### 7. Use tv_launch(kill_existing=False) to reconnect CDP
+Run if MCP loses connection to the desktop app.
+
+### 8. Pine Script timezone — always use America/Chicago session strings
+CORRECT:   time("5", "0930-0935:23456", "America/Chicago")
+WRONG:     hour == 9 and minute == 30  (matches UTC not CT)
+
+### 9. Do NOT use ta.vwap() — calculate VWAP manually
+Avoids conflict with existing VWAP Session indicator already on chart.
+Do NOT plot VWAP or EMA — they are already on the chart as indicators.
+
+### 10. Chart session must be ETH not RTH
+RTH mode on futures can block the Strategy Tester from running.
+Confirm "ETH" is shown in the bottom bar of TradingView.
+
+---
+
+## TradingView Setup
+- Symbol: CME_MINI:MES1!
+- Timeframe: 5-minute
+- Chart type: Candles (chartType: 1) — NEVER Heikin Ashi
+- Session: ETH (Extended Trading Hours)
+- Existing indicators on chart: VWAP Session, BB 20, EMA 9, LuxAlgo FVG, Volume
+- Do NOT add duplicate VWAP or EMA plots in the strategy script
+
+---
+
+## Deploy Workflow (run from Claude.ai chat, not Claude Code terminal)
+1.  tv_launch(kill_existing=False)
+2.  tv_health_check() — confirm chartType: 1
+3.  pine_new(type="strategy")
+4.  pine_set_source(source=...)
+5.  pine_smart_compile()
+6.  pine_compile()
+7.  ui_click(by="text", value="Save and add to chart") — if dialog appears
+8.  ui_open_panel("strategy-tester")
+9.  ui_click(by="text", value="Metrics")
+10. capture_screenshot(region="strategy_tester", filename="run_001")
+11. open /Users/jameslmueller/tradingview-mcp-jackson/screenshots/run_001.png
+
+---
+
+## Strategy Rules Summary
+- ORB = first 5-min candle of session (9:30-9:35 CT)
+- Long entry: breakout above ORB high + retest + close > VWAP + close > EMA-9
+- Short entry: breakdown below ORB low + retest + close < VWAP + close < EMA-9
+- Stop loss: other side of opening range
+- Target: 2:1 R:R minimum
+- Contracts: 2 MES per trade
+- One trade per day maximum — no re-entries
+
+---
+
+## Optimization Targets
+- Win Rate: >= 70%
+- Profit Factor: >= 1.5
+- Max Drawdown: <= 15%
+- Total Trades: >= 20
+
+## Parameters to Optimize
+- EMA Length (default: 9) — try 5, 9, 13, 21
+- R:R Ratio (default: 2.0) — try 1.5, 2.0, 2.5
+- Retest Tolerance % (default: 0.08) — try 0.05, 0.08, 0.12, 0.20
+
+---
+
+## MCP Server Config
+Location: /Users/jameslmueller/tradingview-mcp-jackson/src/server.js
+Screenshots: /Users/jameslmueller/tradingview-mcp-jackson/screenshots/
+Settings: ~/.claude/settings.json
+Note: MCP only loads in Claude.ai chat sessions, NOT Claude Code terminal sessions.
