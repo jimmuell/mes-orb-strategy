@@ -225,10 +225,11 @@ def generate_es_6months(filepath):
 # ---------------------------------------------------------------------------
 
 def load_es_data(filepath=None, generate_if_missing=False):
-    """Load ES futures 5-min CSV with Eastern-time datetime timestamps.
+    """Load ES futures 5-min data with Eastern-time datetime timestamps.
 
-    Default path: data/ES_6months.csv.  Falls back to sample-data/ if
-    the 6-month file doesn't exist yet.
+    Handles two formats:
+    - With header row (timestamp,open,high,low,close,volume)
+    - Without header row (FirstRateData .txt — positional columns)
     """
     if filepath is None:
         filepath = DATA_DIR / "ES_6months.csv"
@@ -241,12 +242,27 @@ def load_es_data(filepath=None, generate_if_missing=False):
     if not filepath.exists():
         raise FileNotFoundError(f"Data file not found: {filepath}")
 
-    df = pd.read_csv(filepath, parse_dates=["timestamp"])
-    df.set_index("timestamp", inplace=True)
-    df.rename(columns={
-        "open": "Open", "high": "High", "low": "Low",
-        "close": "Close", "volume": "Volume",
-    }, inplace=True)
+    # Detect header: read first line
+    with open(filepath, "r") as f:
+        first = f.readline().strip()
+    has_header = first.startswith("timestamp") or first.startswith("date")
+
+    if has_header:
+        df = pd.read_csv(filepath, parse_dates=["timestamp"])
+        df.set_index("timestamp", inplace=True)
+        df.rename(columns={
+            "open": "Open", "high": "High", "low": "Low",
+            "close": "Close", "volume": "Volume",
+        }, inplace=True)
+    else:
+        # FirstRateData format: no header, positional columns
+        df = pd.read_csv(
+            filepath, header=None,
+            names=["timestamp", "Open", "High", "Low", "Close", "Volume"],
+            parse_dates=["timestamp"],
+        )
+        df.set_index("timestamp", inplace=True)
+
     return df
 
 
@@ -591,133 +607,84 @@ def monthly_breakdown(kpis):
 
 
 # ---------------------------------------------------------------------------
-# Parameter sweep — v2 (tick-based retest, fractional SL)
+# Yearly breakdown
 # ---------------------------------------------------------------------------
 
-def run_sweep_v2(df_raw):
-    """Sweep R:R × sl_frac with tight retest and ORB range filters."""
-    rr_ratios = [1.0, 1.5, 2.0]
-    sl_fracs  = [0.5, 0.75, 1.0]
+def yearly_breakdown(kpis):
+    """Print year-by-year performance and return the dict."""
+    trades = [t for t in kpis.get("trades", []) if t.exit_date is not None]
+    if not trades:
+        print("\n  No closed trades for yearly breakdown.")
+        return {}
 
-    # Fixed for all runs (the improvements)
-    fixed = dict(
-        retest_ticks=2,        # 0.50 pts — tight retest
-        min_orb_range=20,      # skip choppy opens
-        max_orb_range=60,      # skip gap days
-        max_entry_hour=16,     # no time filter (for comparison below)
-    )
+    years = {}
+    for t in trades:
+        y = t.entry_date.year
+        if y not in years:
+            years[y] = {"trades": 0, "wins": 0, "pnl": 0.0,
+                        "gross_win": 0.0, "gross_loss": 0.0}
+        years[y]["trades"] += 1
+        if t.pnl > 0:
+            years[y]["wins"] += 1
+            years[y]["gross_win"] += t.pnl
+        else:
+            years[y]["gross_loss"] += abs(t.pnl)
+        years[y]["pnl"] += t.pnl
 
-    results = []
-    for rr in rr_ratios:
-        for sl in sl_fracs:
-            kpis = run_single(df_raw, rr_ratio=rr, sl_frac=sl,
-                              verbose=False, **fixed)
-            closed = [t for t in kpis.get("trades", [])
-                      if t.exit_date is not None]
-            results.append({
-                "rr": rr, "sl_frac": sl,
-                "trades":     len(closed),
-                "win_rate":   kpis.get("win_rate", 0.0),
-                "pf":         kpis.get("profit_factor", 0.0),
-                "net_profit": kpis.get("net_profit", 0.0),
-                "net_pct":    kpis.get("net_profit_pct", 0.0),
-                "max_dd_pct": kpis.get("max_drawdown_pct", 0.0),
-                "max_dd_usd": kpis.get("max_drawdown", 0.0),
-                "avg_trade":  kpis.get("avg_trade", 0.0),
-                "kpis":       kpis,
-            })
+    print("\n  YEARLY BREAKDOWN:")
+    print(f"  {'Year':>6}  {'Trades':>6}  {'Wins':>5}  {'Win%':>6}"
+          f"  {'PF':>7}  {'PnL':>12}")
+    print("  " + "-" * 56)
 
-    results.sort(key=lambda r: (r["trades"] > 0, r["pf"]), reverse=True)
-    return results
+    sorted_years = sorted(years)
+    for y in sorted_years:
+        d = years[y]
+        wr = d["wins"] / d["trades"] * 100 if d["trades"] > 0 else 0
+        pf = (d["gross_win"] / d["gross_loss"]
+              if d["gross_loss"] > 0 else 999.0)
+        pf_str = f"{pf:.3f}" if pf < 999 else "inf"
+        print(f"  {y:>6}  {d['trades']:>6}  {d['wins']:>5}  {wr:>5.1f}%"
+              f"  {pf_str:>7s}  ${d['pnl']:>+10,.2f}")
 
+    # Best / worst 3
+    by_pnl = sorted(years.items(), key=lambda x: x[1]["pnl"], reverse=True)
+    print(f"\n  BEST  3: {', '.join(f'{y} (${d['pnl']:+,.0f})' for y, d in by_pnl[:3])}")
+    print(f"  WORST 3: {', '.join(f'{y} (${d['pnl']:+,.0f})' for y, d in by_pnl[-3:])}")
 
-def print_sweep_v2(results):
-    """Print the v2 sweep table."""
-    print("\n" + "=" * 100)
-    print("  PARAMETER SWEEP — retest=2 ticks, ORB 20-60 pts")
-    print("=" * 100)
-    print(f"  {'#':>3}  {'R:R':>4}  {'SL%':>4}  {'Trades':>6}"
-          f"  {'Win%':>6}  {'PF':>7}  {'Net $':>10}  {'Net%':>7}"
-          f"  {'MaxDD%':>7}  {'MaxDD$':>10}  {'Avg$':>8}")
-    print("  " + "-" * 88)
-
-    for i, r in enumerate(results, 1):
-        pf_str = f"{r['pf']:.3f}" if r['pf'] < 999 else "inf"
-        sl_lbl = f"{r['sl_frac']:.0%}"
-        print(f"  {i:>3}  {r['rr']:>4.1f}  {sl_lbl:>4s}  {r['trades']:>6d}"
-              f"  {r['win_rate']:>5.1f}%  {pf_str:>7s}"
-              f"  {r['net_profit']:>+10,.2f}  {r['net_pct']:>+6.2f}%"
-              f"  {abs(r['max_dd_pct']):>6.2f}%  {r['max_dd_usd']:>+10,.2f}"
-              f"  {r['avg_trade']:>+8,.2f}")
-
-    if results and results[0]["trades"] > 0:
-        b = results[0]
-        print(f"\n  BEST: R:R={b['rr']:.1f}  SL={b['sl_frac']:.0%}"
-              f"  →  PF={b['pf']:.3f}  Trades={b['trades']}"
-              f"  Win%={b['win_rate']:.1f}  Net=${b['net_profit']:+,.2f}")
+    return years
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Main — full dataset backtest
 # ---------------------------------------------------------------------------
+
+FULL_DATA = Path("/Users/jameslmueller/Projects/mes-orb-strategy"
+                 "/data/raw/ES_full_5min_continuous_UNadjusted.txt")
+
 
 def main():
-    # ── Load real sample data ─────────────────────────────────────────
-    df_raw = load_es_data(SAMPLE_DATA)
+    # ── Load full dataset ─────────────────────────────────────────────
+    data_path = FULL_DATA if FULL_DATA.exists() else SAMPLE_DATA
+    print(f"Loading {data_path.name} ...")
+    df_raw = load_es_data(data_path)
 
     orb_bars = df_raw[(df_raw.index.hour == 9) & (df_raw.index.minute == 30)]
-    print(f"Data: {SAMPLE_DATA.name}")
+    print(f"Data:  {data_path.name}")
     print(f"Range: {df_raw.index[0]} to {df_raw.index[-1]}")
-    print(f"Total bars: {len(df_raw):,}")
-    print(f"Trading days: {len(orb_bars)}")
+    print(f"Bars:  {len(df_raw):,}")
+    print(f"Trading days: {len(orb_bars):,}")
 
-    # ── 1. Old baseline for comparison ────────────────────────────────
+    # ── Best config run ───────────────────────────────────────────────
     print("\n" + "#" * 64)
-    print("  OLD BASELINE  (R:R=1.5, 0.08% retest, full SL)")
+    print("  BEST CONFIG  (R:R=1.0, SL=50%, retest=2t, ORB 20-60)")
     print("#" * 64)
-    old_kpis = run_single(df_raw, rr_ratio=1.5, retest_ticks=32,
-                          sl_frac=1.0, min_orb_range=0, max_orb_range=9999,
-                          verbose=True)
+    kpis = run_single(df_raw, rr_ratio=1.0, sl_frac=0.5,
+                       retest_ticks=2, min_orb_range=20,
+                       max_orb_range=60, verbose=True)
+    yearly_breakdown(kpis)
+    monthly_breakdown(kpis)
 
-    # ── 2. New baseline with improvements ─────────────────────────────
-    print("\n\n" + "#" * 64)
-    print("  NEW BASELINE  (R:R=1.5, 2-tick retest, 50% SL, ORB 20-60)")
-    print("#" * 64)
-    new_kpis = run_single(df_raw, rr_ratio=1.5, retest_ticks=2,
-                          sl_frac=0.5, min_orb_range=20, max_orb_range=60,
-                          verbose=True)
-
-    # ── 3. Full sweep ─────────────────────────────────────────────────
-    print("\n\n" + "#" * 64)
-    print("  PARAMETER SWEEP")
-    print("#" * 64)
-    results = run_sweep_v2(df_raw)
-    print_sweep_v2(results)
-
-    # ── 4. Also sweep on 6-month synthetic ────────────────────────────
-    data_6m = DATA_DIR / "ES_6months.csv"
-    if data_6m.exists():
-        df_6m = load_es_data(data_6m)
-        orb_6m = df_6m[(df_6m.index.hour == 9) & (df_6m.index.minute == 30)]
-        print(f"\n\n{'#' * 64}")
-        print(f"  6-MONTH SYNTHETIC SWEEP  ({len(orb_6m)} trading days)")
-        print("#" * 64)
-        results_6m = run_sweep_v2(df_6m)
-        print_sweep_v2(results_6m)
-
-        # Best combo detailed
-        if results_6m and results_6m[0]["trades"] > 0:
-            b = results_6m[0]
-            print(f"\n\n{'#' * 64}")
-            print(f"  BEST 6M:  R:R={b['rr']}  SL={b['sl_frac']:.0%}")
-            print("#" * 64)
-            best_kpis = run_single(df_6m, rr_ratio=b["rr"],
-                                   sl_frac=b["sl_frac"],
-                                   retest_ticks=2, min_orb_range=20,
-                                   max_orb_range=60, verbose=True)
-            monthly_breakdown(best_kpis)
-
-    return results
+    return kpis
 
 
 if __name__ == "__main__":

@@ -22,7 +22,9 @@
 | Position Size | 2 ES contracts ($50/point) |
 | Commission | $2.25/contract |
 
-**Results (6-month synthetic, 51 trades, ES specs):** PF 0.942 | Win 52.9% | Max DD 24.69% | Net -$1,097
+**Results (18-year real ES data, 98 trades):** PF 0.798 | Win 44.9% | Max DD 112% | Net -$14,516
+
+**Not profitable.** Strategy shows no edge over 18 years. May have conditional edge in high-vol regimes (2024-2026: PF ~1.3) but insufficient evidence. ORB range filter must be converted to percentage-based to normalize across ES price levels (800→6800 over this period).
 
 Strategy is not yet profitable. PF improved from 0.656 (Run 003) to 0.903 (Run 004) via tighter retest and fractional SL, but VWAP/EMA confluence filters have zero selectivity.
 
@@ -41,6 +43,67 @@ Strategy is not yet profitable. PF improved from 0.656 (Run 003) to 0.903 (Run 0
 ## Iteration Log
 
 Results will be logged below as backtests are run.
+
+---
+
+### Run 006 — Full Dataset: 18 Years of Real ES Data (2008-2026)
+
+**Date:** 2026-04-10
+**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — FirstRateData ES continuous futures, 1,289,036 bars, 4,710 trading days, Jan 2008 – Apr 2026
+
+#### Config
+R:R=1.0, SL=50% of ORB range, retest=2 ticks (0.50 pts), ORB range 20-60 pts, 2 ES contracts ($50/pt), $2.25/contract commission, $25,000 initial capital.
+
+#### Overall Results
+| Metric | Value |
+|---|---|
+| Total Trades | 98 |
+| Win Rate | 44.90% |
+| Profit Factor | **0.798** |
+| Net Profit | -$14,516 (-58.07%) |
+| Max Drawdown | -$30,485 (-112.16%) |
+| Avg Win | $1,301 |
+| Avg Loss | -$1,329 |
+| Commission | $1,429 total |
+| First Trade | 2008-09-19 |
+| Last Trade | 2026-03-27 |
+
+#### Yearly Breakdown
+| Year | Trades | Win% | PF | PnL |
+|---|---|---|---|---|
+| 2008 | 4 | 50.0% | 1.061 | +$124 |
+| 2015 | 1 | 0.0% | 0.000 | -$1,881 |
+| 2018 | 1 | 100% | inf | +$1,616 |
+| 2020 | 18 | 50.0% | 0.853 | -$1,995 |
+| 2021 | 2 | 0.0% | 0.000 | -$3,139 |
+| **2022** | **25** | **24.0%** | **0.321** | **-$16,469** |
+| 2023 | 2 | 0.0% | 0.000 | -$2,038 |
+| 2024 | 5 | 60.0% | 1.302 | +$821 |
+| 2025 | 29 | 51.7% | 1.100 | +$1,883 |
+| **2026** | **11** | **72.7%** | **2.964** | **+$6,560** |
+
+**Best 3 years:** 2026 (+$6,560), 2025 (+$1,883), 2018 (+$1,616)
+**Worst 3 years:** 2023 (-$2,038), 2021 (-$3,139), 2022 (-$16,469)
+
+#### Key Findings
+1. **Strategy is unprofitable over 18 years.** PF 0.798, net -$14,516. This is a definitive result — not a small-sample artifact.
+2. **2022 was catastrophic.** 25 trades, 24% win rate, -$16,469. This was a high-volatility bear market with persistent downtrend — the ORB breakout+retest pattern fired constantly but mean-reverted against every entry.
+3. **Only 98 trades in 18 years (5.4/year).** The 2-tick retest + 20-60 pt ORB filter is extremely selective. Most years have 0-5 trades. Not enough setups for a viable standalone strategy.
+4. **Recent years (2024-2026) are profitable.** 45 trades, 56% win, PF ~1.3. The strategy may work in the current higher-volatility, higher-price regime where 20-60 pt ORB ranges are more common.
+5. **Pre-2020 is nearly empty.** Only 6 trades from 2008-2019. ES was priced at 800-3000 during that period — the 20-60 pt ORB range filter excludes almost all days because ORB ranges were smaller (5-15 pts typical at lower prices).
+6. **The ORB range filter should be percentage-based, not absolute.** A 20-pt ORB at ES 1000 is a 2% range (massive). At ES 6000 it's 0.33% (normal). The fixed 20-60 pt filter only works for ES 4000+.
+7. **Max DD of 112%** means the account went negative (theoretical). Utterly unacceptable for 2 ES contracts on $25k.
+
+#### Diagnosis
+The ORB breakout+retest strategy with current parameters has no edge on ES over 18 years. The tight 2-tick retest dramatically reduces trade frequency but doesn't improve win rate enough. The 44.9% win rate with nearly 1:1 avg win/loss means every trade is essentially a coin flip after commissions.
+
+The strategy may have regime-conditional edge (works in 2024-2026 high-vol environment) but this cannot be distinguished from survivorship bias without out-of-sample testing.
+
+#### Immediate Actions Needed
+- Convert ORB range filter from absolute (20-60 pts) to percentage (e.g., 0.3%-1.0% of price) to normalize across price levels
+- Retest with percentage-based filter to get more trades pre-2020
+- Consider abandoning the retest requirement entirely — direct breakout entry with tighter stop
 
 ---
 
