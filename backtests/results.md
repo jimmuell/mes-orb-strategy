@@ -1,5 +1,33 @@
 # MES ORB Strategy — Backtest Results
 
+## Current Best Configuration
+
+| Parameter | Value |
+|---|---|
+| R:R Ratio | 1.0 : 1 |
+| Stop Loss | 50% of ORB range |
+| Retest Tolerance | 2 ticks (0.50 pts) |
+| ORB Range Filter | 20-60 pts |
+| EMA Length | 9 |
+| Position Size | 2 MES contracts ($5/point) |
+| Commission | $0.62/contract |
+
+**Results (6-month synthetic, 51 trades):** PF 0.903 | Win 52.9% | Max DD 2.61% | Net -$187
+
+Strategy is not yet profitable. PF improved from 0.656 (Run 003) to 0.903 (Run 004) via tighter retest and fractional SL, but VWAP/EMA confluence filters have zero selectivity.
+
+## Next Steps
+
+- **Replace VWAP/EMA filters** — they pass every trade on ES, adding no selectivity. Candidates to test next session:
+  - Prior day high/low as directional bias filter
+  - VIX level filter (only trade when VIX > 15)
+  - Gap direction filter (only trade in direction of opening gap)
+  - Volume spike confirmation on breakout bar
+- **Obtain full ES dataset** from FirstRateData (2008-2026) for statistical significance — 10 days of real data is insufficient
+- **Verify MES vs ES sizing** — MES contract = $5/point vs ES = $50/point; confirm commission and qty_value calculations are correct for each instrument
+
+---
+
 ## Iteration Log
 
 Results will be logged below as backtests are run.
