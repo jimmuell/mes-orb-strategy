@@ -10,23 +10,45 @@
 | Commission/contract | $2.25 | $0.62 |
 | Tick size | 0.25 ($12.50) | 0.25 ($1.25) |
 
-## Current Best Configuration
+## Current Best Configuration (Run 007)
 
 | Parameter | Value |
 |---|---|
 | R:R Ratio | 1.0 : 1 |
 | Stop Loss | 50% of ORB range |
 | Retest Tolerance | 2 ticks (0.50 pts) |
-| ORB Range Filter | 20-60 pts |
+| ORB Range Filter | 0.3% – 1.0% of price |
+| Regime Filter | 200-day SMA (longs above, shorts below) |
 | EMA Length | 9 |
 | Position Size | 2 ES contracts ($50/point) |
 | Commission | $2.25/contract |
 
-**Results (18-year real ES data, 98 trades):** PF 0.798 | Win 44.9% | Max DD 112% | Net -$14,516
+**Results (18-year real ES, 606 trades):** PF 0.903 | Win 48.7% | Max DD 127% | Net -$18,994
 
-**Not profitable.** See Run 007 for latest with percentage-based ORB filter + 200-day SMA regime filter. PF improved from 0.798 → 0.903 but still unprofitable over 18 years.
+**Not profitable.** PF improved from 0.656 (Run 003) → 0.903 (Run 007) across seven iterations but the strategy remains net-negative over 18 years.
 
-Strategy is not yet profitable. PF improved from 0.656 (Run 003) to 0.903 (Run 004) via tighter retest and fractional SL, but VWAP/EMA confluence filters have zero selectivity.
+## Key Findings (as of Run 007)
+
+1. **ORB breakout+retest produces coin-flip results.** Win rate is stuck at ~49-51% regardless of retest tolerance, R:R ratio, or SL fraction. The entry signal has no predictive power on its own.
+
+2. **VWAP and EMA-9 confluence filters contribute zero selectivity.** Every qualifying ORB breakout already satisfies VWAP > ORB high and close > EMA-9. These filters pass 100% of trades and should be replaced.
+
+3. **2022 bear market is the strategy killer.** 108 trades, 44% win, -$17,420 (even with regime filter). Persistent downtrend generated constant ORB breakouts that reversed. A regime filter is essential but insufficient — need a volatility or trend-strength filter.
+
+4. **Best performance in high-vol trending markets.** 2023 (PF 2.28, +$5,393), 2026 (PF 3.95, +$6,654), and 2020 post-crash (PF 1.10, +$3,240). The strategy works when markets trend strongly after the open.
+
+5. **The 200-day SMA regime filter helps but is too blunt.** It cut 2022 losses by 50% and flipped 2020 profitable, but also blocked profitable pullback shorts in bull markets (e.g., 2025: went from +$1,883 to -$5,176).
+
+6. **Data source:** ES continuous unadjusted 5-min from [firstratedata.com](https://firstratedata.com/i/futures/ES), Jan 2008 – Apr 2026.
+
+7. **All dollar P&L is ES ($50/point).** Divide by 10 for MES equivalent.
+
+### Next Experiment
+Replace VWAP/EMA with filters that actually discriminate:
+- **VIX level filter** — only trade when VIX > 15 (higher vol = larger ORB follow-through)
+- **Prior day high/low bias** — only long if gap up, only short if gap down
+- **Volume spike on breakout bar** — confirm conviction behind the move
+- **ATR-based ORB range filter** — replace static 0.3-1.0% with ATR-relative threshold
 
 ## Next Steps
 
