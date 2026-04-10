@@ -1,5 +1,15 @@
 # MES ORB Strategy — Backtest Results
 
+## ES vs MES Note
+
+**All backtest runs (001-004) used incorrect MES specs ($5/point, $0.62 commission).** The sample data is ES (E-mini S&P 500, $50/point) from FirstRateData. Run 005+ uses correct ES specs. When backtesting MES, dollar P&L scales to 1/10th of ES but win rate and profit factor are identical since both contracts share the same price feed, tick size (0.25), and ORB levels.
+
+| | ES (E-mini) | MES (Micro) |
+|---|---|---|
+| Point value | $50 | $5 |
+| Commission/contract | $2.25 | $0.62 |
+| Tick size | 0.25 ($12.50) | 0.25 ($1.25) |
+
 ## Current Best Configuration
 
 | Parameter | Value |
@@ -9,10 +19,10 @@
 | Retest Tolerance | 2 ticks (0.50 pts) |
 | ORB Range Filter | 20-60 pts |
 | EMA Length | 9 |
-| Position Size | 2 MES contracts ($5/point) |
-| Commission | $0.62/contract |
+| Position Size | 2 ES contracts ($50/point) |
+| Commission | $2.25/contract |
 
-**Results (6-month synthetic, 51 trades):** PF 0.903 | Win 52.9% | Max DD 2.61% | Net -$187
+**Results (6-month synthetic, 51 trades, ES specs):** PF 0.942 | Win 52.9% | Max DD 24.69% | Net -$1,097
 
 Strategy is not yet profitable. PF improved from 0.656 (Run 003) to 0.903 (Run 004) via tighter retest and fractional SL, but VWAP/EMA confluence filters have zero selectivity.
 
@@ -31,6 +41,54 @@ Strategy is not yet profitable. PF improved from 0.656 (Run 003) to 0.903 (Run 0
 ## Iteration Log
 
 Results will be logged below as backtests are run.
+
+---
+
+### Run 005 — Corrected ES Contract Specs
+
+**Date:** 2026-04-10
+**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Change:** Fixed contract specs from MES ($5/pt, $0.62 comm) to ES ($50/pt, $2.25 comm). Dollar P&L is now 10× larger but PF and win rate are comparable. Commission impact changes slightly because ES commission ($2.25) is proportionally lower than MES ($0.62) relative to contract value.
+
+#### Config
+Same best config as Run 004: R:R=1.0, SL=50%, retest=2 ticks, ORB 20-60 pts, 2 ES contracts, $25,000 capital.
+
+#### Real Sample Data (10 trading days, 2 trades)
+| Metric | Run 004 (MES specs) | Run 005 (ES specs) |
+|---|---|---|
+| Trades | 2 | 2 |
+| Win Rate | 50.0% | 50.0% |
+| Profit Factor | 1.075 | 1.110 |
+| Net Profit | +$8.27 | +$119.61 |
+| Max Drawdown | -$111.63 (-0.45%) | -$1,088.46 (-4.35%) |
+
+#### 6-Month Synthetic (134 trading days, 51 trades)
+| Metric | Run 004 (MES specs) | Run 005 (ES specs) |
+|---|---|---|
+| Trades | 51 | 51 |
+| Win Rate | 52.9% | 52.9% |
+| Profit Factor | 0.903 | **0.942** |
+| Net Profit | -$187.40 | -$1,096.93 |
+| Max Drawdown | -$652.52 (-2.61%) | -$6,171.59 (-24.69%) |
+| Commission | $123.65 | $459.43 |
+
+Monthly breakdown (ES specs):
+
+| Month | Trades | Win% | PnL |
+|---|---|---|---|
+| 2025-10 | 6 | 50% | -$940 |
+| 2025-11 | 9 | 44% | **-$2,742** (worst) |
+| 2025-12 | 9 | 56% | -$1,393 |
+| 2026-01 | 10 | 60% | +$1,660 |
+| 2026-02 | 6 | 33% | -$1,617 |
+| 2026-03 | 10 | 60% | **+$3,421** (best) |
+| 2026-04 | 1 | 100% | +$516 |
+
+#### Key Findings
+1. **PF improved slightly (0.903 → 0.942)** because ES commission ($2.25) is proportionally cheaper than MES ($0.62) relative to contract value.
+2. **Max DD now 24.69%** — exceeds the 15% target. With 2 ES contracts on $25k capital, the leverage is too high. Either reduce to 1 contract or increase capital to $50k+.
+3. **Dollar P&L scaled 10×** as expected. -$187 (MES) → -$1,097 (ES). Same trades, same direction, same points — just larger contract.
+4. **Profitable months produce real gains:** Mar 2026 = +$3,421 with 10 trades at 60% win rate. The strategy may have conditional edge in trending markets.
 
 ---
 

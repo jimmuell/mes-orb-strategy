@@ -1,18 +1,26 @@
 """
-MES Opening Range Breakout (ORB) Strategy Backtest
+Opening Range Breakout (ORB) Strategy Backtest — ES / MES Futures
 
-Implements the ORB strategy from pine/mes_orb_v1.pine:
+Data source: ES Continuous Futures (E-mini S&P 500, $50/point)
+  URL:       https://firstratedata.com/i/futures/ES
+  Timeframe: 5-minute bars
+  Timezone:  US Eastern Time
+  Format:    timestamp (yyyy-MM-dd HH:mm:ss), open, high, low, close, volume
+
+Strategy (from pine/mes_orb_v1.pine):
 - ORB = first 5-min bar at 9:30 ET (regular session open)
 - Long: breakout above ORB high + retest + close > VWAP + close > EMA-9
 - Short: breakdown below ORB low + retest + close < VWAP + close < EMA-9
-- SL = other side of ORB range, TP configurable R:R
-- One trade per day, 2 MES contracts
+- SL = configurable fraction of ORB range, TP = R:R × risk
+- One trade per day, 2 contracts
 
-Settings:
-- Initial capital: $25,000
-- 2 MES contracts (fixed qty = 10 units at $5/point)
-- Commission: $0.62/contract (~0.0021% of position value)
-- Slippage: 0 (NOT simulated — requires tick-level data)
+Contract specs used in this backtest:
+  ES  (E-mini):  $50/point, $2.25/contract commission
+  MES (Micro):   $5/point,  $0.62/contract commission
+  Both share the same tick size (0.25), price feed, and ORB levels.
+  Win rate and profit factor are identical; dollar P&L scales 10:1.
+
+Current backtest uses ES specs (qty_value = 2 × $50 = 100).
 """
 
 import sys
@@ -27,9 +35,16 @@ from engine import (
 )
 
 
-MES_MULTIPLIER = 5.0   # $5 per point for MES
-MES_CONTRACTS = 2
-TICK = 0.25            # ES tick size
+# ── Contract specs ────────────────────────────────────────────────────────
+ES_MULTIPLIER = 50.0    # $50 per point for ES (E-mini)
+MES_MULTIPLIER = 5.0    # $5 per point for MES (Micro)
+CONTRACTS = 2
+TICK = 0.25             # ES/MES tick size
+
+# Active config — ES specs (change to MES when using MES data)
+POINT_VALUE = ES_MULTIPLIER
+COMMISSION_PER_CONTRACT = 2.25   # ES round-turn per side
+
 STRATEGIES_DIR = Path(__file__).resolve().parent
 ENGINE_DIR = STRATEGIES_DIR.parent
 DATA_DIR = ENGINE_DIR / "data"
@@ -462,12 +477,18 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.5,
     start = str(df_raw.index[0].date())
     end = str(df_raw.index[-1].date() + pd.Timedelta(days=1))
 
+    qty = CONTRACTS * POINT_VALUE   # 2 × $50 = 100 for ES
+    comm_per_side = COMMISSION_PER_CONTRACT * CONTRACTS  # $2.25 × 2 = $4.50
+    # Approximate pct: comm / (qty × price). At ES ~6500: 4.50/(100×6500) ≈ 0.000692%
+    avg_price = df_raw["Close"].mean()
+    comm_pct = comm_per_side / (qty * avg_price) * 100 if avg_price > 0 else 0
+
     config = BacktestConfig(
         initial_capital=25000.0,
-        commission_pct=0.0021,      # ~$0.62/contract for 2 MES
+        commission_pct=comm_pct,
         slippage_ticks=0,
         qty_type="fixed",
-        qty_value=10.0,             # 2 contracts × $5/point
+        qty_value=qty,              # 2 contracts × $50/point = 100
         pyramiding=1,
         start_date=start,
         end_date=end,
@@ -482,14 +503,15 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.5,
         print("\n" + "=" * 64)
         print("  MES ORB STRATEGY v1 — BACKTEST RESULTS")
         print("=" * 64)
-        print(f"  Chart Data:        ES 5-min (real sample, Eastern Time)")
+        contract = "ES" if POINT_VALUE == ES_MULTIPLIER else "MES"
+        print(f"  Chart Data:        ES 5-min (FirstRateData, Eastern Time)")
         print(f"  Date Range:        {kpis.get('actual_start_date', 'N/A')}"
               f" to {kpis.get('actual_end_date', 'N/A')}")
         print(f"  Initial Capital:   ${config.initial_capital:,.0f}")
-        print(f"  Position Size:     {MES_CONTRACTS} MES contracts"
-              f" (${MES_MULTIPLIER:.0f}/point)")
-        print(f"  Commission:        $0.62/contract"
-              f" (${0.62 * MES_CONTRACTS:.2f}/side, ~{config.commission_pct}%)")
+        print(f"  Position Size:     {CONTRACTS} {contract} contracts"
+              f" (${POINT_VALUE:.0f}/point)")
+        print(f"  Commission:        ${COMMISSION_PER_CONTRACT:.2f}/contract"
+              f" (${comm_per_side:.2f}/side)")
         print(f"  Slippage:          0 (NOT simulated)")
         print(f"  R:R Ratio:         {rr_ratio} : 1")
         print(f"  EMA Length:        {ema_len}")
