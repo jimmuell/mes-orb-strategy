@@ -24,7 +24,7 @@
 
 **Results (18-year real ES data, 98 trades):** PF 0.798 | Win 44.9% | Max DD 112% | Net -$14,516
 
-**Not profitable.** Strategy shows no edge over 18 years. May have conditional edge in high-vol regimes (2024-2026: PF ~1.3) but insufficient evidence. ORB range filter must be converted to percentage-based to normalize across ES price levels (800→6800 over this period).
+**Not profitable.** See Run 007 for latest with percentage-based ORB filter + 200-day SMA regime filter. PF improved from 0.798 → 0.903 but still unprofitable over 18 years.
 
 Strategy is not yet profitable. PF improved from 0.656 (Run 003) to 0.903 (Run 004) via tighter retest and fractional SL, but VWAP/EMA confluence filters have zero selectivity.
 
@@ -43,6 +43,79 @@ Strategy is not yet profitable. PF improved from 0.656 (Run 003) to 0.903 (Run 0
 ## Iteration Log
 
 Results will be logged below as backtests are run.
+
+---
+
+### Run 007 — Percentage ORB Filter + 200-Day SMA Regime Filter
+
+**Date:** 2026-04-10
+**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days, Jan 2008 – Apr 2026
+
+#### Changes from Run 006
+| Parameter | Run 006 | Run 007 |
+|---|---|---|
+| ORB range filter | 20-60 pts (absolute) | **0.3%-1.0% of price** (percentage) |
+| Regime filter | none | **200-day SMA** (longs above, shorts below) |
+| Other params | unchanged | R:R=1.0, SL=50%, retest=2 ticks |
+
+#### Comparison: All Three Variants
+
+| Variant | Trades | Win% | PF | Net $ | Max DD |
+|---|---|---|---|---|---|
+| Run 006: abs ORB 20-60, no regime | 98 | 44.9% | 0.798 | -$14,516 | -112% |
+| Fix 1: pct ORB 0.3-1.0%, no regime | **773** | **50.8%** | **0.883** | -$28,149 | -150% |
+| **Fix 1+2: pct ORB + 200-day SMA** | **606** | **48.7%** | **0.903** | **-$18,994** | **-127%** |
+
+#### Fix 1 impact: Percentage ORB filter (0.3%-1.0%)
+- **Trades: 98 → 773** — massive increase. The percentage filter correctly qualifies days across all price levels (ES 800 in 2008 through ES 6800 in 2026).
+- **PF: 0.798 → 0.883** — improvement from including more low-price-era trades.
+- Still unprofitable. 2022 remains catastrophic: 138 trades, 41% win, -$34,914.
+
+#### Fix 2 impact: 200-day SMA regime filter
+- **Trades: 773 → 606** — regime filter removed 167 counter-trend trades (22%).
+- **PF: 0.883 → 0.903** — modest improvement.
+- **2022 damage cut in half:** -$34,914 → -$17,420 (108 trades vs 138).
+- **2020 flipped profitable:** -$5,534 → +$3,240 (regime filter blocked shorts during the V-recovery).
+- **2023 dramatically improved:** +$868 → +$5,393 (blocked shorts in bull market).
+
+#### Yearly Breakdown (Fix 1+2: percentage ORB + regime)
+| Year | Trades | Win% | PF | PnL |
+|---|---|---|---|---|
+| 2008 | 57 | 50.9% | 0.964 | -$402 |
+| 2009 | 101 | 47.5% | 0.933 | -$695 |
+| 2010 | 31 | 54.8% | 1.285 | +$840 |
+| 2011 | 50 | 48.0% | 0.965 | -$231 |
+| 2012 | 8 | 62.5% | 1.232 | +$214 |
+| 2013 | 5 | 60.0% | 1.547 | +$286 |
+| 2014 | 5 | 60.0% | 1.424 | +$281 |
+| 2015 | 26 | 38.5% | 0.589 | -$2,704 |
+| 2016 | 18 | 44.4% | 0.632 | -$1,848 |
+| 2018 | 32 | 40.6% | 0.657 | -$3,920 |
+| 2019 | 11 | 36.4% | 0.498 | -$2,077 |
+| **2020** | **70** | **50.0%** | **1.101** | **+$3,240** |
+| 2021 | 16 | 43.8% | 0.637 | -$2,776 |
+| **2022** | **108** | **44.4%** | **0.713** | **-$17,420** |
+| **2023** | **17** | **70.6%** | **2.276** | **+$5,393** |
+| 2024 | 6 | 66.7% | 1.528 | +$1,346 |
+| 2025 | 36 | 50.0% | 0.806 | -$5,176 |
+| **2026** | **9** | **77.8%** | **3.950** | **+$6,654** |
+
+**Best 3 years:** 2026 (+$6,654), 2023 (+$5,393), 2020 (+$3,240)
+**Worst 3 years:** 2018 (-$3,920), 2025 (-$5,176), 2022 (-$17,420)
+
+#### Key Findings
+1. **Both fixes helped but the strategy remains unprofitable.** PF went 0.798 → 0.883 → 0.903. Still below 1.0 over 18 years.
+2. **Percentage ORB filter was critical.** Went from 98 trades (only high-vol periods) to 773 (all market conditions). This is the correct approach — normalized across ES 800→6800.
+3. **Regime filter had targeted impact.** Cut 2022 losses by 50%, flipped 2020 profitable, boosted 2023. Removed 167 counter-trend trades. But it also hurt some years (2025: went from +$1,883 to -$5,176 because the filter blocked profitable shorts during pullbacks in a bull market).
+4. **The regime filter is too blunt.** Using yesterday's close vs 200-day SMA to block ALL shorts in bull markets also blocks shorts during sharp pullbacks (which is exactly when ORB shorts work best — e.g., Apr 2025 tariff selloff). The SMA itself lags by months.
+5. **2022 remains the core problem.** Even with regime filter, it's -$17,420 (108 trades, 44% win). The bear market had constant ORB breakouts that reversed. The strategy needs a volatility or trend-strength filter, not just direction.
+6. **Win rate stuck near 50%.** VWAP + EMA-9 confluence still provides zero edge. The strategy is fundamentally a coin flip with slightly negative expectancy due to commissions.
+
+#### Diagnosis
+The ORB breakout+retest strategy with the current entry logic does not have statistical edge on ES futures over any sustained period. The improvements (tight retest, fractional SL, percentage ORB, regime filter) have each incrementally improved PF from the initial 0.656 to 0.903, but the underlying signal — "price breaks ORB level, retests, and I enter with VWAP+EMA confirmation" — produces ~50% win rate regardless of parameters. Commission drag makes it net-negative.
+
+**The strategy concept may still be viable** but needs a fundamentally different entry trigger or filter to achieve >55% win rate.
 
 ---
 

@@ -267,14 +267,39 @@ def load_es_data(filepath=None, generate_if_missing=False):
 
 
 # ---------------------------------------------------------------------------
+# 200-day SMA regime filter
+# ---------------------------------------------------------------------------
+
+def compute_regime_sma(df, period=200):
+    """Compute 200-day SMA from 5-min bars and map back to intraday index.
+
+    Returns a numpy array aligned to df.index where each bar gets the
+    PREVIOUS day's SMA value (no look-ahead).  Bars before the SMA has
+    warmed up get NaN.
+    """
+    # Extract daily closes: last bar of each calendar date
+    daily = df["Close"].groupby(df.index.date).last()
+    daily.index = pd.to_datetime(daily.index)
+    sma = daily.rolling(period, min_periods=period).mean()
+
+    # Shift by 1 day → today's bars see yesterday's SMA (no look-ahead)
+    sma_prev = sma.shift(1)
+
+    # Map back to intraday: each bar gets the SMA for its date
+    bar_dates = pd.to_datetime(df.index.date)
+    regime = sma_prev.reindex(bar_dates).values
+    return regime
+
+
+# ---------------------------------------------------------------------------
 # Signal generator — stateful, matches pine/mes_orb_v1.pine
 # ---------------------------------------------------------------------------
 
 def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
+                    min_orb_pct=0.0, max_orb_pct=999.0,
                     min_orb_range=0.0, max_orb_range=9999.0,
                     max_entry_hour=16, sl_frac=1.0,
-                    # legacy — ignored if retest_ticks is set
-                    retest_pct=None):
+                    regime_sma=None):
     """
     MES Opening Range Breakout signal generator.
 
@@ -289,10 +314,15 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
     Parameters:
       - retest_ticks: retest tolerance in ticks (1 tick = 0.25 pts).
         Default 2 ticks = 0.50 points.
-      - min_orb_range / max_orb_range: filter days by ORB width (points).
+      - min_orb_pct / max_orb_pct: ORB range as % of price (e.g. 0.3 = 0.3%).
+        These are percentage filters — normalised across price levels.
+      - min_orb_range / max_orb_range: absolute point filters (legacy, default off).
       - max_entry_hour: only enter before this hour ET. Default 16.
-      - sl_frac: stop-loss as fraction of ORB range. 1.0 = full range (default),
+      - sl_frac: stop-loss as fraction of ORB range. 1.0 = full range,
         0.5 = half range (tighter stop).
+      - regime_sma: numpy array of 200-day SMA values per bar (from
+        compute_regime_sma). When provided, longs only fire above SMA,
+        shorts only below SMA. None = no regime filter.
     """
     df = df.copy()
     n = len(df)
@@ -404,15 +434,30 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
         # ── 6. Retest + confluence + filters ─────────────────────────
         retest_tol = retest_ticks * TICK   # e.g. 2 ticks × 0.25 = 0.50 pts
 
-        # ORB range filters
+        # ORB range filters (percentage-based + legacy absolute)
         orb_width = (orb_high - orb_low) if not np.isnan(orb_high) else 0.0
-        range_ok = (orb_width >= min_orb_range and orb_width <= max_orb_range
-                    if not np.isnan(orb_high) else False)
+        orb_mid = (orb_high + orb_low) / 2.0 if not np.isnan(orb_high) else 1.0
+        orb_pct = (orb_width / orb_mid * 100.0) if orb_mid > 0 else 0.0
+
+        range_ok = (not np.isnan(orb_high)
+                    and orb_pct >= min_orb_pct
+                    and orb_pct <= max_orb_pct
+                    and orb_width >= min_orb_range
+                    and orb_width <= max_orb_range)
         time_ok = hours[i] < max_entry_hour
+
+        # Regime filter: longs above 200-day SMA, shorts below
+        if regime_sma is not None:
+            sma_val = regime_sma[i]
+            long_regime  = not np.isnan(sma_val) and closes[i] > sma_val
+            short_regime = not np.isnan(sma_val) and closes[i] < sma_val
+        else:
+            long_regime = True
+            short_regime = True
 
         long_ok = (
             broke_above and not traded_today and post_orb
-            and position == 0 and range_ok and time_ok
+            and position == 0 and range_ok and time_ok and long_regime
             and lows[i] <= orb_high + retest_tol
             and closes[i] > orb_high
             and not np.isnan(vwap)    and closes[i] > vwap
@@ -421,7 +466,7 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
 
         short_ok = (
             broke_below and not traded_today and post_orb
-            and position == 0 and range_ok and time_ok
+            and position == 0 and range_ok and time_ok and short_regime
             and highs[i] >= orb_low - retest_tol
             and closes[i] < orb_low
             and not np.isnan(vwap)    and closes[i] < vwap
@@ -479,16 +524,22 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
 # Single backtest run
 # ---------------------------------------------------------------------------
 
-def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.5,
+def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
+               min_orb_pct=0.0, max_orb_pct=999.0,
                min_orb_range=0.0, max_orb_range=9999.0,
-               max_entry_hour=16, sl_frac=1.0, verbose=True):
+               max_entry_hour=16, sl_frac=0.5,
+               use_regime=False, verbose=True):
     """Run one ORB backtest with the given parameters. Returns kpis dict."""
+    regime_sma = compute_regime_sma(df_raw) if use_regime else None
+
     df = mes_orb_signals(df_raw.copy(), ema_len=ema_len,
                          retest_ticks=retest_ticks, rr_ratio=rr_ratio,
+                         min_orb_pct=min_orb_pct, max_orb_pct=max_orb_pct,
                          min_orb_range=min_orb_range,
                          max_orb_range=max_orb_range,
                          max_entry_hour=max_entry_hour,
-                         sl_frac=sl_frac)
+                         sl_frac=sl_frac,
+                         regime_sma=regime_sma)
 
     start = str(df_raw.index[0].date())
     end = str(df_raw.index[-1].date() + pd.Timedelta(days=1))
@@ -534,10 +585,14 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.5,
         print(f"  Retest Tol:        {retest_ticks} ticks"
               f" ({retest_ticks * TICK:.2f} pts)")
         print(f"  SL Fraction:       {sl_frac:.0%} of ORB range")
+        if min_orb_pct > 0 or max_orb_pct < 999:
+            print(f"  ORB Range Filter:  {min_orb_pct:.1f}% – {max_orb_pct:.1f}% of price")
         if min_orb_range > 0:
-            print(f"  Min ORB Range:     {min_orb_range} pts")
+            print(f"  Min ORB Range:     {min_orb_range} pts (absolute)")
         if max_orb_range < 9999:
-            print(f"  Max ORB Range:     {max_orb_range} pts")
+            print(f"  Max ORB Range:     {max_orb_range} pts (absolute)")
+        if use_regime:
+            print(f"  Regime Filter:     200-day SMA (long above, short below)")
         if max_entry_hour < 16:
             print(f"  Max Entry Time:    {max_entry_hour}:00 ET")
         print(f"  Signals:           {n_long} long, {n_short} short")
@@ -674,17 +729,34 @@ def main():
     print(f"Bars:  {len(df_raw):,}")
     print(f"Trading days: {len(orb_bars):,}")
 
-    # ── Best config run ───────────────────────────────────────────────
-    print("\n" + "#" * 64)
-    print("  BEST CONFIG  (R:R=1.0, SL=50%, retest=2t, ORB 20-60)")
-    print("#" * 64)
-    kpis = run_single(df_raw, rr_ratio=1.0, sl_frac=0.5,
-                       retest_ticks=2, min_orb_range=20,
-                       max_orb_range=60, verbose=True)
-    yearly_breakdown(kpis)
-    monthly_breakdown(kpis)
+    # Common params
+    base = dict(rr_ratio=1.0, sl_frac=0.5, retest_ticks=2)
 
-    return kpis
+    # ── 1. Run 006 repro (absolute ORB filter, no regime) ────────────
+    print("\n" + "#" * 64)
+    print("  RUN 006 REPRO  (ORB 20-60 pts, no regime)")
+    print("#" * 64)
+    kpis_006 = run_single(df_raw, min_orb_range=20, max_orb_range=60,
+                          use_regime=False, verbose=True, **base)
+    yearly_breakdown(kpis_006)
+
+    # ── 2. Fix 1: percentage ORB filter only ──────────────────────────
+    print("\n\n" + "#" * 64)
+    print("  FIX 1: ORB 0.3%-1.0% of price, no regime")
+    print("#" * 64)
+    kpis_pct = run_single(df_raw, min_orb_pct=0.3, max_orb_pct=1.0,
+                          use_regime=False, verbose=True, **base)
+    yearly_breakdown(kpis_pct)
+
+    # ── 3. Fix 2: percentage ORB + 200-day SMA regime ────────────────
+    print("\n\n" + "#" * 64)
+    print("  FIX 1+2: ORB 0.3%-1.0% + 200-day SMA regime")
+    print("#" * 64)
+    kpis_full = run_single(df_raw, min_orb_pct=0.3, max_orb_pct=1.0,
+                           use_regime=True, verbose=True, **base)
+    yearly_breakdown(kpis_full)
+
+    return kpis_full
 
 
 if __name__ == "__main__":
