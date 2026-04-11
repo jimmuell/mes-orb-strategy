@@ -128,20 +128,23 @@ for Micro E-mini S&P 500 Futures (CME_MINI:MES1!) using TradingView Pine Script 
 
 Two independent systems — a Pine Script strategy for TradingView and a Python backtest engine:
 
-- **`pine/`** — Pine Script v6 strategy source (`mes_orb_v1.pine`). Deployed to TradingView via MCP (see Deploy Workflow below). This is the primary strategy implementation.
-- **`backtest-engine/`** — Standalone Python backtesting engine (pandas/numpy). Has its own `CLAUDE.md` and `MEMORY.md` with detailed conventions. Originally built for crypto EMA-cross strategies; can be adapted. Key files:
-  - `engine/engine.py` — Core `run_backtest()` function replicating TradingView execution semantics (bar-close signals, next-bar-open fills)
-  - `engine/data.py` — Data loading from TradingView CSV exports, Bitstamp API, or ccxt
-  - `strategies/` — Strategy implementations (Python translations of Pine scripts)
+- **`pine/`** — Pine Script v6 strategy source
+  - `mes_orb_v2.pine` — Phase 1 final configuration (active)
+- **`backtest/`** — Python backtesting engine (pandas/numpy)
+  - `engine/engine.py` — Core run_backtest() function
+  - `engine/data.py` — Data loading from CSV
+  - `strategies/` — Strategy implementations
   - `data/` — Cached OHLCV CSVs
-- **`docs/strategy-rules.md`** — Canonical strategy rules reference
-- **`backtests/results.md`** — Iteration log for backtest results
+- **`backtests/results.md`** — Iteration log for all 14 backtest runs
+- **`docs/`** — Deployment guides and documentation
+- **`data/raw/`** — Primary dataset (ES 18-year 5-min data, managed via Git LFS)
 
 ## Backtest Engine Commands
 ```bash
-cd backtest-engine/477ffe3a371043a1afa7db321d246e54
+cd backtest
+source .venv/bin/activate
 pip install -r requirements.txt
-python -c "from engine import run_backtest, BacktestConfig; ..."
+python strategies/mes_orb_strategy.py
 ```
 
 ---

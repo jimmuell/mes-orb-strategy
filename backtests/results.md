@@ -108,7 +108,7 @@ Results will be logged below as backtests are run.
 ### Run 014 — PHASE 1 FINAL CONFIGURATION
 
 **Date:** 2026-04-11
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days, Jan 2008 – Apr 2026
 **Contract:** 1 MES ($5/point, $0.62 commission)
 **Status:** OPTIMIZATION COMPLETE. This is the definitive configuration for Pine Script conversion.
@@ -146,7 +146,7 @@ Profitable in 12 of 17 years. Best: 2020 (+$554), 2026 (+$136), 2022 (+$74). Wor
 ### Run 013 — R:R=0.875 Final Candidate Test
 
 **Date:** 2026-04-11
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days
 **Contract:** 1 MES ($5/point, $0.62 commission)
 
@@ -224,7 +224,7 @@ Profitable in 12 of 17 years.
 ### Run 012 — R:R Ratio Ablation Study
 
 **Date:** 2026-04-11
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days
 **Contract:** 1 MES ($5/point, $0.62 commission)
 
@@ -308,7 +308,7 @@ Profitable in 12 of 17 years.
 ### Run 011 — Two-Bar Retest + Breakout Candle Quality Filter
 
 **Date:** 2026-04-11
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days
 **Contract:** 1 MES ($5/point, $0.62 commission)
 
@@ -403,7 +403,7 @@ Same regime-dependent pattern: near-breakeven in-sample, profitable out-of-sampl
 ### Run 010 — ADX Trend Quality Filter
 
 **Date:** 2026-04-11
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days
 **Contract:** 1 MES ($5/point, $0.62 commission) — standardized from Run 010 onwards
 
@@ -498,7 +498,7 @@ Same regime-dependent pattern as Run 009: breakeven in-sample, profitable out-of
 ### Run 009 — Relaxed Bias Filter + Kelly Sizing + Walk-Forward Validation
 
 **Date:** 2026-04-11
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days, Jan 2008 – Apr 2026
 
 #### Changes from Run 008
@@ -598,7 +598,7 @@ The walk-forward result is the most important finding: this strategy has **no ed
 ### Run 008 — Replace VWAP/EMA with Prior-Day H/L + ATR Vol Filter
 
 **Date:** 2026-04-11
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days, Jan 2008 – Apr 2026
 
 #### Changes from Run 007
@@ -682,7 +682,7 @@ The filter works because it requires the ORB to open beyond yesterday's range �
 ### Run 007 — Percentage ORB Filter + 200-Day SMA Regime Filter
 
 **Date:** 2026-04-10
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days, Jan 2008 – Apr 2026
 
 #### Changes from Run 006
@@ -755,7 +755,7 @@ The ORB breakout+retest strategy with the current entry logic does not have stat
 ### Run 006 — Full Dataset: 18 Years of Real ES Data (2008-2026)
 
 **Date:** 2026-04-10
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — FirstRateData ES continuous futures, 1,289,036 bars, 4,710 trading days, Jan 2008 – Apr 2026
 
 #### Config
@@ -816,7 +816,7 @@ The strategy may have regime-conditional edge (works in 2024-2026 high-vol envir
 ### Run 005 — Corrected ES Contract Specs
 
 **Date:** 2026-04-10
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Change:** Fixed contract specs from MES ($5/pt, $0.62 comm) to ES ($50/pt, $2.25 comm). Dollar P&L is now 10× larger but PF and win rate are comparable. Commission impact changes slightly because ES commission ($2.25) is proportionally lower than MES ($0.62) relative to contract value.
 
 #### Config
@@ -864,7 +864,7 @@ Monthly breakdown (ES specs):
 ### Run 004 — Tightened Retest + Fractional SL Sweep
 
 **Date:** 2026-04-10
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py` (v2 signal generator)
+**Script:** `backtest/strategies/mes_orb_strategy.py` (v2 signal generator)
 
 #### Changes from Run 003
 | Parameter | Old (Run 003) | New (Run 004) |
@@ -929,7 +929,7 @@ The tight 2-tick retest requirement forces entries very close to the ORB level, 
 ### Run 003 — 6-Month Synthetic + Filter Tests
 
 **Date:** 2026-04-10
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `data/ES_6months.csv` — synthetic ES 5-min, 36,984 bars, 134 trading days (Oct 2025 – Apr 2026), full ETH, ORB ranges 15-50 pts, ES tick-rounded (0.25)
 
 #### Baseline (R:R=1.5, no filters)
@@ -986,7 +986,7 @@ The ORB breakout+retest strategy as currently implemented does not have edge on 
 ### Run 002 — Real ES Data + Parameter Sweep
 
 **Date:** 2026-04-10
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** `sample-data/ES_5min_sample.csv` — real ES futures 5-min, 2950 bars, 10 trading days (2026-03-23 to 2026-04-06), Eastern Time, ETH session
 
 #### Baseline (EMA=9, R:R=2.0, Retest=0.08%)
@@ -1054,7 +1054,7 @@ Only R:R ratio affected results — EMA length and retest tolerance produced ide
 ### Run 001 — Baseline ORB v1 (Synthetic Data)
 
 **Date:** 2026-04-10
-**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Script:** `backtest/strategies/mes_orb_strategy.py`
 **Data:** ES 5-min synthetic sample (2026-03-23 to 2026-04-06, 869 bars, 11 trading days)
 
 #### Settings

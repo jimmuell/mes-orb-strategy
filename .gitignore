@@ -6,9 +6,8 @@ venv/
 *.egg-info/
 
 # Data files (large CSVs, caches)
-backtest-engine/**/data/
-backtest-engine/**/sample-data/
-backtest-engine/**/.venv/
+backtest/data/
+backtest/.venv/
 
 # OS
 .DS_Store
