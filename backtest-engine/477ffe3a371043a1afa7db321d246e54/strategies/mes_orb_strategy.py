@@ -1147,7 +1147,7 @@ def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-02"
 
 
 # ---------------------------------------------------------------------------
-# Main — Run 012: R:R ratio ablation
+# Main — Run 013: R:R=0.875 final candidate test
 # ---------------------------------------------------------------------------
 
 def main():
@@ -1162,8 +1162,8 @@ def main():
     print(f"Trading days: {len(orb_bars):,}")
     print(f"Contract:  1 MES ($5/point, $0.62 commission)")
 
-    # Run 011 best config (breakout quality, single-bar retest)
-    base_011 = dict(
+    # Full Run 011 config with breakout quality
+    base = dict(
         sl_frac=0.5, retest_ticks=2,
         min_orb_pct=0.3, max_orb_pct=1.0,
         use_regime=True,
@@ -1174,27 +1174,27 @@ def main():
         use_breakout_quality=True,
     )
 
-    # ── R:R ablation ─────────────────────────────────────────────────
-    rr_ratios = [0.75, 1.0, 1.25, 1.5]
+    # ── Three-way comparison table ────────────────────────────────────
+    rr_ratios = [0.75, 0.875, 1.0]
 
     print("\n" + "#" * 64)
-    print("  RUN 012 — R:R RATIO ABLATION")
+    print("  RUN 013 — THREE-WAY R:R COMPARISON")
     print("#" * 64)
 
-    print(f"\n  {'R:R':>5}  {'Trades':>6}  {'Win%':>6}  {'PF':>7}"
+    print(f"\n  {'R:R':>6}  {'Trades':>6}  {'Win%':>6}  {'PF':>7}"
           f"  {'Net $':>10}  {'MaxDD%':>7}  {'Avg$':>8}"
           f"  {'AvgWin':>8}  {'AvgLoss':>8}")
-    print("  " + "-" * 82)
+    print("  " + "-" * 84)
 
     rr_kpis = {}
     for rr in rr_ratios:
-        kpis = run_single(df_raw, rr_ratio=rr, verbose=False, **base_011)
+        kpis = run_single(df_raw, rr_ratio=rr, verbose=False, **base)
         closed = [t for t in kpis.get("trades", []) if t.exit_date]
         pf = kpis.get("profit_factor", 0)
         pf_str = f"{pf:.3f}" if pf < 999 else "inf"
         aw = kpis.get("avg_winning", 0)
         al = kpis.get("avg_losing", 0)
-        print(f"  {rr:>5.2f}  {len(closed):>6}  "
+        print(f"  {rr:>6.3f}  {len(closed):>6}  "
               f"{kpis.get('win_rate', 0):>5.1f}%  {pf_str:>7s}"
               f"  {kpis.get('net_profit', 0):>+10,.2f}"
               f"  {abs(kpis.get('max_drawdown_pct', 0)):>6.2f}%"
@@ -1202,42 +1202,34 @@ def main():
               f"  {aw:>+8,.2f}  {al:>+8,.2f}")
         rr_kpis[rr] = kpis
 
-    # Find highest win rate
-    best_wr_rr = max(rr_kpis, key=lambda k: rr_kpis[k].get("win_rate", 0))
-    # Find highest PF
-    best_pf_rr = max(rr_kpis, key=lambda k: rr_kpis[k].get("profit_factor", 0))
-
-    # Check Phase 1 targets: WR >= 62%, PF >= 1.5, DD <= 15%
-    print(f"\n  Highest win rate:    R:R={best_wr_rr}")
-    print(f"  Highest PF:          R:R={best_pf_rr}")
-
-    candidates = []
+    # Phase 1 target check
+    print(f"\n  Phase 1 targets: WR >= 62%, PF >= 1.5, DD <= 15%")
     for rr, kpis in rr_kpis.items():
         wr = kpis.get("win_rate", 0)
         pf = kpis.get("profit_factor", 0)
         dd = abs(kpis.get("max_drawdown_pct", 0))
-        if wr >= 62 and pf >= 1.5 and dd <= 15:
-            candidates.append(rr)
-            print(f"\n  *** R:R={rr} MEETS ALL PHASE 1 TARGETS ***"
-                  f"  WR={wr:.1f}%  PF={pf:.3f}  DD={dd:.2f}%")
+        wr_ok = "✅" if wr >= 62 else "❌"
+        pf_ok = "✅" if pf >= 1.5 else "❌"
+        dd_ok = "✅" if dd <= 15 else "❌"
+        all_ok = wr >= 62 and pf >= 1.5 and dd <= 15
+        tag = " *** PINE SCRIPT CANDIDATE CONFIRMED ***" if all_ok else ""
+        print(f"  R:R={rr:.3f}: WR={wr:.1f}%{wr_ok}  PF={pf:.3f}{pf_ok}"
+              f"  DD={dd:.2f}%{dd_ok}{tag}")
 
-    if not candidates:
-        print("\n  No variant meets all Phase 1 targets simultaneously.")
-
-    # ── Detailed run of highest-win-rate variant ──────────────────────
+    # ── Detailed R:R=0.875 run ────────────────────────────────────────
     print(f"\n\n{'#' * 64}")
-    print(f"  BEST WIN RATE: R:R = {best_wr_rr}")
+    print(f"  RUN 013 DETAILED: R:R = 0.875")
     print("#" * 64)
-    best_kpis = run_single(df_raw, rr_ratio=best_wr_rr, verbose=True, **base_011)
-    yearly_breakdown(best_kpis)
+    kpis_013 = run_single(df_raw, rr_ratio=0.875, verbose=True, **base)
+    yearly_breakdown(kpis_013)
 
-    # ── Walk-forward on highest-win-rate variant ──────────────────────
+    # ── Walk-forward for R:R=0.875 ────────────────────────────────────
     print(f"\n\n{'#' * 64}")
-    print(f"  WALK-FORWARD: R:R = {best_wr_rr}")
+    print(f"  WALK-FORWARD: R:R = 0.875")
     print("#" * 64)
-    wf = walk_forward(df_raw, dict(rr_ratio=best_wr_rr, **base_011))
+    wf = walk_forward(df_raw, dict(rr_ratio=0.875, **base))
 
-    return best_kpis
+    return kpis_013
 
 
 if __name__ == "__main__":
