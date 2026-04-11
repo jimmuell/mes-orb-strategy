@@ -2,6 +2,31 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working Relationship & Workflow
+
+**VS Claude** — Senior programmer executing this project inside VS Code.
+Writes, runs, and debugs all code. Commits results when complete.
+Reads CLAUDE.md and backtests/results.md at the start of every session.
+
+**Senior Claude** — Architect and reviewer operating from Claude.ai chat.
+No direct access to the codebase or terminal.
+Designs strategy logic, analyzes results, and issues task prompts via Jim.
+
+**Jim** — Relays prompts and results between Senior Claude and VS Claude.
+
+**Workflow:**
+1. Senior Claude issues a task prompt (via Jim)
+2. VS Claude reads context files, implements the task, runs it, reports results to Jim
+3. Jim relays results to Senior Claude
+4. Senior Claude analyzes and issues the next prompt
+5. Repeat
+
+When reporting back always include:
+- The full results.md entry that was logged
+- Any anomalies, data quality issues, or surprises
+- Whether the commit succeeded
+- Any questions or blockers for Senior Claude
+
 ## Project Overview
 Backtesting and optimization of a 9:35 AM Opening Range Breakout (ORB) strategy
 for Micro E-mini S&P 500 Futures (CME_MINI:MES1!) using TradingView Pine Script v6.
