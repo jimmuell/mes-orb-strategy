@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **VS Claude** — Senior programmer executing this project inside VS Code.
 Writes, runs, and debugs all code. Commits results when complete.
-Reads CLAUDE.md and backtests/results.md at the start of every session.
+Reads CLAUDE.md and backtest-results/results.md at the start of every session.
 
 **Senior Claude** — Architect and reviewer operating from Claude.ai chat.
 No direct access to the codebase or terminal.
@@ -135,7 +135,7 @@ Two independent systems — a Pine Script strategy for TradingView and a Python 
   - `engine/data.py` — Data loading from CSV
   - `strategies/` — Strategy implementations
   - `data/` — Cached OHLCV CSVs
-- **`backtests/results.md`** — Iteration log for all 14 backtest runs
+- **`backtest-results/results.md`** — Iteration log for all 14 backtest runs
 - **`docs/`** — Deployment guides and documentation
 - **`data/raw/`** — Primary dataset (ES 18-year 5-min data, managed via Git LFS)
 
