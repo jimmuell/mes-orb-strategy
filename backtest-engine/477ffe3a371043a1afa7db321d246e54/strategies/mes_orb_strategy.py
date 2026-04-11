@@ -442,25 +442,28 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
                     prior_day_close=None, bias_mode="close",
                     atr_vol_pct=None,
                     min_atr_pct=0.0, max_atr_pct=999.0,
-                    adx_values=None, min_adx=0.0):
+                    adx_values=None, min_adx=0.0,
+                    use_two_bar_retest=False,
+                    use_breakout_quality=False):
     """
     MES Opening Range Breakout signal generator.
 
-    Core logic (pine/mes_orb_v1.pine):
+    Core logic:
       1. ORB = first 5-min bar at 9:30 ET
       2. Post-ORB: detect breakout above ORB high or below ORB low
       3. Retest: price returns to ORB level within tolerance
-      4. Entry with TP/SL set at signal time
-      5. One trade per day; flatten at session end (15:55 ET)
+      4. (Run 011) Two-bar retest: bar 1 touches ORB level, bar 2
+         confirms close back beyond it — enter on bar 2.
+      5. (Run 011) Breakout candle quality: body ≥ 40% of range,
+         close in top/bottom 33% of range. Skip day if weak.
+      6. Entry with TP/SL set at signal time
+      7. One trade per day; flatten at session end (15:55 ET)
 
     Confluence filters:
-      - prior_day bias (bias_mode):
-          "hl"    — Run 008: ORB high > prior day HIGH (gap), ORB low < prior day LOW
-          "close" — Run 009: ORB high > prior day CLOSE, ORB low < prior day CLOSE
-      - atr_vol_pct + min/max_atr_pct: ATR% vol filter.
-      - regime_sma: 200-day SMA directional filter.
-      - adx_values + min_adx: ADX trend quality filter (Run 010).
-        Only trade when ADX > min_adx (trending, not choppy).
+      - prior_day bias (bias_mode "hl" or "close")
+      - atr_vol_pct + min/max_atr_pct: ATR% vol filter
+      - regime_sma: 200-day SMA directional filter
+      - adx_values + min_adx: ADX trend quality filter
     """
     if bias_mode not in ("close", "hl"):
         raise ValueError(f"Invalid bias_mode '{bias_mode}'. Expected 'close' or 'hl'.")
@@ -504,6 +507,9 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
     traded_today = False
     broke_above  = False
     broke_below  = False
+    breakout_quality_ok = True       # Run 011: breakout candle passed quality check
+    retest_bar_long  = False         # Run 011: bar 1 of two-bar retest (long)
+    retest_bar_short = False         # Run 011: bar 1 of two-bar retest (short)
 
     # --- Position tracking (sync with engine TP/SL) ---
     position      = 0       # 0 = flat, 1 = long, -1 = short
@@ -539,6 +545,9 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
                 traded_today = False
                 broke_above  = False
                 broke_below  = False
+                breakout_quality_ok = True
+                retest_bar_long  = False
+                retest_bar_short = False
 
         # ── 3. ORB tracking ───────────────────────────────────────────
         if is_orb[i]:
@@ -556,17 +565,72 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
         #     cum_vol += volumes[i]
         #     vwap = cum_tpv / cum_vol
 
-        # ── 5. Post-ORB breakout detection ────────────────────────────
+        # ── 5. Post-ORB breakout detection + quality check ────────────
         post_orb = orb_set and not is_orb[i] and is_sess[i]
 
         if post_orb and not np.isnan(orb_high):
-            if closes[i] > orb_high:
+            # Detect first breakout bar and check quality
+            if not broke_above and closes[i] > orb_high:
                 broke_above = True
-            if closes[i] < orb_low:
-                broke_below = True
+                # Breakout candle quality: body ≥ 40% of range,
+                # close in top 33% for longs
+                if use_breakout_quality:
+                    bar_range = highs[i] - lows[i]
+                    bar_body = abs(closes[i] - opens[i])
+                    if bar_range > 0:
+                        body_pct = bar_body / bar_range
+                        close_pos = (closes[i] - lows[i]) / bar_range
+                        if body_pct < 0.40 or close_pos < 0.67:
+                            breakout_quality_ok = False
+                    else:
+                        breakout_quality_ok = False
 
-        # ── 6. Retest + confluence + filters ─────────────────────────
+            if not broke_below and closes[i] < orb_low:
+                broke_below = True
+                # Breakout candle quality: body ≥ 40%, close in bottom 33%
+                if use_breakout_quality:
+                    bar_range = highs[i] - lows[i]
+                    bar_body = abs(closes[i] - opens[i])
+                    if bar_range > 0:
+                        body_pct = bar_body / bar_range
+                        close_pos = (closes[i] - lows[i]) / bar_range
+                        if body_pct < 0.40 or close_pos > 0.33:
+                            breakout_quality_ok = False
+                    else:
+                        breakout_quality_ok = False
+
+        # ── 5b. Two-bar retest state machine ─────────────────────────
+        #    Bar 1: price touches ORB level (within retest_tol)
+        #    Bar 2 (next bar): close confirms back beyond ORB level → enter
         retest_tol = retest_ticks * TICK   # e.g. 2 ticks × 0.25 = 0.50 pts
+
+        if use_two_bar_retest and post_orb:
+            # Long retest bar 1: low touches ORB high
+            if (broke_above and not traded_today and position == 0
+                    and lows[i] <= orb_high + retest_tol
+                    and not retest_bar_long):
+                retest_bar_long = True
+                retest_bar_short = False  # can't be both
+            else:
+                # Reset if bar didn't touch ORB level
+                if retest_bar_long and lows[i] > orb_high + retest_tol:
+                    pass  # keep flag — this IS bar 2, check entry below
+                elif not retest_bar_long:
+                    pass  # no retest pending
+
+            # Short retest bar 1: high touches ORB low
+            if (broke_below and not traded_today and position == 0
+                    and highs[i] >= orb_low - retest_tol
+                    and not retest_bar_short):
+                retest_bar_short = True
+                retest_bar_long = False
+            else:
+                if retest_bar_short and highs[i] < orb_low - retest_tol:
+                    pass
+                elif not retest_bar_short:
+                    pass
+
+        # ── 6. Entry conditions + filters ────────────────────────────
 
         # ORB range filters (percentage-based + legacy absolute)
         orb_width = (orb_high - orb_low) if not np.isnan(orb_high) else 0.0
@@ -625,21 +689,42 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
         else:
             trend_ok = True
 
+        # Breakout quality gate
+        quality_ok = breakout_quality_ok if use_breakout_quality else True
+
+        # Retest condition: two-bar or original single-bar
+        if use_two_bar_retest:
+            # Bar 2 confirmation: retest bar 1 was set on prior bar,
+            # now this bar must close beyond ORB level
+            long_retest  = retest_bar_long and closes[i] > orb_high
+            short_retest = retest_bar_short and closes[i] < orb_low
+        else:
+            # Original single-bar retest
+            long_retest  = (lows[i] <= orb_high + retest_tol
+                            and closes[i] > orb_high)
+            short_retest = (highs[i] >= orb_low - retest_tol
+                            and closes[i] < orb_low)
+
         long_ok = (
             broke_above and not traded_today and post_orb
             and position == 0 and range_ok and time_ok
             and long_regime and long_bias and vol_ok and trend_ok
-            and lows[i] <= orb_high + retest_tol
-            and closes[i] > orb_high
+            and quality_ok and long_retest
         )
 
         short_ok = (
             broke_below and not traded_today and post_orb
             and position == 0 and range_ok and time_ok
             and short_regime and short_bias and vol_ok and trend_ok
-            and highs[i] >= orb_low - retest_tol
-            and closes[i] < orb_low
+            and quality_ok and short_retest
         )
+
+        # Reset two-bar retest flags after entry attempt
+        if use_two_bar_retest:
+            if long_ok or not retest_bar_long:
+                retest_bar_long = False
+            if short_ok or not retest_bar_short:
+                retest_bar_short = False
 
         # ── 7. Entry signals ──────────────────────────────────────────
         #    SL = sl_frac × ORB range from the entry side.
@@ -700,6 +785,8 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
                bias_mode="close", atr_period=10,
                use_atr_vol=False, min_atr_pct=0.0, max_atr_pct=999.0,
                use_adx=False, min_adx=0.0,
+               use_two_bar_retest=False,
+               use_breakout_quality=False,
                verbose=True):
     """Run one ORB backtest with the given parameters. Returns kpis dict."""
     regime_sma = compute_regime_sma(df_raw) if use_regime else None
@@ -722,7 +809,9 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
                          prior_day_close=pdc, bias_mode=bias_mode,
                          atr_vol_pct=atr_vol,
                          min_atr_pct=min_atr_pct, max_atr_pct=max_atr_pct,
-                         adx_values=adx_arr, min_adx=min_adx)
+                         adx_values=adx_arr, min_adx=min_adx,
+                         use_two_bar_retest=use_two_bar_retest,
+                         use_breakout_quality=use_breakout_quality)
 
     start = str(df_raw.index[0].date())
     end = str(df_raw.index[-1].date() + pd.Timedelta(days=1))
@@ -788,6 +877,10 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
                   f" ({atr_period}-day ATR/price)")
         if use_adx:
             print(f"  ADX Filter:        14-period ADX > {min_adx:.0f}")
+        if use_two_bar_retest:
+            print(f"  Two-Bar Retest:    bar1 touches ORB, bar2 confirms")
+        if use_breakout_quality:
+            print(f"  Breakout Quality:  body>=40%, close in top/bot 33%")
         if max_entry_hour < 16:
             print(f"  Max Entry Time:    {max_entry_hour}:00 ET")
         print(f"  Signals:           {n_long} long, {n_short} short")
@@ -1051,7 +1144,7 @@ def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-02"
 
 
 # ---------------------------------------------------------------------------
-# Main — Run 010: ADX trend quality filter
+# Main — Run 011: Two-bar retest + breakout candle quality
 # ---------------------------------------------------------------------------
 
 def main():
@@ -1066,65 +1159,68 @@ def main():
     print(f"Trading days: {len(orb_bars):,}")
     print(f"Contract:  1 MES ($5/point, $0.62 commission)")
 
-    # Run 009 baseline params (no ADX)
-    params_009 = dict(
+    # Run 010 baseline (all filters, no entry quality)
+    base_010 = dict(
         rr_ratio=1.0, sl_frac=0.5, retest_ticks=2,
         min_orb_pct=0.3, max_orb_pct=1.0,
         use_regime=True,
         use_prior_day=True, bias_mode="close",
         use_atr_vol=True, atr_period=10,
         min_atr_pct=0.3, max_atr_pct=2.0,
+        use_adx=True, min_adx=15,
     )
 
-    # ── 1. Run 009 repro (1 MES, no ADX) ─────────────────────────────
+    # ── Ablation study ────────────────────────────────────────────────
+    variants = [
+        ("Run 010 baseline",         dict(**base_010)),
+        ("+ Two-bar retest only",    dict(**base_010, use_two_bar_retest=True)),
+        ("+ Breakout quality only",  dict(**base_010, use_breakout_quality=True)),
+        ("Both (full Run 011)",      dict(**base_010, use_two_bar_retest=True,
+                                          use_breakout_quality=True)),
+    ]
+
     print("\n" + "#" * 64)
-    print("  RUN 009 REPRO  (1 MES, no ADX)")
-    print("#" * 64)
-    kpis_009 = run_single(df_raw, verbose=True, **params_009)
-    yearly_breakdown(kpis_009)
-
-    # ── 2. ADX threshold ablation: 15, 20, 25 ────────────────────────
-    print("\n\n" + "#" * 64)
-    print("  ADX THRESHOLD ABLATION")
+    print("  RUN 011 ABLATION STUDY")
     print("#" * 64)
 
-    print(f"\n  {'ADX':>4}  {'Trades':>6}  {'Win%':>6}  {'PF':>7}"
+    print(f"\n  {'Variant':<30s}  {'Trades':>6}  {'Win%':>6}  {'PF':>7}"
           f"  {'Net $':>10}  {'MaxDD%':>7}  {'Avg$':>8}")
-    print("  " + "-" * 60)
+    print("  " + "-" * 82)
 
-    adx_results = {}
-    for adx_thresh in [15, 20, 25]:
-        params = dict(**params_009, use_adx=True, min_adx=adx_thresh)
+    ablation_kpis = {}
+    for label, params in variants:
         kpis = run_single(df_raw, verbose=False, **params)
         closed = [t for t in kpis.get("trades", []) if t.exit_date]
         pf = kpis.get("profit_factor", 0)
         pf_str = f"{pf:.3f}" if pf < 999 else "inf"
-        print(f"  {adx_thresh:>4}  {len(closed):>6}  "
+        print(f"  {label:<30s}  {len(closed):>6}  "
               f"{kpis.get('win_rate', 0):>5.1f}%  {pf_str:>7s}"
               f"  {kpis.get('net_profit', 0):>+10,.2f}"
               f"  {abs(kpis.get('max_drawdown_pct', 0)):>6.2f}%"
               f"  {kpis.get('avg_trade', 0):>+8,.2f}")
-        adx_results[adx_thresh] = kpis
+        ablation_kpis[label] = kpis
 
-    # Find best by PF among those with trades
-    best_adx = max(adx_results, key=lambda k: adx_results[k].get("profit_factor", 0))
-    print(f"\n  BEST ADX threshold: {best_adx}")
+    # Find best by PF
+    best_label = max(ablation_kpis,
+                     key=lambda k: ablation_kpis[k].get("profit_factor", 0))
+    best_kpis = ablation_kpis[best_label]
+    print(f"\n  BEST: {best_label}")
 
-    # ── 3. Detailed run of best ADX ──────────────────────────────────
-    print("\n\n" + "#" * 64)
-    print(f"  RUN 010  (ADX > {best_adx})")
+    # ── Detailed run of best ──────────────────────────────────────────
+    best_params = dict(variants[[l for l, _ in variants].index(best_label)][1])
+    print(f"\n\n{'#' * 64}")
+    print(f"  {best_label.upper()}")
     print("#" * 64)
-    params_010 = dict(**params_009, use_adx=True, min_adx=best_adx)
-    kpis_010 = run_single(df_raw, verbose=True, **params_010)
-    yearly_breakdown(kpis_010)
+    best_kpis = run_single(df_raw, verbose=True, **best_params)
+    yearly_breakdown(best_kpis)
 
-    # ── 4. Walk-forward on best ADX ──────────────────────────────────
-    print("\n\n" + "#" * 64)
-    print(f"  WALK-FORWARD: Train 2008-2019 / Test 2020-2026 (ADX>{best_adx})")
+    # ── Walk-forward ──────────────────────────────────────────────────
+    print(f"\n\n{'#' * 64}")
+    print(f"  WALK-FORWARD: {best_label}")
     print("#" * 64)
-    wf = walk_forward(df_raw, params_010)
+    wf = walk_forward(df_raw, best_params)
 
-    return kpis_010
+    return best_kpis
 
 
 if __name__ == "__main__":
