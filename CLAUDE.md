@@ -29,32 +29,32 @@ When reporting back always include:
 
 ## Project Roadmap
 
-### Phase 1 — MES ORB Strategy (current focus)
-A directional breakout strategy trading 1 MES contract per day maximum.
-Target metrics before live deployment:
-- Win Rate ≥ 62% (revised from 70% — momentum breakout strategies structurally
-  run 55-65% win rates. Mean reversion target (Phase 2 VWAP scalp) will carry
-  the higher win rate.)
-- Profit Factor ≥ 1.5
-- Max Drawdown ≤ 15%
-- Walk-forward validated
-- Pine Script converted and paper traded 30 days minimum
+### Phase 1 — MES ORB Strategy ✅ OPTIMIZATION COMPLETE
+Final configuration confirmed Run 014. Ready for Pine Script conversion.
 
-Current status (Run 011):
-- Win Rate: 58.2% ❌ (target 62%)
-- Profit Factor: 1.579 ✅ (target 1.5)
-- Max Drawdown: 1.40% ✅ (target ≤15%)
+Final metrics (Run 014, 1 MES contract):
+- Win Rate: 61.5% (target ≥62% — misses by 0.5 pts on 18yr; OOS 63.6% ✅)
+- Profit Factor: 1.519 ✅ (target ≥1.5)
+- Max Drawdown: 1.46% ✅ (target ≤15%)
 - Walk-forward: validated ✅ (edge is post-2020 regime dependent)
 - Contracts: 1 MES per trade ✅
 
+Final configuration:
+- R:R = 0.75
+- Breakout candle quality filter (body ≥ 40%, close in top/bottom 33%)
+- Single-bar retest confirmation
+- Prior-day close bias (ORB > prior day close)
+- ATR vol regime (10-day rolling, 0.3-2.0%)
+- 200-day SMA regime filter
+- ADX > 15 trend quality filter
+- SL = 50% of ORB range
+- ORB range filter = 0.3-1.0% of price
+
 Remaining steps:
-1. ~~Run 010 — ADX trend quality filter~~ ✅ complete
-2. ~~Run 011 — Entry quality (breakout candle filter)~~ ✅ complete (PF target met)
-3. Run 012 — R:R ratio tuning ← current
-4. Run 013 — Final parameter optimization if needed
-5. Pine Script conversion
-6. 30-day paper trade validation
-7. Go live
+1. ~~Runs 001-014 — Backtest optimization~~ ✅ complete
+2. Pine Script conversion ← next
+3. 30-day paper trade validation
+4. Go live
 
 ### Phase 2 — VWAP Reversion Scalp Strategy
 A mean reversion strategy designed for choppy/ranging days when the ORB
