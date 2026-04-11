@@ -1,0 +1,279 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © MES ORB Strategy v2 — Phase 1 Final Configuration (Run 014)
+//
+// Backtest results (18-year ES data, 91 trades, 1 MES contract):
+//   Win Rate: 61.5% | Profit Factor: 1.519 | Max DD: 1.46% | Net: +$586
+//   Walk-forward OOS (2020-2026): Win 63.6% | PF 1.283
+//
+// CRITICAL: Chart must be regular Candles (not Heikin Ashi), ETH session.
+// Do NOT plot VWAP or EMA — already on chart as indicators.
+
+//@version=6
+strategy("MES ORB v2 — Phase 1 Final", overlay=true,
+         default_qty_type=strategy.fixed, default_qty_value=1,
+         commission_type=strategy.commission.cash_per_contract,
+         commission_value=0.62, initial_capital=25000,
+         slippage=0, calc_on_every_tick=false)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  INPUTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Entry ───────────────────────────────────────────────────────────────
+i_retestTicks    = input.int(2, "Retest Tolerance (ticks)", minval=1, maxval=20,
+                     tooltip="Number of ticks beyond ORB level for retest. 1 tick = 0.25 pts.")
+i_rrRatio        = input.float(0.75, "R:R Ratio", minval=0.25, step=0.25,
+                     tooltip="Take-profit as multiple of stop-loss distance.")
+i_slFrac         = input.float(0.50, "SL Fraction of ORB Range", minval=0.1, maxval=1.0, step=0.1,
+                     tooltip="Stop loss = this fraction × ORB range from entry price.")
+
+// ─── ORB Range Filter ────────────────────────────────────────────────────
+i_orbPctMin      = input.float(0.3, "ORB Range Min %", minval=0.0, step=0.1,
+                     tooltip="Skip day if ORB range < this % of price (choppy open).")
+i_orbPctMax      = input.float(1.0, "ORB Range Max %", minval=0.1, step=0.1,
+                     tooltip="Skip day if ORB range > this % of price (gap/panic day).")
+
+// ─── Breakout Quality ────────────────────────────────────────────────────
+i_bodyRatio      = input.float(0.40, "Breakout Body Ratio", minval=0.0, maxval=1.0, step=0.05,
+                     tooltip="Breakout candle body must be ≥ this fraction of total range.")
+i_closeRatio     = input.float(0.33, "Breakout Close Position", minval=0.0, maxval=0.5, step=0.05,
+                     tooltip="Long: close in top X of range. Short: close in bottom X.")
+
+// ─── Regime Filters ──────────────────────────────────────────────────────
+i_smaLen         = input.int(200, "SMA Length (daily)", minval=50,
+                     tooltip="200-day SMA regime filter. Longs above, shorts below.")
+i_atrLen         = input.int(10, "ATR Length (daily)", minval=5,
+                     tooltip="ATR period for volatility regime filter.")
+i_atrMin         = input.float(0.3, "ATR Vol Min %", minval=0.0, step=0.1,
+                     tooltip="Only trade when ATR% ≥ this (skip ultra-calm chop).")
+i_atrMax         = input.float(2.0, "ATR Vol Max %", minval=0.1, step=0.1,
+                     tooltip="Only trade when ATR% ≤ this (skip extreme panic).")
+i_adxLen         = input.int(14, "ADX Length (daily)", minval=5,
+                     tooltip="ADX period for trend quality filter.")
+i_adxMin         = input.float(15.0, "ADX Threshold", minval=0.0, step=5.0,
+                     tooltip="Only trade when ADX > this (trending, not choppy).")
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DAILY AGGREGATION (request.security — prior day values, no look-ahead)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// All daily values use [1] shift + lookahead_on to get the PRIOR completed
+// day's value.  This is the standard Pine Script pattern for no look-ahead:
+//   request.security(sym, "D", expr[1], lookahead=barmerge.lookahead_on)
+// The [1] references yesterday's bar; lookahead_on ensures the value is
+// available on today's first intraday bar (not delayed to next day).
+
+prevDayClose = request.security(syminfo.tickerid, "D", close[1],
+                 lookahead=barmerge.lookahead_on)
+
+// 200-day SMA (prior day)
+dailySMA     = request.security(syminfo.tickerid, "D", ta.sma(close, i_smaLen)[1],
+                 lookahead=barmerge.lookahead_on)
+
+// 10-day ATR% (prior day): ATR / close × 100
+dailyATRval  = request.security(syminfo.tickerid, "D", ta.atr(i_atrLen)[1],
+                 lookahead=barmerge.lookahead_on)
+dailyCloseP  = request.security(syminfo.tickerid, "D", close[1],
+                 lookahead=barmerge.lookahead_on)
+atrPct       = dailyCloseP > 0 ? dailyATRval / dailyCloseP * 100.0 : na
+
+// 14-period ADX (prior day)
+// ta.dmi() returns a tuple [+DI, -DI, ADX]. We extract ADX on the daily
+// timeframe first, then shift [1] for prior day.
+f_prevAdx(len) =>
+    [dp, dm, ax] = ta.dmi(len, len)
+    ax[1]  // shift inside — cannot shift a function result outside
+
+prevDayADX   = request.security(syminfo.tickerid, "D", f_prevAdx(i_adxLen),
+                 lookahead=barmerge.lookahead_on)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+TICK_SIZE = syminfo.mintick  // 0.25 for MES/ES
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SESSION DETECTION (America/Chicago timezone — lesson #8)
+// ═══════════════════════════════════════════════════════════════════════════
+
+isORBBar      = not na(time("5", "0930-0935:23456", "America/Chicago"))
+isSessionBar  = not na(time("5", "0930-1600:23456", "America/Chicago"))
+isNewSession  = isSessionBar and not isSessionBar[1]
+isSessionEnd  = not na(time("5", "1555-1600:23456", "America/Chicago"))
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ORB TRACKING
+// ═══════════════════════════════════════════════════════════════════════════
+
+var float orbHigh = na
+var float orbLow  = na
+var bool  orbSet  = false
+
+if isNewSession
+    orbHigh := na
+    orbLow  := na
+    orbSet  := false
+
+if isORBBar
+    if na(orbHigh)
+        orbHigh := high
+        orbLow  := low
+    else
+        orbHigh := math.max(orbHigh, high)
+        orbLow  := math.min(orbLow, low)
+    orbSet := true
+
+float orbWidth = orbSet ? orbHigh - orbLow : 0.0
+float orbMid   = orbSet ? (orbHigh + orbLow) / 2.0 : close
+float orbPct   = orbMid > 0 ? orbWidth / orbMid * 100.0 : 0.0
+
+// ORB range filter
+bool rangeOK = orbSet and orbPct >= i_orbPctMin and orbPct <= i_orbPctMax
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TRADE STATE (reset each session)
+// ═══════════════════════════════════════════════════════════════════════════
+
+var bool tradedToday       = false
+var bool brokeAbove        = false
+var bool brokeBelow        = false
+var bool breakoutQualityOK = true
+
+if isNewSession
+    tradedToday       := false
+    brokeAbove        := false
+    brokeBelow        := false
+    breakoutQualityOK := true
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  BREAKOUT DETECTION + QUALITY CHECK
+// ═══════════════════════════════════════════════════════════════════════════
+
+bool postORB = orbSet and not isORBBar and isSessionBar
+
+if postORB and not na(orbHigh)
+    // Long breakout — first bar closing above ORB high
+    if not brokeAbove and close > orbHigh
+        brokeAbove := true
+        // Quality check: body ≥ 40% of range, close in top 33%
+        float barRange = high - low
+        float barBody  = math.abs(close - open)
+        if barRange > 0
+            float bodyPct  = barBody / barRange
+            float closePos = (close - low) / barRange
+            if bodyPct < i_bodyRatio or closePos < (1.0 - i_closeRatio)
+                breakoutQualityOK := false
+        else
+            breakoutQualityOK := false
+
+    // Short breakout — first bar closing below ORB low
+    if not brokeBelow and close < orbLow
+        brokeBelow := true
+        float barRange2 = high - low
+        float barBody2  = math.abs(close - open)
+        if barRange2 > 0
+            float bodyPct2  = barBody2 / barRange2
+            float closePos2 = (close - low) / barRange2
+            if bodyPct2 < i_bodyRatio or closePos2 > i_closeRatio
+                breakoutQualityOK := false
+        else
+            breakoutQualityOK := false
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  REGIME FILTERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+bool smaLongOK  = not na(dailySMA) and close > dailySMA
+bool smaShortOK = not na(dailySMA) and close < dailySMA
+
+bool volOK = not na(atrPct) and atrPct >= i_atrMin and atrPct <= i_atrMax
+
+bool adxOK = not na(prevDayADX) and prevDayADX >= i_adxMin
+
+// Prior-day close bias: ORB must open beyond prior day's close
+bool longBias  = not na(prevDayClose) and not na(orbHigh) and orbHigh > prevDayClose
+bool shortBias = not na(prevDayClose) and not na(orbLow)  and orbLow  < prevDayClose
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RETEST + ENTRY CONDITIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+float retestTol = i_retestTicks * TICK_SIZE  // 2 × 0.25 = 0.50 pts
+
+// Long retest: price pulls back to ORB high (within tolerance), closes above
+bool longRetest = brokeAbove and not tradedToday and postORB
+                  and strategy.position_size == 0
+                  and rangeOK and breakoutQualityOK
+                  and smaLongOK and volOK and adxOK and longBias
+                  and low <= orbHigh + retestTol
+                  and close > orbHigh
+
+// Short retest: price pulls back to ORB low (within tolerance), closes below
+bool shortRetest = brokeBelow and not tradedToday and postORB
+                   and strategy.position_size == 0
+                   and rangeOK and breakoutQualityOK
+                   and smaShortOK and volOK and adxOK and shortBias
+                   and high >= orbLow - retestTol
+                   and close < orbLow
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ORDER EXECUTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+float slDist = orbWidth * i_slFrac
+
+if longRetest
+    float longSL = close - slDist
+    float longTP = close + i_rrRatio * slDist
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=longSL, limit=longTP)
+    tradedToday := true
+
+if shortRetest
+    float shortSL = close + slDist
+    float shortTP = close - i_rrRatio * slDist
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=shortSL, limit=shortTP)
+    tradedToday := true
+
+// ─── End-of-Session Flatten ──────────────────────────────────────────────
+if isSessionEnd and strategy.position_size != 0
+    strategy.close_all("Session Close")
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VISUAL AIDS (minimal — chart already has VWAP, EMA, BB, Volume)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ORB high/low lines (current day only)
+plot(orbSet ? orbHigh : na, "ORB High", color=color.new(color.green, 30),
+     style=plot.style_linebr, linewidth=2)
+plot(orbSet ? orbLow  : na, "ORB Low",  color=color.new(color.red, 30),
+     style=plot.style_linebr, linewidth=2)
+
+// Entry labels
+if longRetest and strategy.position_size == 0
+    label.new(bar_index, low, "L",
+              style=label.style_label_up, color=color.green,
+              textcolor=color.white, size=size.small)
+
+if shortRetest and strategy.position_size == 0
+    label.new(bar_index, high, "S",
+              style=label.style_label_down, color=color.red,
+              textcolor=color.white, size=size.small)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ALERTS (for webhook → WhatsApp infrastructure)
+// ═══════════════════════════════════════════════════════════════════════════
+
+alertcondition(longRetest and strategy.position_size == 0,
+     title="Long Entry",
+     message="MES ORB v2 — LONG ENTRY — {{ticker}} @ {{close}}")
+
+alertcondition(shortRetest and strategy.position_size == 0,
+     title="Short Entry",
+     message="MES ORB v2 — SHORT ENTRY — {{ticker}} @ {{close}}")
+
+alertcondition(isSessionEnd and strategy.position_size != 0,
+     title="Session Close",
+     message="MES ORB v2 — SESSION CLOSE — {{ticker}} @ {{close}}")
