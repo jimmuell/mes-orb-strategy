@@ -271,34 +271,39 @@ def load_es_data(filepath=None, generate_if_missing=False):
 # ---------------------------------------------------------------------------
 
 def compute_prior_day_hl(df):
-    """Compute prior day's RTH high and low, mapped to each intraday bar.
+    """Compute prior day's RTH high, low, and close, mapped to intraday bars.
 
-    RTH = 9:30-16:00 ET.  Returns (prior_high, prior_low) numpy arrays
-    aligned to df.index.  Each bar sees the PREVIOUS completed session's
-    high/low.  Days before the first full session get NaN.
+    RTH = 9:30-16:00 ET.  Returns (prior_high, prior_low, prior_close) numpy
+    arrays aligned to df.index.  Each bar sees the PREVIOUS completed
+    session's values (no look-ahead).
     """
     rth = df[((df.index.hour == 9) & (df.index.minute >= 30))
              | ((df.index.hour >= 10) & (df.index.hour < 16))]
 
-    daily_high = rth["High"].groupby(rth.index.date).max()
-    daily_low  = rth["Low"].groupby(rth.index.date).min()
-    daily_high.index = pd.to_datetime(daily_high.index)
-    daily_low.index  = pd.to_datetime(daily_low.index)
+    daily_high  = rth["High"].groupby(rth.index.date).max()
+    daily_low   = rth["Low"].groupby(rth.index.date).min()
+    daily_close = rth["Close"].groupby(rth.index.date).last()
+    daily_high.index  = pd.to_datetime(daily_high.index)
+    daily_low.index   = pd.to_datetime(daily_low.index)
+    daily_close.index = pd.to_datetime(daily_close.index)
 
-    # Shift by 1 → today sees yesterday's RTH H/L
-    prev_high = daily_high.shift(1)
-    prev_low  = daily_low.shift(1)
+    # Shift by 1 → today sees yesterday's RTH H/L/C
+    prev_high  = daily_high.shift(1)
+    prev_low   = daily_low.shift(1)
+    prev_close = daily_close.shift(1)
 
     bar_dates = pd.to_datetime(df.index.date)
     return (prev_high.reindex(bar_dates).values,
-            prev_low.reindex(bar_dates).values)
+            prev_low.reindex(bar_dates).values,
+            prev_close.reindex(bar_dates).values)
 
 
-def compute_atr_vol(df, period=20):
+def compute_atr_vol(df, period=10):
     """Compute N-day ATR as % of price, mapped to intraday bars.
 
     Uses daily true range on RTH OHLC.  Returns numpy array where each
     bar gets the PREVIOUS day's ATR% (no look-ahead).
+    Default period=10 (faster, more responsive to regime shifts).
     """
     rth = df[((df.index.hour == 9) & (df.index.minute >= 30))
              | ((df.index.hour >= 10) & (df.index.hour < 16))]
@@ -356,6 +361,7 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
                     max_entry_hour=16, sl_frac=1.0,
                     regime_sma=None,
                     prior_day_high=None, prior_day_low=None,
+                    prior_day_close=None, bias_mode="close",
                     atr_vol_pct=None,
                     min_atr_pct=0.0, max_atr_pct=999.0):
     """
@@ -368,12 +374,13 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
       4. Entry with TP/SL set at signal time
       5. One trade per day; flatten at session end (15:55 ET)
 
-    Confluence filters (Run 008 — replaces VWAP/EMA):
-      - prior_day_high/low: longs require ORB high > prior day high (gap-up
-        bias); shorts require ORB low < prior day low (gap-down bias).
-      - atr_vol_pct + min/max_atr_pct: 20-day ATR% vol filter, only trade
-        when vol is in a sweet spot (not too calm, not panicking).
-      - regime_sma: 200-day SMA directional filter (kept from Run 007).
+    Confluence filters:
+      - prior_day bias (bias_mode):
+          "hl"    — Run 008: ORB high > prior day HIGH (gap), ORB low < prior day LOW
+          "close" — Run 009: ORB high > prior day CLOSE, ORB low < prior day CLOSE
+                    (captures momentum without requiring a full gap)
+      - atr_vol_pct + min/max_atr_pct: ATR% vol filter.
+      - regime_sma: 200-day SMA directional filter.
     """
     df = df.copy()
     n = len(df)
@@ -506,14 +513,23 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
             long_regime = True
             short_regime = True
 
-        # Prior-day H/L bias (replaces VWAP/EMA confluence)
-        if prior_day_high is not None and prior_day_low is not None:
-            pdh = prior_day_high[i]
-            pdl = prior_day_low[i]
-            long_bias  = (not np.isnan(pdh) and not np.isnan(orb_high)
-                          and orb_high > pdh)       # gap-up / strong open
-            short_bias = (not np.isnan(pdl) and not np.isnan(orb_low)
-                          and orb_low < pdl)        # gap-down / weak open
+        # Prior-day directional bias
+        if prior_day_high is not None:
+            if bias_mode == "close" and prior_day_close is not None:
+                # Run 009: ORB vs prior close (relaxed — momentum, not gap)
+                pdc = prior_day_close[i]
+                long_bias  = (not np.isnan(pdc) and not np.isnan(orb_high)
+                              and orb_high > pdc)
+                short_bias = (not np.isnan(pdc) and not np.isnan(orb_low)
+                              and orb_low < pdc)
+            else:
+                # Run 008: ORB vs prior high/low (strict gap)
+                pdh = prior_day_high[i]
+                pdl = prior_day_low[i]
+                long_bias  = (not np.isnan(pdh) and not np.isnan(orb_high)
+                              and orb_high > pdh)
+                short_bias = (not np.isnan(pdl) and not np.isnan(orb_low)
+                              and orb_low < pdl)
         else:
             long_bias = True
             short_bias = True
@@ -598,15 +614,16 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
                min_orb_range=0.0, max_orb_range=9999.0,
                max_entry_hour=16, sl_frac=0.5,
                use_regime=False, use_prior_day=False,
+               bias_mode="close", atr_period=10,
                use_atr_vol=False, min_atr_pct=0.0, max_atr_pct=999.0,
                verbose=True):
     """Run one ORB backtest with the given parameters. Returns kpis dict."""
     regime_sma = compute_regime_sma(df_raw) if use_regime else None
     if use_prior_day:
-        pdh, pdl = compute_prior_day_hl(df_raw)
+        pdh, pdl, pdc = compute_prior_day_hl(df_raw)
     else:
-        pdh = pdl = None
-    atr_vol = compute_atr_vol(df_raw) if use_atr_vol else None
+        pdh = pdl = pdc = None
+    atr_vol = compute_atr_vol(df_raw, period=atr_period) if use_atr_vol else None
 
     df = mes_orb_signals(df_raw.copy(), ema_len=ema_len,
                          retest_ticks=retest_ticks, rr_ratio=rr_ratio,
@@ -617,6 +634,7 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
                          sl_frac=sl_frac,
                          regime_sma=regime_sma,
                          prior_day_high=pdh, prior_day_low=pdl,
+                         prior_day_close=pdc, bias_mode=bias_mode,
                          atr_vol_pct=atr_vol,
                          min_atr_pct=min_atr_pct, max_atr_pct=max_atr_pct)
 
@@ -673,11 +691,15 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
         if use_regime:
             print(f"  Regime Filter:     200-day SMA (long above, short below)")
         if use_prior_day:
-            print(f"  Prior Day Filter:  long if ORB > prev high,"
-                  f" short if ORB < prev low")
+            if bias_mode == "close":
+                print(f"  Prior Day Filter:  long if ORB high > prev close,"
+                      f" short if ORB low < prev close")
+            else:
+                print(f"  Prior Day Filter:  long if ORB > prev high,"
+                      f" short if ORB < prev low")
         if use_atr_vol:
             print(f"  ATR Vol Filter:    {min_atr_pct:.1f}% – {max_atr_pct:.1f}%"
-                  f" (20-day ATR/price)")
+                  f" ({atr_period}-day ATR/price)")
         if max_entry_hour < 16:
             print(f"  Max Entry Time:    {max_entry_hour}:00 ET")
         print(f"  Signals:           {n_long} long, {n_short} short")
@@ -802,8 +824,154 @@ FULL_DATA = Path("/Users/jameslmueller/Projects/mes-orb-strategy"
                  "/data/raw/ES_full_5min_continuous_UNadjusted.txt")
 
 
+# ---------------------------------------------------------------------------
+# Quarter-Kelly post-hoc analysis
+# ---------------------------------------------------------------------------
+
+def kelly_analysis(kpis, initial_capital=25000.0):
+    """Compute quarter-Kelly equity curve from closed trade log.
+
+    Uses fixed-fraction Kelly: K = W - (1-W)/R, then scales to 25%.
+    Applies to PnL as a fraction of equity at the time of each trade.
+    """
+    trades = [t for t in kpis.get("trades", []) if t.exit_date is not None]
+    if not trades:
+        print("  No trades for Kelly analysis.")
+        return
+
+    wins  = [t.pnl for t in trades if t.pnl > 0]
+    losses = [abs(t.pnl) for t in trades if t.pnl <= 0]
+
+    W = len(wins) / len(trades) if trades else 0
+    avg_win  = sum(wins) / len(wins) if wins else 0
+    avg_loss = sum(losses) / len(losses) if losses else 1
+    R = avg_win / avg_loss if avg_loss > 0 else 0
+
+    kelly_full = W - (1 - W) / R if R > 0 else 0
+    kelly_quarter = kelly_full * 0.25
+
+    # Fixed-sizing equity curve (1-contract baseline)
+    fixed_equity = [initial_capital]
+    for t in trades:
+        fixed_equity.append(fixed_equity[-1] + t.pnl)
+
+    fixed_peak = initial_capital
+    fixed_max_dd = 0
+    for eq in fixed_equity:
+        if eq > fixed_peak:
+            fixed_peak = eq
+        dd = (eq - fixed_peak) / fixed_peak * 100 if fixed_peak > 0 else 0
+        if dd < fixed_max_dd:
+            fixed_max_dd = dd
+
+    # Quarter-Kelly equity curve: scale each trade's PnL by (kelly_quarter)
+    # relative to current equity / initial_capital
+    qk_equity = [initial_capital]
+    for t in trades:
+        eq = qk_equity[-1]
+        # fraction of a full position to take
+        frac = max(0, kelly_quarter) * (eq / initial_capital)
+        # scale PnL: if frac < 1, we're taking a smaller position
+        scaled_pnl = t.pnl * frac
+        qk_equity.append(eq + scaled_pnl)
+
+    qk_peak = initial_capital
+    qk_max_dd = 0
+    for eq in qk_equity:
+        if eq > qk_peak:
+            qk_peak = eq
+        dd = (eq - qk_peak) / qk_peak * 100 if qk_peak > 0 else 0
+        if dd < qk_max_dd:
+            qk_max_dd = dd
+
+    print(f"\n  KELLY POSITION SIZING ANALYSIS")
+    print(f"  " + "-" * 50)
+    print(f"  Win Rate (W):       {W:.4f} ({W*100:.1f}%)")
+    print(f"  Avg Win/Loss (R):   {R:.4f}")
+    print(f"  Full Kelly:         {kelly_full:.4f} ({kelly_full*100:.1f}%)")
+    print(f"  Quarter Kelly:      {kelly_quarter:.4f} ({kelly_quarter*100:.1f}%)")
+    print()
+    print(f"  {'':20s}  {'Fixed 1x':>12s}  {'Quarter Kelly':>14s}")
+    print(f"  {'':20s}  {'-'*12:>12s}  {'-'*14:>14s}")
+    print(f"  {'Final Equity':20s}  ${fixed_equity[-1]:>11,.2f}"
+          f"  ${qk_equity[-1]:>13,.2f}")
+    print(f"  {'Net P&L':20s}  ${fixed_equity[-1]-initial_capital:>+11,.2f}"
+          f"  ${qk_equity[-1]-initial_capital:>+13,.2f}")
+    print(f"  {'Max Drawdown':20s}  {fixed_max_dd:>11.2f}%"
+          f"  {qk_max_dd:>13.2f}%")
+    print(f"  {'Return':20s}  "
+          f"{(fixed_equity[-1]/initial_capital - 1)*100:>11.1f}%"
+          f"  {(qk_equity[-1]/initial_capital - 1)*100:>13.1f}%")
+
+    return {
+        "W": W, "R": R, "kelly_full": kelly_full, "kelly_quarter": kelly_quarter,
+        "fixed_final": fixed_equity[-1], "fixed_max_dd": fixed_max_dd,
+        "qk_final": qk_equity[-1], "qk_max_dd": qk_max_dd,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward validation
+# ---------------------------------------------------------------------------
+
+def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-01"):
+    """Split data and run same params on train and test periods."""
+    df_train = df_raw[df_raw.index <= train_end]
+    df_test  = df_raw[df_raw.index >= test_start]
+
+    orb_train = df_train[(df_train.index.hour == 9) & (df_train.index.minute == 30)]
+    orb_test  = df_test[(df_test.index.hour == 9) & (df_test.index.minute == 30)]
+
+    print(f"\n  WALK-FORWARD VALIDATION")
+    print(f"  Train: {df_train.index[0].date()} – {df_train.index[-1].date()}"
+          f"  ({len(orb_train)} days)")
+    print(f"  Test:  {df_test.index[0].date()} – {df_test.index[-1].date()}"
+          f"  ({len(orb_test)} days)")
+    print()
+
+    print(f"  {'':20s}  {'In-Sample':>14s}  {'Out-of-Sample':>14s}")
+    print(f"  {'':20s}  {'(2008-2019)':>14s}  {'(2020-2026)':>14s}")
+    print(f"  {'':20s}  {'-'*14:>14s}  {'-'*14:>14s}")
+
+    kpis_train = run_single(df_train, verbose=False, **params)
+    kpis_test  = run_single(df_test, verbose=False, **params)
+
+    for label, k in [("Train", kpis_train), ("Test", kpis_test)]:
+        trades = [t for t in k.get("trades", []) if t.exit_date is not None]
+        print(f"  DEBUG {label}: {len(trades)} trades")
+
+    closed_tr = [t for t in kpis_train.get("trades", []) if t.exit_date]
+    closed_te = [t for t in kpis_test.get("trades", []) if t.exit_date]
+
+    def _fmt(kpis, closed):
+        n = len(closed)
+        wr = kpis.get("win_rate", 0)
+        pf = kpis.get("profit_factor", 0)
+        net = kpis.get("net_profit", 0)
+        dd = kpis.get("max_drawdown_pct", 0)
+        avg = kpis.get("avg_trade", 0)
+        return n, wr, pf, net, dd, avg
+
+    n_tr, wr_tr, pf_tr, net_tr, dd_tr, avg_tr = _fmt(kpis_train, closed_tr)
+    n_te, wr_te, pf_te, net_te, dd_te, avg_te = _fmt(kpis_test, closed_te)
+
+    print(f"  {'Trades':20s}  {n_tr:>14d}  {n_te:>14d}")
+    print(f"  {'Win Rate':20s}  {wr_tr:>13.1f}%  {wr_te:>13.1f}%")
+    pf_tr_s = f"{pf_tr:.3f}" if pf_tr < 999 else "inf"
+    pf_te_s = f"{pf_te:.3f}" if pf_te < 999 else "inf"
+    print(f"  {'Profit Factor':20s}  {pf_tr_s:>14s}  {pf_te_s:>14s}")
+    print(f"  {'Net Profit':20s}  ${net_tr:>+12,.2f}  ${net_te:>+12,.2f}")
+    print(f"  {'Max Drawdown':20s}  {abs(dd_tr):>13.1f}%  {abs(dd_te):>13.1f}%")
+    print(f"  {'Avg Trade':20s}  ${avg_tr:>+12,.2f}  ${avg_te:>+12,.2f}")
+
+    return {"train": kpis_train, "test": kpis_test}
+
+
+# ---------------------------------------------------------------------------
+# Main — Run 009
+# ---------------------------------------------------------------------------
+
 def main():
-    # ── Load full dataset ─────────────────────────────────────────────
     data_path = FULL_DATA if FULL_DATA.exists() else SAMPLE_DATA
     print(f"Loading {data_path.name} ...")
     df_raw = load_es_data(data_path)
@@ -814,48 +982,53 @@ def main():
     print(f"Bars:  {len(df_raw):,}")
     print(f"Trading days: {len(orb_bars):,}")
 
-    # Shared params across all runs
-    base = dict(rr_ratio=1.0, sl_frac=0.5, retest_ticks=2,
-                min_orb_pct=0.3, max_orb_pct=1.0)
+    # Run 009 params: relaxed bias (close), 10-day ATR, keep SMA + ORB pct
+    params_009 = dict(
+        rr_ratio=1.0, sl_frac=0.5, retest_ticks=2,
+        min_orb_pct=0.3, max_orb_pct=1.0,
+        use_regime=True,
+        use_prior_day=True, bias_mode="close",
+        use_atr_vol=True, atr_period=10,
+        min_atr_pct=0.3, max_atr_pct=2.0,
+    )
 
-    # ── 1. Run 007 repro (pct ORB + SMA regime, VWAP/EMA) ───────────
+    # Run 008 params for comparison
+    params_008 = dict(
+        rr_ratio=1.0, sl_frac=0.5, retest_ticks=2,
+        min_orb_pct=0.3, max_orb_pct=1.0,
+        use_regime=True,
+        use_prior_day=True, bias_mode="hl",
+        use_atr_vol=True, atr_period=20,
+        min_atr_pct=0.3, max_atr_pct=2.0,
+    )
+
+    # ── 1. Run 008 repro ─────────────────────────────────────────────
     print("\n" + "#" * 64)
-    print("  RUN 007 REPRO  (pct ORB + SMA, VWAP/EMA confluence)")
+    print("  RUN 008 REPRO  (prior-day H/L, 20d ATR)")
     print("#" * 64)
-    kpis_007 = run_single(df_raw, use_regime=True,
-                          verbose=True, **base)
-    yearly_breakdown(kpis_007)
+    kpis_008 = run_single(df_raw, verbose=True, **params_008)
+    yearly_breakdown(kpis_008)
 
-    # ── 2. Run 008a: prior-day H/L only (no SMA, no ATR) ─────────────
+    # ── 2. Run 009: relaxed bias + 10-day ATR ────────────────────────
     print("\n\n" + "#" * 64)
-    print("  RUN 008a: prior-day H/L bias only")
+    print("  RUN 009  (prior-day CLOSE, 10d ATR)")
     print("#" * 64)
-    kpis_pd = run_single(df_raw, use_prior_day=True,
-                         verbose=True, **base)
-    yearly_breakdown(kpis_pd)
+    kpis_009 = run_single(df_raw, verbose=True, **params_009)
+    yearly_breakdown(kpis_009)
 
-    # ── 3. Run 008b: ATR vol only (no SMA, no prior-day) ─────────────
+    # ── 3. Quarter-Kelly analysis on Run 009 ─────────────────────────
     print("\n\n" + "#" * 64)
-    print("  RUN 008b: ATR vol 0.3%-2.0% only")
+    print("  QUARTER-KELLY SIZING ANALYSIS (Run 009)")
     print("#" * 64)
-    kpis_atr = run_single(df_raw, use_atr_vol=True,
-                          min_atr_pct=0.3, max_atr_pct=2.0,
-                          verbose=True, **base)
-    yearly_breakdown(kpis_atr)
+    kelly = kelly_analysis(kpis_009)
 
-    # ── 4. Run 008c: SMA + prior-day + ATR vol (full stack) ──────────
+    # ── 4. Walk-forward validation on Run 009 ────────────────────────
     print("\n\n" + "#" * 64)
-    print("  RUN 008: FULL STACK (SMA + prior-day + ATR 0.3-2.0%)")
+    print("  WALK-FORWARD: Train 2008-2019 / Test 2020-2026")
     print("#" * 64)
-    kpis_full = run_single(df_raw,
-                           use_regime=True,
-                           use_prior_day=True,
-                           use_atr_vol=True,
-                           min_atr_pct=0.3, max_atr_pct=2.0,
-                           verbose=True, **base)
-    yearly_breakdown(kpis_full)
+    wf = walk_forward(df_raw, params_009)
 
-    return kpis_full
+    return kpis_009
 
 
 if __name__ == "__main__":
