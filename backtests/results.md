@@ -147,10 +147,12 @@ Profitable in 13 of 18 years. 2022 worst year at -$2,252 (down from -$3,172 in R
 
 | Metric | Fixed 1x | Quarter Kelly |
 |---|---|---|
-| Final Equity | $43,025 | $25,728 |
-| Net P&L | +$18,024 | +$728 |
+| Final Equity | $43,025 | $25,723 |
+| Net P&L | +$18,024 | +$723 |
 | Max Drawdown | -21.3% | **-1.2%** |
 | Return | 72.1% | 2.9% |
+
+*Kelly formula corrected in pre-Run009 code review (was +$728 with compounding bug).*
 
 Kelly parameters: W = 56.3%, R = 1.086, Full Kelly = 16.0%, Quarter Kelly = 4.0%.
 
