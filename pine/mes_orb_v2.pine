@@ -277,3 +277,15 @@ alertcondition(shortRetest and strategy.position_size == 0,
 alertcondition(isSessionEnd and strategy.position_size != 0,
      title="Session Close",
      message="MES ORB v2 — SESSION CLOSE — {{ticker}} @ {{close}}")
+
+// Exit detection
+longExitAlert  = strategy.position_size == 0 and strategy.position_size[1] > 0
+shortExitAlert = strategy.position_size == 0 and strategy.position_size[1] < 0
+
+alertcondition(longExitAlert,
+     title="Long Exit",
+     message="MES ORB v2 — LONG EXIT — {{ticker}} @ {{close}}")
+
+alertcondition(shortExitAlert,
+     title="Short Exit",
+     message="MES ORB v2 — SHORT EXIT — {{ticker}} @ {{close}}")
