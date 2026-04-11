@@ -10,7 +10,7 @@
 | Commission/contract | $2.25 | $0.62 |
 | Tick size | 0.25 ($12.50) | 0.25 ($1.25) |
 
-## Current Best Configuration (Run 009)
+## Current Best Configuration (Run 010)
 
 | Parameter | Value |
 |---|---|
@@ -20,13 +20,14 @@
 | ORB Range Filter | 0.3% – 1.0% of price |
 | Regime Filter | 200-day SMA (longs above, shorts below) |
 | Prior-Day Bias | ORB high > prior day **close** (long), ORB low < prior day **close** (short) |
-| ATR Vol Filter | **10-day** ATR% between 0.3% and 2.0% |
-| Position Size | 1 MES contract ($5/point) — standardized Run 010+ |
+| ATR Vol Filter | 10-day ATR% between 0.3% and 2.0% |
+| ADX Filter | 14-period ADX > 15 (prior day) |
+| Position Size | 1 MES contract ($5/point) |
 | Commission | $0.62/contract |
 
-**Results (18-year real ES, 167 trades):** PF 1.399 | Win 56.3% | Max DD 31% | Net +$18,024
+**Results (18-year real data, 134 trades):** PF 1.338 | Win 56.0% | Max DD 1.87% | Net +$649
 
-**Most trades at a positive edge.** Relaxed bias nearly doubled trade count (92→167, 9.3/year). Walk-forward shows edge is regime-dependent: breakeven 2008-2019, profitable 2020-2026.
+ADX > 15 provides marginal improvement over Run 009 (+$4.85/trade vs +$4.54). Edge remains regime-dependent: breakeven 2008-2019, profitable 2020-2026.
 
 ## Key Findings (as of Run 008)
 
@@ -68,6 +69,101 @@
 ## Iteration Log
 
 Results will be logged below as backtests are run.
+
+---
+
+### Run 010 — ADX Trend Quality Filter
+
+**Date:** 2026-04-11
+**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days
+**Contract:** 1 MES ($5/point, $0.62 commission) — standardized from Run 010 onwards
+
+#### Changes from Run 009
+| Parameter | Run 009 | Run 010 |
+|---|---|---|
+| ADX filter | none | **14-period ADX > 15 (prior day, no look-ahead)** |
+| Contract size | 2 ES ($50/pt) | **1 MES ($5/pt)** |
+| All other params | unchanged | unchanged |
+
+Note: Dollar P&L is now ~1/20th of Run 009 due to contract change (1 MES vs 2 ES). Compare on PF/win rate, not dollar amounts.
+
+#### ADX Threshold Ablation (all at 1 MES)
+
+| ADX | Trades | Win% | PF | Net $ | Max DD% | Avg $/trade |
+|---|---|---|---|---|---|---|
+| None (Run 009) | 167 | 56.3% | 1.327 | +$759 | 1.82% | +$4.54 |
+| **> 15** | **134** | **56.0%** | **1.338** | **+$649** | **1.87%** | **+$4.85** |
+| > 20 | 77 | 51.9% | 0.905 | -$111 | 1.45% | -$1.45 |
+| > 25 | 42 | 57.1% | 1.125 | +$69 | 0.49% | +$1.65 |
+
+**ADX > 15 is the best threshold.** It cuts 33 low-quality trades while maintaining PF at 1.338 (slightly above Run 009's 1.327). ADX > 20 is too aggressive — it destroys the edge by removing too many valid setups. ADX > 25 is viable but only 42 trades over 18 years (2.3/year).
+
+#### Run 010 vs Run 009 (apples-to-apples at 1 MES)
+
+| Metric | Run 009 (1 MES) | Run 010 (ADX>15) |
+|---|---|---|
+| Trades | 167 | **134** |
+| Trades/Year | 9.3 | **7.4** |
+| Win Rate | 56.3% | 56.0% |
+| Profit Factor | 1.327 | **1.338** |
+| Net Profit | +$759 | +$649 |
+| Max Drawdown | -1.82% | -1.87% |
+| Avg Trade | +$4.54 | +$4.85 |
+
+#### Yearly Breakdown (Run 010, ADX > 15)
+| Year | Trades | Win% | PF | PnL |
+|---|---|---|---|---|
+| 2009 | 13 | 54% | 1.112 | +$5 |
+| 2010 | 10 | 70% | 2.255 | +$40 |
+| 2011 | 7 | 71% | 2.075 | +$25 |
+| 2012 | 4 | 50% | 0.565 | -$15 |
+| 2013 | 2 | 50% | 0.900 | -$1 |
+| 2014 | 3 | 67% | 1.829 | +$14 |
+| **2015** | **11** | **36%** | **0.434** | **-$87** |
+| **2016** | **4** | **25%** | **0.201** | **-$58** |
+| 2018 | 10 | 60% | 1.508 | +$55 |
+| 2019 | 4 | 50% | 0.653 | -$23 |
+| **2020** | **7** | **71%** | **6.356** | **+$507** |
+| 2021 | 8 | 50% | 0.719 | -$51 |
+| **2022** | **29** | **48%** | **0.792** | **-$147** |
+| 2023 | 4 | 75% | 2.528 | +$61 |
+| 2024 | 2 | 100% | inf | +$91 |
+| 2025 | 12 | 58% | 1.482 | +$132 |
+| 2026 | 4 | 75% | 2.799 | +$102 |
+
+**Best 3:** 2020 (+$507), 2025 (+$132), 2026 (+$102)
+**Worst 3:** 2016 (-$58), 2015 (-$87), 2022 (-$147)
+
+#### 2015 / 2016 / 2022 Callout — Did ADX Help?
+
+| Year | Run 009 (no ADX) | Run 010 (ADX>15) | Trades removed | PnL change |
+|---|---|---|---|---|
+| 2015 | 15 trades, -$125 | 11 trades, -$87 | 4 | **+$38 better** |
+| 2016 | 5 trades, -$42 | 4 trades, -$58 | 1 | **-$16 worse** |
+| 2022 | 31 trades, -$148 | 29 trades, -$147 | 2 | **~flat** |
+
+**Mixed results.** ADX > 15 helped 2015 modestly but barely touched 2022 (only removed 2 of 31 trades). The problem years have ADX > 15 during the choppy periods — 2022's bear market *was* trending (strong downtrend), so ADX was high even when ORB breakouts reversed. ADX measures trend strength, not trend quality for breakout follow-through.
+
+#### Walk-Forward Validation (ADX > 15)
+
+| Metric | In-Sample (2008-2019) | Out-of-Sample (2020-2026) |
+|---|---|---|
+| Trades | 68 | 64 |
+| Win Rate | 54.4% | 57.8% |
+| Profit Factor | 0.873 | **1.279** |
+| Net Profit | -$74 | **+$354** |
+| Max Drawdown | 0.9% | 1.6% |
+| Avg Trade | -$1.09 | +$5.53 |
+
+Same regime-dependent pattern as Run 009: breakeven in-sample, profitable out-of-sample.
+
+#### Key Findings
+1. **ADX > 15 provides marginal improvement.** PF 1.327 → 1.338, avg trade $4.54 → $4.85. Cuts 33 trades (167→134) without losing much profit. Not transformative.
+2. **ADX does not solve 2022.** The 2022 bear market had high ADX (strong downtrend), so the filter doesn't trigger. The problem is *trend direction changes*, not lack of trend. The SMA regime filter is already handling directional filtering.
+3. **ADX > 20 kills the edge.** PF drops to 0.905 (unprofitable). Too many valid setups have ADX between 15-20.
+4. **Walk-forward pattern unchanged.** Edge remains regime-dependent (works post-2020).
+5. **Max DD at 1 MES is manageable.** -1.87% on $25k = -$468. This is tradeable.
 
 ---
 

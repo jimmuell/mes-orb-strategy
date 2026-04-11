@@ -339,6 +339,75 @@ def compute_atr_vol(df, period=10):
     return atr_pct.reindex(bar_dates).values
 
 
+def compute_adx(df, period=14):
+    """Compute ADX on daily bars, mapped to intraday bars.
+
+    Standard Wilder ADX: smooth +DM/-DM and TR with Wilder's method
+    (equivalent to RMA/SMMA), then ADX = RMA(DX).
+    Returns numpy array where each bar gets the PREVIOUS day's ADX
+    (no look-ahead).
+    """
+    rth = df[((df.index.hour == 9) & (df.index.minute >= 30))
+             | ((df.index.hour >= 10) & (df.index.hour < 16))]
+
+    daily_high  = rth["High"].groupby(rth.index.date).max()
+    daily_low   = rth["Low"].groupby(rth.index.date).min()
+    daily_close = rth["Close"].groupby(rth.index.date).last()
+    daily_high.index  = pd.to_datetime(daily_high.index)
+    daily_low.index   = pd.to_datetime(daily_low.index)
+    daily_close.index = pd.to_datetime(daily_close.index)
+
+    prev_high  = daily_high.shift(1)
+    prev_low   = daily_low.shift(1)
+    prev_close = daily_close.shift(1)
+
+    # +DM / -DM
+    up_move   = daily_high - prev_high
+    down_move = prev_low - daily_low
+    plus_dm   = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm  = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+    # True Range
+    tr = pd.concat([
+        daily_high - daily_low,
+        (daily_high - prev_close).abs(),
+        (daily_low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+
+    # Wilder smoothing (RMA)
+    def _rma(series, length):
+        arr = np.array(series, dtype=float)
+        out = np.full_like(arr, np.nan)
+        # Seed with SMA
+        first_valid = 0
+        while first_valid < len(arr) and np.isnan(arr[first_valid]):
+            first_valid += 1
+        if first_valid + length > len(arr):
+            return out
+        out[first_valid + length - 1] = np.nanmean(arr[first_valid:first_valid + length])
+        for i in range(first_valid + length, len(arr)):
+            out[i] = (out[i - 1] * (length - 1) + arr[i]) / length
+        return out
+
+    atr_smooth   = _rma(tr, period)
+    plus_smooth  = _rma(plus_dm, period)
+    minus_smooth = _rma(minus_dm, period)
+
+    # +DI / -DI / DX / ADX
+    with np.errstate(invalid="ignore"):
+        plus_di  = np.where(atr_smooth > 0, plus_smooth / atr_smooth * 100, 0)
+        minus_di = np.where(atr_smooth > 0, minus_smooth / atr_smooth * 100, 0)
+        di_sum   = plus_di + minus_di
+        dx = np.where(di_sum > 0, np.abs(plus_di - minus_di) / di_sum * 100, 0)
+    adx = _rma(dx, period)
+
+    adx_series = pd.Series(adx, index=daily_high.index)
+    adx_prev = adx_series.shift(1)  # previous day's value
+
+    bar_dates = pd.to_datetime(df.index.date)
+    return adx_prev.reindex(bar_dates).values
+
+
 def compute_regime_sma(df, period=200):
     """Compute 200-day SMA from 5-min bars and map back to intraday index.
 
@@ -372,7 +441,8 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
                     prior_day_high=None, prior_day_low=None,
                     prior_day_close=None, bias_mode="close",
                     atr_vol_pct=None,
-                    min_atr_pct=0.0, max_atr_pct=999.0):
+                    min_atr_pct=0.0, max_atr_pct=999.0,
+                    adx_values=None, min_adx=0.0):
     """
     MES Opening Range Breakout signal generator.
 
@@ -387,9 +457,10 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
       - prior_day bias (bias_mode):
           "hl"    — Run 008: ORB high > prior day HIGH (gap), ORB low < prior day LOW
           "close" — Run 009: ORB high > prior day CLOSE, ORB low < prior day CLOSE
-                    (captures momentum without requiring a full gap)
       - atr_vol_pct + min/max_atr_pct: ATR% vol filter.
       - regime_sma: 200-day SMA directional filter.
+      - adx_values + min_adx: ADX trend quality filter (Run 010).
+        Only trade when ADX > min_adx (trending, not choppy).
     """
     if bias_mode not in ("close", "hl"):
         raise ValueError(f"Invalid bias_mode '{bias_mode}'. Expected 'close' or 'hl'.")
@@ -553,10 +624,17 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
         else:
             vol_ok = True
 
+        # ADX trend quality filter (Run 010)
+        if adx_values is not None:
+            adx_val = adx_values[i]
+            trend_ok = not np.isnan(adx_val) and adx_val >= min_adx
+        else:
+            trend_ok = True
+
         long_ok = (
             broke_above and not traded_today and post_orb
             and position == 0 and range_ok and time_ok
-            and long_regime and long_bias and vol_ok
+            and long_regime and long_bias and vol_ok and trend_ok
             and lows[i] <= orb_high + retest_tol
             and closes[i] > orb_high
         )
@@ -564,7 +642,7 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
         short_ok = (
             broke_below and not traded_today and post_orb
             and position == 0 and range_ok and time_ok
-            and short_regime and short_bias and vol_ok
+            and short_regime and short_bias and vol_ok and trend_ok
             and highs[i] >= orb_low - retest_tol
             and closes[i] < orb_low
         )
@@ -627,6 +705,7 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
                use_regime=False, use_prior_day=False,
                bias_mode="close", atr_period=10,
                use_atr_vol=False, min_atr_pct=0.0, max_atr_pct=999.0,
+               use_adx=False, min_adx=0.0,
                verbose=True):
     """Run one ORB backtest with the given parameters. Returns kpis dict."""
     regime_sma = compute_regime_sma(df_raw) if use_regime else None
@@ -635,6 +714,7 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
     else:
         pdh = pdl = pdc = None
     atr_vol = compute_atr_vol(df_raw, period=atr_period) if use_atr_vol else None
+    adx_arr = compute_adx(df_raw) if use_adx else None
 
     df = mes_orb_signals(df_raw.copy(), ema_len=ema_len,
                          retest_ticks=retest_ticks, rr_ratio=rr_ratio,
@@ -647,7 +727,8 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
                          prior_day_high=pdh, prior_day_low=pdl,
                          prior_day_close=pdc, bias_mode=bias_mode,
                          atr_vol_pct=atr_vol,
-                         min_atr_pct=min_atr_pct, max_atr_pct=max_atr_pct)
+                         min_atr_pct=min_atr_pct, max_atr_pct=max_atr_pct,
+                         adx_values=adx_arr, min_adx=min_adx)
 
     start = str(df_raw.index[0].date())
     end = str(df_raw.index[-1].date() + pd.Timedelta(days=1))
@@ -711,6 +792,8 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
         if use_atr_vol:
             print(f"  ATR Vol Filter:    {min_atr_pct:.1f}% – {max_atr_pct:.1f}%"
                   f" ({atr_period}-day ATR/price)")
+        if use_adx:
+            print(f"  ADX Filter:        14-period ADX > {min_adx:.0f}")
         if max_entry_hour < 16:
             print(f"  Max Entry Time:    {max_entry_hour}:00 ET")
         print(f"  Signals:           {n_long} long, {n_short} short")
@@ -969,7 +1052,7 @@ def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-01"
 
 
 # ---------------------------------------------------------------------------
-# Main — Run 009
+# Main — Run 010: ADX trend quality filter
 # ---------------------------------------------------------------------------
 
 def main():
@@ -982,8 +1065,9 @@ def main():
     print(f"Range: {df_raw.index[0]} to {df_raw.index[-1]}")
     print(f"Bars:  {len(df_raw):,}")
     print(f"Trading days: {len(orb_bars):,}")
+    print(f"Contract:  1 MES ($5/point, $0.62 commission)")
 
-    # Run 009 params: relaxed bias (close), 10-day ATR, keep SMA + ORB pct
+    # Run 009 baseline params (no ADX)
     params_009 = dict(
         rr_ratio=1.0, sl_frac=0.5, retest_ticks=2,
         min_orb_pct=0.3, max_orb_pct=1.0,
@@ -993,43 +1077,55 @@ def main():
         min_atr_pct=0.3, max_atr_pct=2.0,
     )
 
-    # Run 008 params for comparison
-    params_008 = dict(
-        rr_ratio=1.0, sl_frac=0.5, retest_ticks=2,
-        min_orb_pct=0.3, max_orb_pct=1.0,
-        use_regime=True,
-        use_prior_day=True, bias_mode="hl",
-        use_atr_vol=True, atr_period=20,
-        min_atr_pct=0.3, max_atr_pct=2.0,
-    )
-
-    # ── 1. Run 008 repro ─────────────────────────────────────────────
+    # ── 1. Run 009 repro (1 MES, no ADX) ─────────────────────────────
     print("\n" + "#" * 64)
-    print("  RUN 008 REPRO  (prior-day H/L, 20d ATR)")
-    print("#" * 64)
-    kpis_008 = run_single(df_raw, verbose=True, **params_008)
-    yearly_breakdown(kpis_008)
-
-    # ── 2. Run 009: relaxed bias + 10-day ATR ────────────────────────
-    print("\n\n" + "#" * 64)
-    print("  RUN 009  (prior-day CLOSE, 10d ATR)")
+    print("  RUN 009 REPRO  (1 MES, no ADX)")
     print("#" * 64)
     kpis_009 = run_single(df_raw, verbose=True, **params_009)
     yearly_breakdown(kpis_009)
 
-    # ── 3. Quarter-Kelly analysis on Run 009 ─────────────────────────
+    # ── 2. ADX threshold ablation: 15, 20, 25 ────────────────────────
     print("\n\n" + "#" * 64)
-    print("  QUARTER-KELLY SIZING ANALYSIS (Run 009)")
+    print("  ADX THRESHOLD ABLATION")
     print("#" * 64)
-    kelly = kelly_analysis(kpis_009)
 
-    # ── 4. Walk-forward validation on Run 009 ────────────────────────
+    print(f"\n  {'ADX':>4}  {'Trades':>6}  {'Win%':>6}  {'PF':>7}"
+          f"  {'Net $':>10}  {'MaxDD%':>7}  {'Avg$':>8}")
+    print("  " + "-" * 60)
+
+    adx_results = {}
+    for adx_thresh in [15, 20, 25]:
+        params = dict(**params_009, use_adx=True, min_adx=adx_thresh)
+        kpis = run_single(df_raw, verbose=False, **params)
+        closed = [t for t in kpis.get("trades", []) if t.exit_date]
+        pf = kpis.get("profit_factor", 0)
+        pf_str = f"{pf:.3f}" if pf < 999 else "inf"
+        print(f"  {adx_thresh:>4}  {len(closed):>6}  "
+              f"{kpis.get('win_rate', 0):>5.1f}%  {pf_str:>7s}"
+              f"  {kpis.get('net_profit', 0):>+10,.2f}"
+              f"  {abs(kpis.get('max_drawdown_pct', 0)):>6.2f}%"
+              f"  {kpis.get('avg_trade', 0):>+8,.2f}")
+        adx_results[adx_thresh] = kpis
+
+    # Find best by PF among those with trades
+    best_adx = max(adx_results, key=lambda k: adx_results[k].get("profit_factor", 0))
+    print(f"\n  BEST ADX threshold: {best_adx}")
+
+    # ── 3. Detailed run of best ADX ──────────────────────────────────
     print("\n\n" + "#" * 64)
-    print("  WALK-FORWARD: Train 2008-2019 / Test 2020-2026")
+    print(f"  RUN 010  (ADX > {best_adx})")
     print("#" * 64)
-    wf = walk_forward(df_raw, params_009)
+    params_010 = dict(**params_009, use_adx=True, min_adx=best_adx)
+    kpis_010 = run_single(df_raw, verbose=True, **params_010)
+    yearly_breakdown(kpis_010)
 
-    return kpis_009
+    # ── 4. Walk-forward on best ADX ──────────────────────────────────
+    print("\n\n" + "#" * 64)
+    print(f"  WALK-FORWARD: Train 2008-2019 / Test 2020-2026 (ADX>{best_adx})")
+    print("#" * 64)
+    wf = walk_forward(df_raw, params_010)
+
+    return kpis_010
 
 
 if __name__ == "__main__":
