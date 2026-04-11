@@ -443,6 +443,9 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
                     atr_vol_pct=None,
                     min_atr_pct=0.0, max_atr_pct=999.0,
                     adx_values=None, min_adx=0.0,
+                    # Two-bar retest confirmation — tested in Run 011, rejected.
+                    # Waiting for bar 2 lets good setups escape. Single-bar retest is superior.
+                    # Preserved here for potential Phase 2 VWAP scalp testing.
                     use_two_bar_retest=False,
                     use_breakout_quality=False):
     """
@@ -1144,7 +1147,7 @@ def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-02"
 
 
 # ---------------------------------------------------------------------------
-# Main — Run 011: Two-bar retest + breakout candle quality
+# Main — Run 012: R:R ratio ablation
 # ---------------------------------------------------------------------------
 
 def main():
@@ -1159,66 +1162,80 @@ def main():
     print(f"Trading days: {len(orb_bars):,}")
     print(f"Contract:  1 MES ($5/point, $0.62 commission)")
 
-    # Run 010 baseline (all filters, no entry quality)
-    base_010 = dict(
-        rr_ratio=1.0, sl_frac=0.5, retest_ticks=2,
+    # Run 011 best config (breakout quality, single-bar retest)
+    base_011 = dict(
+        sl_frac=0.5, retest_ticks=2,
         min_orb_pct=0.3, max_orb_pct=1.0,
         use_regime=True,
         use_prior_day=True, bias_mode="close",
         use_atr_vol=True, atr_period=10,
         min_atr_pct=0.3, max_atr_pct=2.0,
         use_adx=True, min_adx=15,
+        use_breakout_quality=True,
     )
 
-    # ── Ablation study ────────────────────────────────────────────────
-    variants = [
-        ("Run 010 baseline",         dict(**base_010)),
-        ("+ Two-bar retest only",    dict(**base_010, use_two_bar_retest=True)),
-        ("+ Breakout quality only",  dict(**base_010, use_breakout_quality=True)),
-        ("Both (full Run 011)",      dict(**base_010, use_two_bar_retest=True,
-                                          use_breakout_quality=True)),
-    ]
+    # ── R:R ablation ─────────────────────────────────────────────────
+    rr_ratios = [0.75, 1.0, 1.25, 1.5]
 
     print("\n" + "#" * 64)
-    print("  RUN 011 ABLATION STUDY")
+    print("  RUN 012 — R:R RATIO ABLATION")
     print("#" * 64)
 
-    print(f"\n  {'Variant':<30s}  {'Trades':>6}  {'Win%':>6}  {'PF':>7}"
-          f"  {'Net $':>10}  {'MaxDD%':>7}  {'Avg$':>8}")
+    print(f"\n  {'R:R':>5}  {'Trades':>6}  {'Win%':>6}  {'PF':>7}"
+          f"  {'Net $':>10}  {'MaxDD%':>7}  {'Avg$':>8}"
+          f"  {'AvgWin':>8}  {'AvgLoss':>8}")
     print("  " + "-" * 82)
 
-    ablation_kpis = {}
-    for label, params in variants:
-        kpis = run_single(df_raw, verbose=False, **params)
+    rr_kpis = {}
+    for rr in rr_ratios:
+        kpis = run_single(df_raw, rr_ratio=rr, verbose=False, **base_011)
         closed = [t for t in kpis.get("trades", []) if t.exit_date]
         pf = kpis.get("profit_factor", 0)
         pf_str = f"{pf:.3f}" if pf < 999 else "inf"
-        print(f"  {label:<30s}  {len(closed):>6}  "
+        aw = kpis.get("avg_winning_trade", 0)
+        al = kpis.get("avg_losing_trade", 0)
+        print(f"  {rr:>5.2f}  {len(closed):>6}  "
               f"{kpis.get('win_rate', 0):>5.1f}%  {pf_str:>7s}"
               f"  {kpis.get('net_profit', 0):>+10,.2f}"
               f"  {abs(kpis.get('max_drawdown_pct', 0)):>6.2f}%"
-              f"  {kpis.get('avg_trade', 0):>+8,.2f}")
-        ablation_kpis[label] = kpis
+              f"  {kpis.get('avg_trade', 0):>+8,.2f}"
+              f"  {aw:>+8,.2f}  {al:>+8,.2f}")
+        rr_kpis[rr] = kpis
 
-    # Find best by PF
-    best_label = max(ablation_kpis,
-                     key=lambda k: ablation_kpis[k].get("profit_factor", 0))
-    best_kpis = ablation_kpis[best_label]
-    print(f"\n  BEST: {best_label}")
+    # Find highest win rate
+    best_wr_rr = max(rr_kpis, key=lambda k: rr_kpis[k].get("win_rate", 0))
+    # Find highest PF
+    best_pf_rr = max(rr_kpis, key=lambda k: rr_kpis[k].get("profit_factor", 0))
 
-    # ── Detailed run of best ──────────────────────────────────────────
-    best_params = dict(variants[[l for l, _ in variants].index(best_label)][1])
+    # Check Phase 1 targets: WR >= 62%, PF >= 1.5, DD <= 15%
+    print(f"\n  Highest win rate:    R:R={best_wr_rr}")
+    print(f"  Highest PF:          R:R={best_pf_rr}")
+
+    candidates = []
+    for rr, kpis in rr_kpis.items():
+        wr = kpis.get("win_rate", 0)
+        pf = kpis.get("profit_factor", 0)
+        dd = abs(kpis.get("max_drawdown_pct", 0))
+        if wr >= 62 and pf >= 1.5 and dd <= 15:
+            candidates.append(rr)
+            print(f"\n  *** R:R={rr} MEETS ALL PHASE 1 TARGETS ***"
+                  f"  WR={wr:.1f}%  PF={pf:.3f}  DD={dd:.2f}%")
+
+    if not candidates:
+        print("\n  No variant meets all Phase 1 targets simultaneously.")
+
+    # ── Detailed run of highest-win-rate variant ──────────────────────
     print(f"\n\n{'#' * 64}")
-    print(f"  {best_label.upper()}")
+    print(f"  BEST WIN RATE: R:R = {best_wr_rr}")
     print("#" * 64)
-    best_kpis = run_single(df_raw, verbose=True, **best_params)
+    best_kpis = run_single(df_raw, rr_ratio=best_wr_rr, verbose=True, **base_011)
     yearly_breakdown(best_kpis)
 
-    # ── Walk-forward ──────────────────────────────────────────────────
+    # ── Walk-forward on highest-win-rate variant ──────────────────────
     print(f"\n\n{'#' * 64}")
-    print(f"  WALK-FORWARD: {best_label}")
+    print(f"  WALK-FORWARD: R:R = {best_wr_rr}")
     print("#" * 64)
-    wf = walk_forward(df_raw, best_params)
+    wf = walk_forward(df_raw, dict(rr_ratio=best_wr_rr, **base_011))
 
     return best_kpis
 
