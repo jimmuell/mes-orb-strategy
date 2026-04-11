@@ -7,12 +7,14 @@ Data source: ES Continuous Futures (E-mini S&P 500, $50/point)
   Timezone:  US Eastern Time
   Format:    timestamp (yyyy-MM-dd HH:mm:ss), open, high, low, close, volume
 
-Strategy (from pine/mes_orb_v1.pine):
+Strategy (evolved from pine/mes_orb_v1.pine):
 - ORB = first 5-min bar at 9:30 ET (regular session open)
-- Long: breakout above ORB high + retest + close > VWAP + close > EMA-9
-- Short: breakdown below ORB low + retest + close < VWAP + close < EMA-9
+- Long: breakout above ORB high + retest + prior-day bias (ORB > prev close)
+- Short: breakdown below ORB low + retest + prior-day bias (ORB < prev close)
+- Filters: 200-day SMA regime, ATR vol regime (0.3-2.0%), ORB range (0.3-1.0%)
 - SL = configurable fraction of ORB range, TP = R:R × risk
 - One trade per day, 2 contracts
+- VWAP/EMA confluence removed in Run 008 (zero selectivity on ES)
 
 Contract specs used in this backtest:
   ES  (E-mini):  $50/point, $2.25/contract commission
@@ -21,6 +23,12 @@ Contract specs used in this backtest:
   Win rate and profit factor are identical; dollar P&L scales 10:1.
 
 Current backtest uses ES specs (qty_value = 2 × $50 = 100).
+
+Known limitations (deferred — revisit after Run 009):
+- Item 4:  generate_es_6months Monday branch is a no-op (synthetic data, legacy)
+- Item 5:  mes_orb_signals has 16+ params — should be a StrategyConfig dataclass
+- Item 6:  Commission uses avg price across full dataset (inaccurate at extremes)
+- Item 7:  Daily filters recomputed per run_single call (could be cached)
 """
 
 import sys
@@ -382,12 +390,16 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
       - atr_vol_pct + min/max_atr_pct: ATR% vol filter.
       - regime_sma: 200-day SMA directional filter.
     """
+    if bias_mode not in ("close", "hl"):
+        raise ValueError(f"Invalid bias_mode '{bias_mode}'. Expected 'close' or 'hl'.")
+
     df = df.copy()
     n = len(df)
 
     # --- Indicators ---
-    df["ema9"] = calc_ema(df["Close"], ema_len)
-    df["hlc3"] = (df["High"] + df["Low"] + df["Close"]) / 3.0
+    # Removed in Run 008 — VWAP/EMA replaced by prior-day bias + ATR vol filters
+    # df["ema9"] = calc_ema(df["Close"], ema_len)
+    # df["hlc3"] = (df["High"] + df["Low"] + df["Close"]) / 3.0
 
     # --- Time masks (Eastern Time) ---
     hours = df.index.hour
@@ -404,8 +416,6 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
     lows    = df["Low"].values
     closes  = df["Close"].values
     volumes = df["Volume"].values.astype(float)
-    ema9    = df["ema9"].values
-    hlc3    = df["hlc3"].values
 
     # --- Output columns ---
     long_entry  = np.zeros(n, dtype=bool)
@@ -474,11 +484,11 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
                 orb_low  = min(orb_low, lows[i])
             orb_set = True
 
-        # ── 4. Session VWAP ───────────────────────────────────────────
-        if is_sess[i] and volumes[i] > 0:
-            cum_tpv += hlc3[i] * volumes[i]
-            cum_vol += volumes[i]
-            vwap = cum_tpv / cum_vol
+        # ── 4. Session VWAP (disabled — Run 008 removed VWAP filter) ─
+        # if is_sess[i] and volumes[i] > 0:
+        #     cum_tpv += hlc3[i] * volumes[i]
+        #     cum_vol += volumes[i]
+        #     vwap = cum_tpv / cum_vol
 
         # ── 5. Post-ORB breakout detection ────────────────────────────
         post_orb = orb_set and not is_orb[i] and is_sess[i]
@@ -864,16 +874,12 @@ def kelly_analysis(kpis, initial_capital=25000.0):
         if dd < fixed_max_dd:
             fixed_max_dd = dd
 
-    # Quarter-Kelly equity curve: scale each trade's PnL by (kelly_quarter)
-    # relative to current equity / initial_capital
+    # Quarter-Kelly equity curve: scale each trade's PnL by kelly_quarter
+    # Fixed fraction applied directly — no equity-ratio compounding.
     qk_equity = [initial_capital]
     for t in trades:
-        eq = qk_equity[-1]
-        # fraction of a full position to take
-        frac = max(0, kelly_quarter) * (eq / initial_capital)
-        # scale PnL: if frac < 1, we're taking a smaller position
-        scaled_pnl = t.pnl * frac
-        qk_equity.append(eq + scaled_pnl)
+        scaled_pnl = t.pnl * max(0, kelly_quarter)
+        qk_equity.append(qk_equity[-1] + scaled_pnl)
 
     qk_peak = initial_capital
     qk_max_dd = 0
@@ -936,14 +942,8 @@ def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-01"
     kpis_train = run_single(df_train, verbose=False, **params)
     kpis_test  = run_single(df_test, verbose=False, **params)
 
-    for label, k in [("Train", kpis_train), ("Test", kpis_test)]:
-        trades = [t for t in k.get("trades", []) if t.exit_date is not None]
-        print(f"  DEBUG {label}: {len(trades)} trades")
-
-    closed_tr = [t for t in kpis_train.get("trades", []) if t.exit_date]
-    closed_te = [t for t in kpis_test.get("trades", []) if t.exit_date]
-
-    def _fmt(kpis, closed):
+    def _fmt(kpis):
+        closed = [t for t in kpis.get("trades", []) if t.exit_date]
         n = len(closed)
         wr = kpis.get("win_rate", 0)
         pf = kpis.get("profit_factor", 0)
@@ -952,8 +952,8 @@ def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-01"
         avg = kpis.get("avg_trade", 0)
         return n, wr, pf, net, dd, avg
 
-    n_tr, wr_tr, pf_tr, net_tr, dd_tr, avg_tr = _fmt(kpis_train, closed_tr)
-    n_te, wr_te, pf_te, net_te, dd_te, avg_te = _fmt(kpis_test, closed_te)
+    n_tr, wr_tr, pf_tr, net_tr, dd_tr, avg_tr = _fmt(kpis_train)
+    n_te, wr_te, pf_te, net_te, dd_te, avg_te = _fmt(kpis_test)
 
     print(f"  {'Trades':20s}  {n_tr:>14d}  {n_te:>14d}")
     print(f"  {'Win Rate':20s}  {wr_tr:>13.1f}%  {wr_te:>13.1f}%")
