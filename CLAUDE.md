@@ -182,3 +182,9 @@ Location: /Users/jameslmueller/tradingview-mcp-jackson/src/server.js
 Screenshots: /Users/jameslmueller/tradingview-mcp-jackson/screenshots/
 Settings: ~/.claude/settings.json
 Note: MCP only loads in Claude.ai chat sessions, NOT Claude Code terminal sessions.
+
+## Data Files
+Large data files are managed via Git LFS.
+Run `git lfs pull` after cloning to download data files.
+Primary dataset: data/raw/ES_full_5min_continuous_UNadjusted.txt (68MB)
+Git LFS version: 3.7.1
