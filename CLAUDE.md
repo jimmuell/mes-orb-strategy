@@ -27,6 +27,64 @@ When reporting back always include:
 - Whether the commit succeeded and the GitHub push URL
 - Any questions or blockers for Senior Claude
 
+## Project Roadmap
+
+### Phase 1 — MES ORB Strategy (current focus)
+A directional breakout strategy trading 1 MES contract per day maximum.
+Target metrics before live deployment:
+- Win Rate ≥ 70%
+- Profit Factor ≥ 1.5
+- Max Drawdown ≤ 15%
+- Walk-forward validated
+- Pine Script converted and paper traded 30 days minimum
+
+Current status:
+- Win Rate: 56.3% (Run 009)
+- Profit Factor: 1.399 (Run 009)
+- Max Drawdown: 31.3% (Run 009)
+- Walk-forward: validated ✅
+- Contracts: 1 MES per trade (standardized Run 010 onwards)
+
+Remaining steps:
+1. Run 010 — ADX trend quality filter (in progress)
+2. Run 011 — R:R ratio tuning
+3. Run 012 — drawdown control / position sizing
+4. Pine Script conversion
+5. 30-day paper trade validation
+6. Go live
+
+### Phase 2 — VWAP Reversion Scalp Strategy
+A mean reversion strategy designed for choppy/ranging days when the ORB
+strategy sits out. Target 1-3 trades per day on a 1-2 minute chart.
+
+| Attribute | ORB Strategy | VWAP Scalp |
+|---|---|---|
+| Trade type | Directional breakout | Mean reversion |
+| Trades/day | 1 max | 1-3 |
+| Best conditions | Trending days (ADX > 20) | Choppy days (ADX < 20) |
+| Timeframe | 5-min | 1-2 min |
+| Entry trigger | ORB breakout + retest | VWAP deviation + fade |
+| Contracts | 1 MES | 1 MES |
+
+Target metrics (same as Phase 1):
+- Win Rate ≥ 70%
+- Profit Factor ≥ 1.5
+- Max Drawdown ≤ 15%
+- Walk-forward validated
+- Pine Script converted and paper traded 30 days minimum
+
+Status: Pending Phase 1 completion. Senior Claude will issue Phase 2
+spec when Phase 1 paper trade begins.
+
+### Full System Vision
+When both strategies are complete:
+- 1 directional trade per day (ORB) on trending days
+- 1-3 mean reversion trades per day (VWAP scalp) on choppy days
+- Natural hedge — strategies complement rather than compete
+- Both running on TradingView with Pine Script alerts
+- Alerts delivered via webhook → WhatsApp (Twilio infrastructure already built)
+- Complete validated retail futures trading system on 1 MES contract
+
 ## Git & GitHub Commit Policy
 
 **Remote:** All commits must be pushed to GitHub after committing locally.
