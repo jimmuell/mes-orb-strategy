@@ -1192,8 +1192,8 @@ def main():
         closed = [t for t in kpis.get("trades", []) if t.exit_date]
         pf = kpis.get("profit_factor", 0)
         pf_str = f"{pf:.3f}" if pf < 999 else "inf"
-        aw = kpis.get("avg_winning_trade", 0)
-        al = kpis.get("avg_losing_trade", 0)
+        aw = kpis.get("avg_winning", 0)
+        al = kpis.get("avg_losing", 0)
         print(f"  {rr:>5.2f}  {len(closed):>6}  "
               f"{kpis.get('win_rate', 0):>5.1f}%  {pf_str:>7s}"
               f"  {kpis.get('net_profit', 0):>+10,.2f}"
