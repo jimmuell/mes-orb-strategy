@@ -21,8 +21,8 @@
 | Regime Filter | 200-day SMA (longs above, shorts below) |
 | Prior-Day Bias | ORB high > prior day **close** (long), ORB low < prior day **close** (short) |
 | ATR Vol Filter | **10-day** ATR% between 0.3% and 2.0% |
-| Position Size | 2 ES contracts ($50/point) |
-| Commission | $2.25/contract |
+| Position Size | 1 MES contract ($5/point) — standardized Run 010+ |
+| Commission | $0.62/contract |
 
 **Results (18-year real ES, 167 trades):** PF 1.399 | Win 56.3% | Max DD 31% | Net +$18,024
 

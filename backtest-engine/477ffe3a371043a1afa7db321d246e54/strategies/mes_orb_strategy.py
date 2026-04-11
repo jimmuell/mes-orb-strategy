@@ -22,7 +22,8 @@ Contract specs used in this backtest:
   Both share the same tick size (0.25), price feed, and ORB levels.
   Win rate and profit factor are identical; dollar P&L scales 10:1.
 
-Current backtest uses ES specs (qty_value = 2 × $50 = 100).
+Current backtest uses 1 MES contract (qty_value = 1 × $5 = 5).
+Standardized to 1 MES from Run 010 onwards.
 
 Known limitations (deferred — revisit after Run 009):
 - Item 4:  generate_es_6months Monday branch is a no-op (synthetic data, legacy)
@@ -46,12 +47,12 @@ from engine import (
 # ── Contract specs ────────────────────────────────────────────────────────
 ES_MULTIPLIER = 50.0    # $50 per point for ES (E-mini)
 MES_MULTIPLIER = 5.0    # $5 per point for MES (Micro)
-CONTRACTS = 2
+CONTRACTS = 1
 TICK = 0.25             # ES/MES tick size
 
-# Active config — ES specs (change to MES when using MES data)
-POINT_VALUE = ES_MULTIPLIER
-COMMISSION_PER_CONTRACT = 2.25   # ES round-turn per side
+# Active config — 1 MES contract (standardized Run 010 onwards)
+POINT_VALUE = MES_MULTIPLIER
+COMMISSION_PER_CONTRACT = 0.62   # MES per side
 
 STRATEGIES_DIR = Path(__file__).resolve().parent
 ENGINE_DIR = STRATEGIES_DIR.parent
@@ -651,9 +652,9 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
     start = str(df_raw.index[0].date())
     end = str(df_raw.index[-1].date() + pd.Timedelta(days=1))
 
-    qty = CONTRACTS * POINT_VALUE   # 2 × $50 = 100 for ES
-    comm_per_side = COMMISSION_PER_CONTRACT * CONTRACTS  # $2.25 × 2 = $4.50
-    # Approximate pct: comm / (qty × price). At ES ~6500: 4.50/(100×6500) ≈ 0.000692%
+    qty = CONTRACTS * POINT_VALUE   # 1 × $5 = 5 for MES
+    comm_per_side = COMMISSION_PER_CONTRACT * CONTRACTS  # $0.62 × 1 = $0.62
+    # Approximate pct: comm / (qty × price). At ES ~5000: 0.62/(5×5000) ≈ 0.00248%
     avg_price = df_raw["Close"].mean()
     comm_pct = comm_per_side / (qty * avg_price) * 100 if avg_price > 0 else 0
 
@@ -662,7 +663,7 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
         commission_pct=comm_pct,
         slippage_ticks=0,
         qty_type="fixed",
-        qty_value=qty,              # 2 contracts × $50/point = 100
+        qty_value=qty,              # 1 contract × $5/point = 5
         pyramiding=1,
         start_date=start,
         end_date=end,

@@ -159,7 +159,7 @@ Confirm "ETH" is shown in the bottom bar of TradingView.
 - Short entry: breakdown below ORB low + retest + close < VWAP + close < EMA-9
 - Stop loss: other side of opening range
 - Target: 2:1 R:R minimum
-- Contracts: 2 MES per trade
+- Contracts: 1 MES per trade (standardized Run 010 onwards)
 - One trade per day maximum — no re-entries
 
 ---
