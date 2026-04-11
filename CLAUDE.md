@@ -38,20 +38,21 @@ Target metrics before live deployment:
 - Walk-forward validated
 - Pine Script converted and paper traded 30 days minimum
 
-Current status:
-- Win Rate: 56.3% (Run 009)
-- Profit Factor: 1.399 (Run 009)
-- Max Drawdown: 31.3% (Run 009)
-- Walk-forward: validated ✅
-- Contracts: 1 MES per trade (standardized Run 010 onwards)
+Current status (Run 010):
+- Win Rate: 56.0% ❌ (target 70%)
+- Profit Factor: 1.338 ❌ (target 1.5)
+- Max Drawdown: 1.87% ✅ (target ≤15%)
+- Walk-forward: validated ✅ (edge is post-2020 regime dependent)
+- Contracts: 1 MES per trade ✅
 
 Remaining steps:
-1. Run 010 — ADX trend quality filter (in progress)
-2. Run 011 — R:R ratio tuning
-3. Run 012 — drawdown control / position sizing
-4. Pine Script conversion
-5. 30-day paper trade validation
-6. Go live
+1. ~~Run 010 — ADX trend quality filter~~ ✅ complete
+2. Run 011 — Entry quality (two-bar retest + breakout candle filter) ← current
+3. Run 012 — R:R ratio tuning
+4. Run 013 — Final parameter optimization if needed
+5. Pine Script conversion
+6. 30-day paper trade validation
+7. Go live
 
 ### Phase 2 — VWAP Reversion Scalp Strategy
 A mean reversion strategy designed for choppy/ranging days when the ORB
@@ -213,11 +214,15 @@ Confirm "ETH" is shown in the bottom bar of TradingView.
 
 ## Strategy Rules Summary
 - ORB = first 5-min candle of session (9:30-9:35 CT)
-- Long entry: breakout above ORB high + retest + close > VWAP + close > EMA-9
-- Short entry: breakdown below ORB low + retest + close < VWAP + close < EMA-9
-- Stop loss: other side of opening range
-- Target: 2:1 R:R minimum
-- Contracts: 1 MES per trade (standardized Run 010 onwards)
+- Long entry: breakout above ORB high + two-bar retest confirmation + ORB high > prior day close
+- Short entry: breakdown below ORB low + two-bar retest confirmation + ORB low < prior day close
+- Stop loss: 50% of ORB range
+- Target: 1:1 R:R
+- ORB range filter: 0.3-1.0% of price
+- ATR vol regime: 10-day rolling ATR% between 0.3% and 2.0%
+- 200-day SMA regime filter
+- ADX > 15 trend quality filter
+- Contracts: 1 MES per trade
 - One trade per day maximum — no re-entries
 
 ---
@@ -229,9 +234,11 @@ Confirm "ETH" is shown in the bottom bar of TradingView.
 - Total Trades: >= 20
 
 ## Parameters to Optimize
-- EMA Length (default: 9) — try 5, 9, 13, 21
-- R:R Ratio (default: 2.0) — try 1.5, 2.0, 2.5
-- Retest Tolerance (default: 4 ticks) — try various tick values
+- Retest confirmation bars (current: 2-bar)
+- Breakout candle quality threshold (current: testing in Run 011)
+- ADX threshold (tested: 15, 20, 25 — best: 15)
+- ATR vol range (current: 0.3-2.0%, 10-day)
+- R:R ratio (current: 1.0 — to be tuned in Run 012)
 
 ---
 
