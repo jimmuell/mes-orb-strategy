@@ -1,5 +1,7 @@
 # MES ORB Strategy — Backtest Results
 
+> **Phase 1** of a two-strategy system. Phase 2 (VWAP Reversion Scalp for choppy days) begins when Phase 1 enters paper trading. See CLAUDE.md for full roadmap.
+
 ## ES vs MES Note
 
 **All backtest runs (001-004) used incorrect MES specs ($5/point, $0.62 commission).** The sample data is ES (E-mini S&P 500, $50/point) from FirstRateData. Run 005+ uses correct ES specs. When backtesting MES, dollar P&L scales to 1/10th of ES but win rate and profit factor are identical since both contracts share the same price feed, tick size (0.25), and ORB levels.
