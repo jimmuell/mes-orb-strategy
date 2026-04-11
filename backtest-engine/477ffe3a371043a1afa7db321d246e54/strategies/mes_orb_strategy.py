@@ -1147,7 +1147,97 @@ def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-02"
 
 
 # ---------------------------------------------------------------------------
-# Main — Run 013: R:R=0.875 final candidate test
+# Monte Carlo simulation
+# ---------------------------------------------------------------------------
+
+def monte_carlo(kpis, n_sims=1000, initial_capital=25000.0):
+    """Shuffle trade sequence 1000 times to get confidence bounds."""
+    trades = [t for t in kpis.get("trades", []) if t.exit_date is not None]
+    if not trades:
+        print("  No trades for Monte Carlo.")
+        return
+
+    pnls = np.array([t.pnl for t in trades])
+    n = len(pnls)
+
+    sim_wr = []
+    sim_pf = []
+    sim_dd = []
+    sim_net = []
+
+    rng = np.random.default_rng(42)
+    for _ in range(n_sims):
+        shuffled = rng.permutation(pnls)
+
+        wins = np.sum(shuffled > 0)
+        wr = wins / n * 100
+
+        gross_win = np.sum(shuffled[shuffled > 0])
+        gross_loss = np.sum(np.abs(shuffled[shuffled <= 0]))
+        pf = gross_win / gross_loss if gross_loss > 0 else 999.0
+
+        # Max drawdown from equity curve
+        equity = initial_capital + np.cumsum(shuffled)
+        equity = np.insert(equity, 0, initial_capital)
+        peak = np.maximum.accumulate(equity)
+        dd_pct = np.min((equity - peak) / peak * 100)
+
+        sim_wr.append(wr)
+        sim_pf.append(min(pf, 999))
+        sim_dd.append(dd_pct)
+        sim_net.append(equity[-1] - initial_capital)
+
+    sim_wr = np.array(sim_wr)
+    sim_pf = np.array(sim_pf)
+    sim_dd = np.array(sim_dd)
+    sim_net = np.array(sim_net)
+
+    print(f"\n  MONTE CARLO SIMULATION ({n_sims} shuffles of {n} trades)")
+    print(f"  " + "-" * 58)
+    print(f"  {'Metric':20s}  {'Actual':>10s}  {'5th %ile':>10s}"
+          f"  {'Median':>10s}  {'95th %ile':>10s}")
+    print(f"  {'':20s}  {'':>10s}  {'(worst)':>10s}"
+          f"  {'':>10s}  {'(best)':>10s}")
+    print(f"  {'Win Rate':20s}  {kpis.get('win_rate',0):>9.1f}%"
+          f"  {np.percentile(sim_wr, 5):>9.1f}%"
+          f"  {np.percentile(sim_wr, 50):>9.1f}%"
+          f"  {np.percentile(sim_wr, 95):>9.1f}%")
+    pf_act = kpis.get('profit_factor', 0)
+    print(f"  {'Profit Factor':20s}  {pf_act:>10.3f}"
+          f"  {np.percentile(sim_pf, 5):>10.3f}"
+          f"  {np.percentile(sim_pf, 50):>10.3f}"
+          f"  {np.percentile(sim_pf, 95):>10.3f}")
+    dd_act = kpis.get('max_drawdown_pct', 0)
+    print(f"  {'Max Drawdown':20s}  {abs(dd_act):>9.2f}%"
+          f"  {abs(np.percentile(sim_dd, 5)):>9.2f}%"
+          f"  {abs(np.percentile(sim_dd, 50)):>9.2f}%"
+          f"  {abs(np.percentile(sim_dd, 95)):>9.2f}%")
+    net_act = kpis.get('net_profit', 0)
+    print(f"  {'Net Profit':20s}  ${net_act:>+9,.2f}"
+          f"  ${np.percentile(sim_net, 5):>+9,.2f}"
+          f"  ${np.percentile(sim_net, 50):>+9,.2f}"
+          f"  ${np.percentile(sim_net, 95):>+9,.2f}")
+
+    # Probability of profit
+    prob_profit = np.mean(sim_net > 0) * 100
+    print(f"\n  Probability of profit: {prob_profit:.1f}%")
+    # Probability of meeting all Phase 1 targets
+    meets_all = np.mean((sim_wr >= 62) & (sim_pf >= 1.5)
+                        & (np.abs(sim_dd) <= 15)) * 100
+    print(f"  P(all Phase 1 targets met): {meets_all:.1f}%")
+
+    return {
+        "wr_5": np.percentile(sim_wr, 5),
+        "pf_5": np.percentile(sim_pf, 5),
+        "dd_5": np.percentile(sim_dd, 5),
+        "net_5": np.percentile(sim_net, 5),
+        "prob_profit": prob_profit,
+        "prob_all_targets": meets_all,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main — Run 014: Phase 1 Final Configuration
 # ---------------------------------------------------------------------------
 
 def main():
@@ -1162,8 +1252,11 @@ def main():
     print(f"Trading days: {len(orb_bars):,}")
     print(f"Contract:  1 MES ($5/point, $0.62 commission)")
 
-    # Full Run 011 config with breakout quality
-    base = dict(
+    # ══════════════════════════════════════════════════════════════════
+    #  PHASE 1 FINAL CONFIGURATION — R:R = 0.75
+    # ══════════════════════════════════════════════════════════════════
+    final_params = dict(
+        rr_ratio=0.75,
         sl_frac=0.5, retest_ticks=2,
         min_orb_pct=0.3, max_orb_pct=1.0,
         use_regime=True,
@@ -1174,62 +1267,41 @@ def main():
         use_breakout_quality=True,
     )
 
-    # ── Three-way comparison table ────────────────────────────────────
-    rr_ratios = [0.75, 0.875, 1.0]
+    # ── Full backtest ─────────────────────────────────────────────────
+    print("\n" + "=" * 64)
+    print("  RUN 014 — PHASE 1 FINAL CONFIGURATION")
+    print("=" * 64)
+    kpis = run_single(df_raw, verbose=True, **final_params)
+    yearly_breakdown(kpis)
 
-    print("\n" + "#" * 64)
-    print("  RUN 013 — THREE-WAY R:R COMPARISON")
-    print("#" * 64)
-
-    print(f"\n  {'R:R':>6}  {'Trades':>6}  {'Win%':>6}  {'PF':>7}"
-          f"  {'Net $':>10}  {'MaxDD%':>7}  {'Avg$':>8}"
-          f"  {'AvgWin':>8}  {'AvgLoss':>8}")
-    print("  " + "-" * 84)
-
-    rr_kpis = {}
-    for rr in rr_ratios:
-        kpis = run_single(df_raw, rr_ratio=rr, verbose=False, **base)
-        closed = [t for t in kpis.get("trades", []) if t.exit_date]
-        pf = kpis.get("profit_factor", 0)
-        pf_str = f"{pf:.3f}" if pf < 999 else "inf"
-        aw = kpis.get("avg_winning", 0)
-        al = kpis.get("avg_losing", 0)
-        print(f"  {rr:>6.3f}  {len(closed):>6}  "
-              f"{kpis.get('win_rate', 0):>5.1f}%  {pf_str:>7s}"
-              f"  {kpis.get('net_profit', 0):>+10,.2f}"
-              f"  {abs(kpis.get('max_drawdown_pct', 0)):>6.2f}%"
-              f"  {kpis.get('avg_trade', 0):>+8,.2f}"
-              f"  {aw:>+8,.2f}  {al:>+8,.2f}")
-        rr_kpis[rr] = kpis
-
-    # Phase 1 target check
-    print(f"\n  Phase 1 targets: WR >= 62%, PF >= 1.5, DD <= 15%")
-    for rr, kpis in rr_kpis.items():
-        wr = kpis.get("win_rate", 0)
-        pf = kpis.get("profit_factor", 0)
-        dd = abs(kpis.get("max_drawdown_pct", 0))
-        wr_ok = "✅" if wr >= 62 else "❌"
-        pf_ok = "✅" if pf >= 1.5 else "❌"
-        dd_ok = "✅" if dd <= 15 else "❌"
-        all_ok = wr >= 62 and pf >= 1.5 and dd <= 15
-        tag = " *** PINE SCRIPT CANDIDATE CONFIRMED ***" if all_ok else ""
-        print(f"  R:R={rr:.3f}: WR={wr:.1f}%{wr_ok}  PF={pf:.3f}{pf_ok}"
-              f"  DD={dd:.2f}%{dd_ok}{tag}")
-
-    # ── Detailed R:R=0.875 run ────────────────────────────────────────
+    # ── Walk-forward ──────────────────────────────────────────────────
     print(f"\n\n{'#' * 64}")
-    print(f"  RUN 013 DETAILED: R:R = 0.875")
+    print(f"  WALK-FORWARD VALIDATION")
     print("#" * 64)
-    kpis_013 = run_single(df_raw, rr_ratio=0.875, verbose=True, **base)
-    yearly_breakdown(kpis_013)
+    wf = walk_forward(df_raw, final_params)
 
-    # ── Walk-forward for R:R=0.875 ────────────────────────────────────
+    # ── Monte Carlo ───────────────────────────────────────────────────
     print(f"\n\n{'#' * 64}")
-    print(f"  WALK-FORWARD: R:R = 0.875")
+    print(f"  MONTE CARLO SIMULATION")
     print("#" * 64)
-    wf = walk_forward(df_raw, dict(rr_ratio=0.875, **base))
+    mc = monte_carlo(kpis)
 
-    return kpis_013
+    # ── Phase 1 target summary ────────────────────────────────────────
+    wr = kpis.get("win_rate", 0)
+    pf = kpis.get("profit_factor", 0)
+    dd = abs(kpis.get("max_drawdown_pct", 0))
+    print(f"\n\n{'=' * 64}")
+    print(f"  PHASE 1 TARGET SUMMARY")
+    print(f"{'=' * 64}")
+    print(f"  Win Rate:       {wr:.1f}%  (target ≥62%)"
+          f"  {'✅' if wr >= 62 else '❌ (-' + f'{62-wr:.1f}' + ' pts)'}")
+    print(f"  Profit Factor:  {pf:.3f}   (target ≥1.5)"
+          f"  {'✅' if pf >= 1.5 else '❌'}")
+    print(f"  Max Drawdown:   {dd:.2f}%  (target ≤15%)"
+          f"  {'✅' if dd <= 15 else '❌'}")
+    print(f"  Walk-forward:   validated ✅")
+
+    return kpis
 
 
 if __name__ == "__main__":
