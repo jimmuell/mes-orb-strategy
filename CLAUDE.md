@@ -28,6 +28,8 @@ When reporting back always include:
 - Any questions or blockers for Senior Claude
 
 ## Project Roadmap
+- ⚠️ TradingView alert expires June 11, 2026 — renew before that date
+  Go to TradingView Alerts panel → click the alert → Edit → extend expiration date
 
 ### Phase 1 — MES ORB Strategy ✅ OPTIMIZATION COMPLETE
 Final configuration confirmed Run 014. Ready for Pine Script conversion.
@@ -52,9 +54,11 @@ Final configuration:
 
 Remaining steps:
 1. ~~Runs 001-014 — Backtest optimization~~ ✅ complete
-2. Pine Script conversion ← next
-3. 30-day paper trade validation
-4. Go live
+2. ~~Pine Script conversion~~ ✅ complete (mes_orb_v2.pine)
+3. ~~TradingView deployment~~ ✅ complete (MES1! 5-min chart, alert active)
+4. 30-day paper trade validation ← current (started April 14, 2026)
+5. TradingView alert expires June 11, 2026 — renew before that date
+6. Go live assessment — Senior Claude reviews paper trade log after 30 days
 
 ### Phase 2 — VWAP Reversion Scalp Strategy
 A mean reversion strategy designed for choppy/ranging days when the ORB
