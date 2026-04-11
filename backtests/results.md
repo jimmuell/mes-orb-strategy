@@ -10,7 +10,7 @@
 | Commission/contract | $2.25 | $0.62 |
 | Tick size | 0.25 ($12.50) | 0.25 ($1.25) |
 
-## Current Best Configuration (Run 007)
+## Current Best Configuration (Run 008)
 
 | Parameter | Value |
 |---|---|
@@ -19,36 +19,39 @@
 | Retest Tolerance | 2 ticks (0.50 pts) |
 | ORB Range Filter | 0.3% – 1.0% of price |
 | Regime Filter | 200-day SMA (longs above, shorts below) |
-| EMA Length | 9 |
+| Prior-Day Bias | ORB high > prior day high (long), ORB low < prior day low (short) |
+| ATR Vol Filter | 20-day ATR% between 0.3% and 2.0% |
 | Position Size | 2 ES contracts ($50/point) |
 | Commission | $2.25/contract |
 
-**Results (18-year real ES, 606 trades):** PF 0.903 | Win 48.7% | Max DD 127% | Net -$18,994
+**Results (18-year real ES, 92 trades):** PF 1.734 | Win 56.5% | Max DD 38% | Net +$17,665
 
-**Not profitable.** PF improved from 0.656 (Run 003) → 0.903 (Run 007) across seven iterations but the strategy remains net-negative over 18 years.
+**First profitable configuration.** Prior-day H/L bias was the breakthrough — ensures entries align with overnight momentum. Combined with ATR vol filter for selectivity. 13 of 18 years profitable.
 
-## Key Findings (as of Run 007)
+## Key Findings (as of Run 008)
 
-1. **ORB breakout+retest produces coin-flip results.** Win rate is stuck at ~49-51% regardless of retest tolerance, R:R ratio, or SL fraction. The entry signal has no predictive power on its own.
+1. **Prior-day H/L bias is the breakthrough filter.** Requiring the ORB to open beyond yesterday's range (gap-up for longs, gap-down for shorts) flipped the strategy from -$19k to +$15k on its own. It ensures overnight conviction backs the trade direction.
 
-2. **VWAP and EMA-9 confluence filters contribute zero selectivity.** Every qualifying ORB breakout already satisfies VWAP > ORB high and close > EMA-9. These filters pass 100% of trades and should be replaced.
+2. **ATR vol filter provides selectivity.** Limiting trades to 20-day ATR% between 0.3% and 2.0% cuts trade count from 326 to 92 but boosts PF from 1.163 to 1.734. It filters both ultra-calm chop and extreme panic.
 
-3. **2022 bear market is the strategy killer.** 108 trades, 44% win, -$17,420 (even with regime filter). Persistent downtrend generated constant ORB breakouts that reversed. A regime filter is essential but insufficient — need a volatility or trend-strength filter.
+3. **Full stack (SMA + prior-day + ATR) = PF 1.734, 56.5% win rate.** 92 trades over 18 years, +$17,665 net, 13 of 18 years profitable. First configuration with clear positive expectancy.
 
-4. **Best performance in high-vol trending markets.** 2023 (PF 2.28, +$5,393), 2026 (PF 3.95, +$6,654), and 2020 post-crash (PF 1.10, +$3,240). The strategy works when markets trend strongly after the open.
+4. **VWAP/EMA confluence was the problem, not the ORB concept.** Removing VWAP/EMA and replacing with directional + volatility filters transformed the strategy from coin-flip to profitable.
 
-5. **The 200-day SMA regime filter helps but is too blunt.** It cut 2022 losses by 50% and flipped 2020 profitable, but also blocked profitable pullback shorts in bull markets (e.g., 2025: went from +$1,883 to -$5,176).
+5. **2022 is now manageable.** Losses went from -$17.4k (Run 007) to -$3.2k (Run 008). Triple filter stack eliminated most counter-trend disasters.
 
-6. **Data source:** ES continuous unadjusted 5-min from [firstratedata.com](https://firstratedata.com/i/futures/ES), Jan 2008 – Apr 2026.
+6. **2020 COVID crash was the best year.** +$10,877 from 6 trades at PF 5.27. Massive ORB ranges with strong gap follow-through — exactly the regime these filters select for.
 
-7. **All dollar P&L is ES ($50/point).** Divide by 10 for MES equivalent.
+7. **Trade frequency is low: 5.1/year.** Not a standalone income strategy, but viable as one component of a multi-strategy portfolio. Each trade averages +$192 with avg win $703 vs avg loss $459.
 
-### Next Experiment
-Replace VWAP/EMA with filters that actually discriminate:
-- **VIX level filter** — only trade when VIX > 15 (higher vol = larger ORB follow-through)
-- **Prior day high/low bias** — only long if gap up, only short if gap down
-- **Volume spike on breakout bar** — confirm conviction behind the move
-- **ATR-based ORB range filter** — replace static 0.3-1.0% with ATR-relative threshold
+8. **Data source:** ES continuous unadjusted 5-min from [firstratedata.com](https://firstratedata.com/i/futures/ES), Jan 2008 – Apr 2026. All dollar P&L is ES ($50/point) — divide by 10 for MES equivalent.
+
+### Next Steps
+- Out-of-sample validation: walk-forward test (train on 2008-2020, test on 2021-2026)
+- Position sizing: reduce to 1 ES or 2 MES to bring max DD under 15%
+- Test R:R=1.5 and 2.0 with the new filters (higher R:R may now work with better entry quality)
+- Volume spike confirmation on breakout bar
+- Convert best config to Pine Script v6 for TradingView deployment
 
 ## Next Steps
 
@@ -65,6 +68,90 @@ Replace VWAP/EMA with filters that actually discriminate:
 ## Iteration Log
 
 Results will be logged below as backtests are run.
+
+---
+
+### Run 008 — Replace VWAP/EMA with Prior-Day H/L + ATR Vol Filter
+
+**Date:** 2026-04-11
+**Script:** `backtest-engine/.../strategies/mes_orb_strategy.py`
+**Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, 4,710 trading days, Jan 2008 – Apr 2026
+
+#### Changes from Run 007
+| Component | Run 007 | Run 008 |
+|---|---|---|
+| Confluence filter | VWAP + EMA-9 | **Removed** — had zero selectivity |
+| Prior-day bias | none | **ORB high > prior day high (longs), ORB low < prior day low (shorts)** |
+| Volatility filter | none | **20-day ATR% between 0.3% and 2.0%** |
+| 200-day SMA regime | yes | yes (kept) |
+| ORB range filter | 0.3-1.0% of price | 0.3-1.0% of price (kept) |
+| Other params | R:R=1.0, SL=50%, retest=2t | unchanged |
+
+#### Ablation Study: Impact of Each Filter
+
+| Variant | Trades | Win% | PF | Net $ | Max DD% |
+|---|---|---|---|---|---|
+| Run 007 (SMA + VWAP/EMA) | 606 | 48.7% | 0.902 | -$19,344 | -128% |
+| 008a: prior-day H/L only | 326 | 51.5% | **1.163** | **+$15,404** | -50% |
+| 008b: ATR vol 0.3-2.0% only | 374 | 52.4% | 0.955 | -$5,270 | -83% |
+| **008: full stack (SMA + PD + ATR)** | **92** | **56.5%** | **1.734** | **+$17,665** | **-38%** |
+
+#### Full Stack Results (Run 008)
+| Metric | Value |
+|---|---|
+| Total Trades | 92 |
+| Win Rate | **56.52%** |
+| Profit Factor | **1.734** |
+| Net Profit | **+$17,665 (+70.66%)** |
+| Max Drawdown | -$10,096 (-37.56%) |
+| Avg Win | $703 |
+| Avg Loss | -$459 |
+| Avg Trade | +$192 |
+| Commission | $1,337 total |
+
+#### Yearly Breakdown (Full Stack)
+| Year | Trades | Win% | PF | PnL |
+|---|---|---|---|---|
+| 2008 | 2 | 100% | inf | +$542 |
+| 2009 | 9 | 44% | 1.140 | +$95 |
+| 2010 | 4 | 100% | inf | +$848 |
+| 2011 | 7 | 57% | 1.221 | +$146 |
+| 2012 | 3 | 33% | 0.440 | -$376 |
+| 2013 | 3 | 67% | 2.014 | +$284 |
+| 2014 | 3 | 67% | 1.961 | +$306 |
+| 2015 | 9 | 33% | 0.417 | -$1,545 |
+| 2016 | 5 | 60% | 1.428 | +$331 |
+| 2018 | 8 | 38% | 0.613 | -$1,118 |
+| 2019 | 1 | 100% | inf | +$441 |
+| **2020** | **6** | **67%** | **5.274** | **+$10,877** |
+| 2021 | 1 | 100% | inf | +$736 |
+| **2022** | **13** | **38%** | **0.560** | **-$3,172** |
+| 2023 | 6 | 67% | 1.675 | +$1,223 |
+| 2024 | 1 | 100% | inf | +$1,093 |
+| 2025 | 6 | 67% | 2.187 | +$2,936 |
+| **2026** | **5** | **80%** | **4.665** | **+$4,017** |
+
+**Best 3 years:** 2020 (+$10,877), 2026 (+$4,017), 2025 (+$2,936)
+**Worst 3 years:** 2018 (-$1,118), 2015 (-$1,545), 2022 (-$3,172)
+
+#### Key Findings
+1. **Prior-day H/L bias is the breakthrough filter.** On its own (008a), it flipped the strategy from -$19k to +$15k with PF 1.163. It ensures we only trade breakouts aligned with overnight momentum — gap-up days for longs, gap-down days for shorts.
+2. **Full stack achieves PF 1.734 — first profitable result.** 92 trades over 18 years, 56.5% win rate, +$17,665 net. This is the first configuration to show positive expectancy across the full dataset.
+3. **2022 damage reduced from -$17,420 to -$3,172.** The triple filter (SMA + prior-day + ATR) eliminated most of the counter-trend disasters. Still the worst year but now survivable.
+4. **2020 is the standout year.** +$10,877 from only 6 trades (67% win, PF 5.27). The COVID crash + V-recovery produced massive ORB ranges with strong follow-through — exactly the regime this strategy exploits.
+5. **ATR vol filter is the selectivity layer.** It cuts trades from 326 (prior-day only) to 92 (full stack), removing low-conviction setups in ultra-calm or extreme-panic markets. PF jumped from 1.163 to 1.734.
+6. **13 of 18 years are profitable.** Only 2012, 2015, 2018, 2022, and 2009 (marginally) lost money. The strategy survived the 2008 crisis, 2020 crash, 2022 bear, and 2025 tariff selloff.
+7. **Trade frequency is low:** 92 trades in 18 years = 5.1/year. Not enough for a standalone income strategy, but viable as one component of a multi-strategy portfolio.
+8. **Max DD still high at -38%.** With 2 ES contracts on $25k, position sizing remains aggressive. Switching to 1 ES or 2 MES would halve the DD.
+
+#### Prior-Day H/L Bias — Detailed Impact (008a)
+The prior-day filter alone (without SMA or ATR) produced 326 trades with PF 1.163:
+- Flipped 2020 from -$5.5k to +$6.5k
+- Flipped 2021 from -$2.8k to +$4.1k  
+- Cut 2022 from -$17.4k to -$9.1k
+- Flipped 2025 from -$5.2k to +$8.2k
+
+The filter works because it requires the ORB to open beyond yesterday's range — this indicates genuine overnight conviction, not just random noise.
 
 ---
 

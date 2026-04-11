@@ -267,8 +267,63 @@ def load_es_data(filepath=None, generate_if_missing=False):
 
 
 # ---------------------------------------------------------------------------
-# 200-day SMA regime filter
+# Pre-computed daily filters (no look-ahead)
 # ---------------------------------------------------------------------------
+
+def compute_prior_day_hl(df):
+    """Compute prior day's RTH high and low, mapped to each intraday bar.
+
+    RTH = 9:30-16:00 ET.  Returns (prior_high, prior_low) numpy arrays
+    aligned to df.index.  Each bar sees the PREVIOUS completed session's
+    high/low.  Days before the first full session get NaN.
+    """
+    rth = df[((df.index.hour == 9) & (df.index.minute >= 30))
+             | ((df.index.hour >= 10) & (df.index.hour < 16))]
+
+    daily_high = rth["High"].groupby(rth.index.date).max()
+    daily_low  = rth["Low"].groupby(rth.index.date).min()
+    daily_high.index = pd.to_datetime(daily_high.index)
+    daily_low.index  = pd.to_datetime(daily_low.index)
+
+    # Shift by 1 → today sees yesterday's RTH H/L
+    prev_high = daily_high.shift(1)
+    prev_low  = daily_low.shift(1)
+
+    bar_dates = pd.to_datetime(df.index.date)
+    return (prev_high.reindex(bar_dates).values,
+            prev_low.reindex(bar_dates).values)
+
+
+def compute_atr_vol(df, period=20):
+    """Compute N-day ATR as % of price, mapped to intraday bars.
+
+    Uses daily true range on RTH OHLC.  Returns numpy array where each
+    bar gets the PREVIOUS day's ATR% (no look-ahead).
+    """
+    rth = df[((df.index.hour == 9) & (df.index.minute >= 30))
+             | ((df.index.hour >= 10) & (df.index.hour < 16))]
+
+    daily_high  = rth["High"].groupby(rth.index.date).max()
+    daily_low   = rth["Low"].groupby(rth.index.date).min()
+    daily_close = rth["Close"].groupby(rth.index.date).last()
+
+    daily_high.index  = pd.to_datetime(daily_high.index)
+    daily_low.index   = pd.to_datetime(daily_low.index)
+    daily_close.index = pd.to_datetime(daily_close.index)
+
+    prev_close = daily_close.shift(1)
+    tr = pd.concat([
+        daily_high - daily_low,
+        (daily_high - prev_close).abs(),
+        (daily_low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+
+    atr = tr.rolling(period, min_periods=period).mean()
+    atr_pct = (atr / daily_close * 100.0).shift(1)  # previous day's value
+
+    bar_dates = pd.to_datetime(df.index.date)
+    return atr_pct.reindex(bar_dates).values
+
 
 def compute_regime_sma(df, period=200):
     """Compute 200-day SMA from 5-min bars and map back to intraday index.
@@ -299,30 +354,26 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
                     min_orb_pct=0.0, max_orb_pct=999.0,
                     min_orb_range=0.0, max_orb_range=9999.0,
                     max_entry_hour=16, sl_frac=1.0,
-                    regime_sma=None):
+                    regime_sma=None,
+                    prior_day_high=None, prior_day_low=None,
+                    atr_vol_pct=None,
+                    min_atr_pct=0.0, max_atr_pct=999.0):
     """
     MES Opening Range Breakout signal generator.
 
-    Replicates pine/mes_orb_v1.pine bar-by-bar:
+    Core logic (pine/mes_orb_v1.pine):
       1. ORB = first 5-min bar at 9:30 ET
       2. Post-ORB: detect breakout above ORB high or below ORB low
-      3. Retest: price returns to ORB level within tolerance, with
-         VWAP + EMA-9 confluence
+      3. Retest: price returns to ORB level within tolerance
       4. Entry with TP/SL set at signal time
       5. One trade per day; flatten at session end (15:55 ET)
 
-    Parameters:
-      - retest_ticks: retest tolerance in ticks (1 tick = 0.25 pts).
-        Default 2 ticks = 0.50 points.
-      - min_orb_pct / max_orb_pct: ORB range as % of price (e.g. 0.3 = 0.3%).
-        These are percentage filters — normalised across price levels.
-      - min_orb_range / max_orb_range: absolute point filters (legacy, default off).
-      - max_entry_hour: only enter before this hour ET. Default 16.
-      - sl_frac: stop-loss as fraction of ORB range. 1.0 = full range,
-        0.5 = half range (tighter stop).
-      - regime_sma: numpy array of 200-day SMA values per bar (from
-        compute_regime_sma). When provided, longs only fire above SMA,
-        shorts only below SMA. None = no regime filter.
+    Confluence filters (Run 008 — replaces VWAP/EMA):
+      - prior_day_high/low: longs require ORB high > prior day high (gap-up
+        bias); shorts require ORB low < prior day low (gap-down bias).
+      - atr_vol_pct + min/max_atr_pct: 20-day ATR% vol filter, only trade
+        when vol is in a sweet spot (not too calm, not panicking).
+      - regime_sma: 200-day SMA directional filter (kept from Run 007).
     """
     df = df.copy()
     n = len(df)
@@ -455,22 +506,40 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
             long_regime = True
             short_regime = True
 
+        # Prior-day H/L bias (replaces VWAP/EMA confluence)
+        if prior_day_high is not None and prior_day_low is not None:
+            pdh = prior_day_high[i]
+            pdl = prior_day_low[i]
+            long_bias  = (not np.isnan(pdh) and not np.isnan(orb_high)
+                          and orb_high > pdh)       # gap-up / strong open
+            short_bias = (not np.isnan(pdl) and not np.isnan(orb_low)
+                          and orb_low < pdl)        # gap-down / weak open
+        else:
+            long_bias = True
+            short_bias = True
+
+        # ATR% volatility filter (replaces VIX)
+        if atr_vol_pct is not None:
+            av = atr_vol_pct[i]
+            vol_ok = (not np.isnan(av) and av >= min_atr_pct
+                      and av <= max_atr_pct)
+        else:
+            vol_ok = True
+
         long_ok = (
             broke_above and not traded_today and post_orb
-            and position == 0 and range_ok and time_ok and long_regime
+            and position == 0 and range_ok and time_ok
+            and long_regime and long_bias and vol_ok
             and lows[i] <= orb_high + retest_tol
             and closes[i] > orb_high
-            and not np.isnan(vwap)    and closes[i] > vwap
-            and not np.isnan(ema9[i]) and closes[i] > ema9[i]
         )
 
         short_ok = (
             broke_below and not traded_today and post_orb
-            and position == 0 and range_ok and time_ok and short_regime
+            and position == 0 and range_ok and time_ok
+            and short_regime and short_bias and vol_ok
             and highs[i] >= orb_low - retest_tol
             and closes[i] < orb_low
-            and not np.isnan(vwap)    and closes[i] < vwap
-            and not np.isnan(ema9[i]) and closes[i] < ema9[i]
         )
 
         # ── 7. Entry signals ──────────────────────────────────────────
@@ -528,9 +597,16 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
                min_orb_pct=0.0, max_orb_pct=999.0,
                min_orb_range=0.0, max_orb_range=9999.0,
                max_entry_hour=16, sl_frac=0.5,
-               use_regime=False, verbose=True):
+               use_regime=False, use_prior_day=False,
+               use_atr_vol=False, min_atr_pct=0.0, max_atr_pct=999.0,
+               verbose=True):
     """Run one ORB backtest with the given parameters. Returns kpis dict."""
     regime_sma = compute_regime_sma(df_raw) if use_regime else None
+    if use_prior_day:
+        pdh, pdl = compute_prior_day_hl(df_raw)
+    else:
+        pdh = pdl = None
+    atr_vol = compute_atr_vol(df_raw) if use_atr_vol else None
 
     df = mes_orb_signals(df_raw.copy(), ema_len=ema_len,
                          retest_ticks=retest_ticks, rr_ratio=rr_ratio,
@@ -539,7 +615,10 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
                          max_orb_range=max_orb_range,
                          max_entry_hour=max_entry_hour,
                          sl_frac=sl_frac,
-                         regime_sma=regime_sma)
+                         regime_sma=regime_sma,
+                         prior_day_high=pdh, prior_day_low=pdl,
+                         atr_vol_pct=atr_vol,
+                         min_atr_pct=min_atr_pct, max_atr_pct=max_atr_pct)
 
     start = str(df_raw.index[0].date())
     end = str(df_raw.index[-1].date() + pd.Timedelta(days=1))
@@ -593,6 +672,12 @@ def run_single(df_raw, ema_len=9, retest_ticks=2, rr_ratio=1.0,
             print(f"  Max ORB Range:     {max_orb_range} pts (absolute)")
         if use_regime:
             print(f"  Regime Filter:     200-day SMA (long above, short below)")
+        if use_prior_day:
+            print(f"  Prior Day Filter:  long if ORB > prev high,"
+                  f" short if ORB < prev low")
+        if use_atr_vol:
+            print(f"  ATR Vol Filter:    {min_atr_pct:.1f}% – {max_atr_pct:.1f}%"
+                  f" (20-day ATR/price)")
         if max_entry_hour < 16:
             print(f"  Max Entry Time:    {max_entry_hour}:00 ET")
         print(f"  Signals:           {n_long} long, {n_short} short")
@@ -729,31 +814,45 @@ def main():
     print(f"Bars:  {len(df_raw):,}")
     print(f"Trading days: {len(orb_bars):,}")
 
-    # Common params
-    base = dict(rr_ratio=1.0, sl_frac=0.5, retest_ticks=2)
+    # Shared params across all runs
+    base = dict(rr_ratio=1.0, sl_frac=0.5, retest_ticks=2,
+                min_orb_pct=0.3, max_orb_pct=1.0)
 
-    # ── 1. Run 006 repro (absolute ORB filter, no regime) ────────────
+    # ── 1. Run 007 repro (pct ORB + SMA regime, VWAP/EMA) ───────────
     print("\n" + "#" * 64)
-    print("  RUN 006 REPRO  (ORB 20-60 pts, no regime)")
+    print("  RUN 007 REPRO  (pct ORB + SMA, VWAP/EMA confluence)")
     print("#" * 64)
-    kpis_006 = run_single(df_raw, min_orb_range=20, max_orb_range=60,
-                          use_regime=False, verbose=True, **base)
-    yearly_breakdown(kpis_006)
+    kpis_007 = run_single(df_raw, use_regime=True,
+                          verbose=True, **base)
+    yearly_breakdown(kpis_007)
 
-    # ── 2. Fix 1: percentage ORB filter only ──────────────────────────
+    # ── 2. Run 008a: prior-day H/L only (no SMA, no ATR) ─────────────
     print("\n\n" + "#" * 64)
-    print("  FIX 1: ORB 0.3%-1.0% of price, no regime")
+    print("  RUN 008a: prior-day H/L bias only")
     print("#" * 64)
-    kpis_pct = run_single(df_raw, min_orb_pct=0.3, max_orb_pct=1.0,
-                          use_regime=False, verbose=True, **base)
-    yearly_breakdown(kpis_pct)
+    kpis_pd = run_single(df_raw, use_prior_day=True,
+                         verbose=True, **base)
+    yearly_breakdown(kpis_pd)
 
-    # ── 3. Fix 2: percentage ORB + 200-day SMA regime ────────────────
+    # ── 3. Run 008b: ATR vol only (no SMA, no prior-day) ─────────────
     print("\n\n" + "#" * 64)
-    print("  FIX 1+2: ORB 0.3%-1.0% + 200-day SMA regime")
+    print("  RUN 008b: ATR vol 0.3%-2.0% only")
     print("#" * 64)
-    kpis_full = run_single(df_raw, min_orb_pct=0.3, max_orb_pct=1.0,
-                           use_regime=True, verbose=True, **base)
+    kpis_atr = run_single(df_raw, use_atr_vol=True,
+                          min_atr_pct=0.3, max_atr_pct=2.0,
+                          verbose=True, **base)
+    yearly_breakdown(kpis_atr)
+
+    # ── 4. Run 008c: SMA + prior-day + ATR vol (full stack) ──────────
+    print("\n\n" + "#" * 64)
+    print("  RUN 008: FULL STACK (SMA + prior-day + ATR 0.3-2.0%)")
+    print("#" * 64)
+    kpis_full = run_single(df_raw,
+                           use_regime=True,
+                           use_prior_day=True,
+                           use_atr_vol=True,
+                           min_atr_pct=0.3, max_atr_pct=2.0,
+                           verbose=True, **base)
     yearly_breakdown(kpis_full)
 
     return kpis_full
