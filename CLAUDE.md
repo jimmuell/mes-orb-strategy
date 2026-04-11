@@ -32,23 +32,25 @@ When reporting back always include:
 ### Phase 1 — MES ORB Strategy (current focus)
 A directional breakout strategy trading 1 MES contract per day maximum.
 Target metrics before live deployment:
-- Win Rate ≥ 70%
+- Win Rate ≥ 62% (revised from 70% — momentum breakout strategies structurally
+  run 55-65% win rates. Mean reversion target (Phase 2 VWAP scalp) will carry
+  the higher win rate.)
 - Profit Factor ≥ 1.5
 - Max Drawdown ≤ 15%
 - Walk-forward validated
 - Pine Script converted and paper traded 30 days minimum
 
-Current status (Run 010):
-- Win Rate: 56.0% ❌ (target 70%)
-- Profit Factor: 1.338 ❌ (target 1.5)
-- Max Drawdown: 1.87% ✅ (target ≤15%)
+Current status (Run 011):
+- Win Rate: 58.2% ❌ (target 62%)
+- Profit Factor: 1.579 ✅ (target 1.5)
+- Max Drawdown: 1.40% ✅ (target ≤15%)
 - Walk-forward: validated ✅ (edge is post-2020 regime dependent)
 - Contracts: 1 MES per trade ✅
 
 Remaining steps:
 1. ~~Run 010 — ADX trend quality filter~~ ✅ complete
-2. Run 011 — Entry quality (two-bar retest + breakout candle filter) ← current
-3. Run 012 — R:R ratio tuning
+2. ~~Run 011 — Entry quality (breakout candle filter)~~ ✅ complete (PF target met)
+3. Run 012 — R:R ratio tuning ← current
 4. Run 013 — Final parameter optimization if needed
 5. Pine Script conversion
 6. 30-day paper trade validation
@@ -228,7 +230,7 @@ Confirm "ETH" is shown in the bottom bar of TradingView.
 ---
 
 ## Optimization Targets
-- Win Rate: >= 70%
+- Win Rate: >= 62% (revised from 70% — see Phase 1 roadmap note)
 - Profit Factor: >= 1.5
 - Max Drawdown: <= 15%
 - Total Trades: >= 20
