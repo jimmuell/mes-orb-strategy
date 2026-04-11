@@ -24,8 +24,34 @@ Designs strategy logic, analyzes results, and issues task prompts via Jim.
 When reporting back always include:
 - The full results.md entry that was logged
 - Any anomalies, data quality issues, or surprises
-- Whether the commit succeeded
+- Whether the commit succeeded and the GitHub push URL
 - Any questions or blockers for Senior Claude
+
+## Git & GitHub Commit Policy
+
+**Remote:** All commits must be pushed to GitHub after committing locally.
+Always run `git push` immediately after `git commit`. Never leave commits
+local-only.
+
+**When to commit:**
+- After every CLAUDE.md or documentation update (separate commit)
+- After every code fix or pre-run cleanup (separate commit)
+- After every completed backtest run with results logged (separate commit)
+- Never bundle a code change and a results update in the same commit
+
+**Commit message format:**
+- Docs: `docs: description`
+- Code fixes: `fix: description`
+- Backtest results: `backtest: Run 00X - brief description of what changed`
+- Plugin/tooling: `chore: description`
+
+**Before every push:**
+1. Confirm results.md is updated and accurate
+2. Then: `git push origin main`
+
+**After every push:**
+Confirm the push succeeded and report the commit hash and GitHub URL
+to Jim so Senior Claude has a full audit trail of every run.
 
 ## Project Overview
 Backtesting and optimization of a 9:35 AM Opening Range Breakout (ORB) strategy
