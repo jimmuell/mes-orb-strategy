@@ -504,9 +504,6 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
     traded_today = False
     broke_above  = False
     broke_below  = False
-    cum_tpv = 0.0
-    cum_vol = 0.0
-    vwap    = np.nan
 
     # --- Position tracking (sync with engine TP/SL) ---
     position      = 0       # 0 = flat, 1 = long, -1 = short
@@ -542,9 +539,6 @@ def mes_orb_signals(df, ema_len=9, retest_ticks=2, rr_ratio=2.0,
                 traded_today = False
                 broke_above  = False
                 broke_below  = False
-                cum_tpv = 0.0
-                cum_vol = 0.0
-                vwap    = np.nan
 
         # ── 3. ORB tracking ───────────────────────────────────────────
         if is_orb[i]:
@@ -1004,9 +998,14 @@ def kelly_analysis(kpis, initial_capital=25000.0):
 # Walk-forward validation
 # ---------------------------------------------------------------------------
 
-def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-01"):
-    """Split data and run same params on train and test periods."""
-    df_train = df_raw[df_raw.index <= train_end]
+def walk_forward(df_raw, params, train_end="2019-12-31", test_start="2020-01-02"):
+    """Split data and run same params on train and test periods.
+
+    Uses strict < / >= to prevent overlap.  Default gap: 2019-12-31
+    is last train day, 2020-01-01 is excluded (New Year — no trading),
+    2020-01-02 is first test day.
+    """
+    df_train = df_raw[df_raw.index < pd.Timestamp(train_end) + pd.Timedelta(days=1)]
     df_test  = df_raw[df_raw.index >= test_start]
 
     orb_train = df_train[(df_train.index.hour == 9) & (df_train.index.minute == 30)]
