@@ -151,14 +151,8 @@ svg.equity { width:100%; height:140px; }
         </thead>
         <tbody id="tradesBody"></tbody>
       </table>
-      <div class="quick-log">
-        <input id="tDate" type="date" />
-        <select id="tStrat"><option>Phase1</option><option>Phase2</option></select>
-        <select id="tDir"><option>LONG</option><option>SHORT</option></select>
-        <input id="tEntry" placeholder="entry" size="8" />
-        <input id="tExit" placeholder="exit" size="8" />
-        <input id="tPnl" placeholder="P&L $" size="8" />
-        <button class="primary" id="addTrade">Log Trade</button>
+      <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); color:var(--muted); font-size:12px;">
+        Trades are captured automatically from TradingView alerts via <code class="mono">/api/alert</code>.
       </div>
     </div>
 

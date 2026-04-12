@@ -39,6 +39,30 @@ Open http://localhost:8080
 | POST | `/api/tasks/<id>/start` | Mark in progress |
 | POST | `/api/tasks/<id>/complete` | Complete (fires notification + WhatsApp) |
 
+## TradingView Webhook Setup
+
+Point TradingView alerts at:
+
+```
+http://YOUR-NGROK-URL/api/alert
+```
+
+The dashboard auto-logs entries and exits and calculates P&L ($5/point for
+MES). No manual trade entry required. Original alert text is also forwarded
+to WhatsApp if `TWILIO_WEBHOOK_URL` is set.
+
+Local test:
+
+```bash
+curl -X POST http://localhost:8080/api/alert \
+  -H "Content-Type: application/json" \
+  -d '{"message": "MES ORB v3 — SHORT ENTRY — MES1! @ 6468.75"}'
+
+curl -X POST http://localhost:8080/api/alert \
+  -H "Content-Type: application/json" \
+  -d '{"message": "MES ORB v3 — SHORT EXIT — MES1! @ 6459.75"}'
+```
+
 ## Task queue workflow
 
 - Senior Claude creates tasks via `POST /api/tasks`

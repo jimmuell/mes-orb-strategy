@@ -294,6 +294,10 @@ Git LFS version: 3.7.1
 - Task queue: Senior Claude writes tasks via `POST /api/tasks`
 - VS Claude reads pending tasks via `GET /api/tasks/pending`
 - VS Claude completes tasks via `POST /api/tasks/<id>/complete`
+- TradingView webhook: `POST /api/alert` — parses alert text, tracks open
+  trades in memory, auto-logs completed trades with P&L ($5/MES point),
+  forwards original message to Twilio if `TWILIO_WEBHOOK_URL` is set.
+  Point ngrok at `http://localhost:8080/api/alert`.
 
 ## Claude Code Launch Command
 Always launch Claude Code with:

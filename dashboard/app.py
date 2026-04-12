@@ -1,12 +1,64 @@
 import os
+import re
 from datetime import datetime
 
+import requests
 from flask import Flask, jsonify, render_template, request
 
 from database import get_conn, init_db
 from notifier import notify_task_complete, notify_task_ready
 
 app = Flask(__name__)
+
+# In-memory open trade tracker. Key: "{strategy}_{direction}", value: dict.
+open_trades = {}
+
+
+def parse_alert(message: str):
+    """Parse a TradingView alert string into structured fields."""
+    msg = (message or '').strip()
+    m = re.match(
+        r'^(.+?)\s+—\s+(LONG|SHORT)\s+(ENTRY|EXIT)\s+—\s+\S+\s+@\s+([\d.]+)',
+        msg,
+    )
+    if m:
+        strategy_raw = m.group(1)
+        return {
+            'strategy': 'Phase1' if 'ORB' in strategy_raw else 'Phase2',
+            'direction': m.group(2),
+            'action': m.group(3),
+            'price': float(m.group(4)),
+            'raw': message,
+        }
+    m2 = re.match(
+        r'^(.+?)\s+—\s+SESSION CLOSE\s+—\s+\S+\s+@\s+([\d.]+)',
+        msg,
+    )
+    if m2:
+        strategy_raw = m2.group(1)
+        return {
+            'strategy': 'Phase1' if 'ORB' in strategy_raw else 'Phase2',
+            'direction': None,
+            'action': 'SESSION CLOSE',
+            'price': float(m2.group(2)),
+            'raw': message,
+        }
+    return None
+
+
+def forward_to_whatsapp(message: str) -> None:
+    """Forward alert to WhatsApp via Twilio webhook if configured."""
+    webhook_url = os.environ.get('TWILIO_WEBHOOK_URL', '')
+    if not webhook_url:
+        return
+    try:
+        requests.post(
+            webhook_url,
+            json={'message': message, 'source': 'TradingView'},
+            timeout=5,
+        )
+    except Exception as e:
+        print(f'[alert] WhatsApp forward failed: {e}')
 
 
 @app.route('/')
@@ -265,6 +317,112 @@ def complete_task(task_id):
     if row:
         notify_task_complete(row['title'], result)
     return jsonify({'ok': True})
+
+
+# ---------- TradingView webhook ----------
+
+@app.route('/api/alert', methods=['POST'])
+def receive_alert():
+    """
+    TradingView webhook endpoint. Accepts either JSON `{"message": "..."}`
+    or a raw text body (TradingView can send either depending on config).
+    """
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        message = data.get('message', '')
+    else:
+        message = request.get_data(as_text=True).strip()
+
+    if not message:
+        return jsonify({'status': 'error', 'reason': 'empty message'}), 400
+
+    print(f'[ALERT] {message}')
+    forward_to_whatsapp(message)
+
+    parsed = parse_alert(message)
+    if not parsed:
+        return jsonify({'status': 'ok', 'parsed': False, 'message': message})
+
+    strategy = parsed['strategy']
+    direction = parsed['direction']
+    action = parsed['action']
+    price = parsed['price']
+    now = datetime.now()
+    today = now.strftime('%Y-%m-%d')
+    trade_key = f'{strategy}_{direction}' if direction else None
+
+    if action == 'ENTRY':
+        open_trades[trade_key] = {
+            'date': today,
+            'strategy': strategy,
+            'direction': direction,
+            'entry_time': now.strftime('%H:%M'),
+            'entry_price': price,
+        }
+        print(f'[ENTRY] {trade_key} @ {price}')
+
+    elif action in ('EXIT', 'SESSION CLOSE'):
+        if action == 'SESSION CLOSE':
+            keys_to_close = [k for k in list(open_trades.keys()) if k.startswith(strategy)]
+        else:
+            keys_to_close = [trade_key] if trade_key in open_trades else []
+
+        for key in keys_to_close:
+            open_trade = open_trades.pop(key, None)
+            if not open_trade:
+                continue
+
+            entry_price = open_trade['entry_price']
+            trade_direction = open_trade['direction']
+
+            if trade_direction == 'LONG':
+                pnl = (price - entry_price) * 5
+            else:
+                pnl = (entry_price - price) * 5
+            pnl = round(pnl, 2)
+
+            if action == 'SESSION CLOSE':
+                exit_reason = 'Session Close'
+            else:
+                exit_reason = 'TP' if pnl > 0 else 'SL'
+
+            conn = get_conn()
+            conn.execute(
+                """
+                INSERT INTO trades
+                (date, strategy, direction, entry_time, entry_price,
+                 exit_time, exit_price, exit_reason, pnl_dollars)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    open_trade['date'],
+                    open_trade['strategy'],
+                    open_trade['direction'],
+                    open_trade['entry_time'],
+                    open_trade['entry_price'],
+                    now.strftime('%H:%M'),
+                    price,
+                    exit_reason,
+                    pnl,
+                ),
+            )
+            conn.commit()
+            conn.close()
+            print(f'[TRADE LOGGED] {trade_direction} {strategy} P&L: ${pnl}')
+
+    return jsonify({
+        'status': 'ok',
+        'parsed': True,
+        'action': action,
+        'strategy': strategy,
+        'price': price,
+    })
+
+
+@app.route('/api/test-alert', methods=['POST'])
+def test_alert():
+    """Local curl-testable proxy to /api/alert."""
+    return receive_alert()
 
 
 if __name__ == '__main__':

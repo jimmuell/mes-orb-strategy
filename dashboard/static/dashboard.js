@@ -148,24 +148,10 @@ async function loadTrades() {
   });
 }
 
-document.getElementById('addTrade').addEventListener('click', async () => {
-  const body = {
-    date: document.getElementById('tDate').value || undefined,
-    strategy: document.getElementById('tStrat').value,
-    direction: document.getElementById('tDir').value,
-    entry_price: parseFloat(document.getElementById('tEntry').value) || null,
-    exit_price: parseFloat(document.getElementById('tExit').value) || null,
-    pnl_dollars: parseFloat(document.getElementById('tPnl').value) || null,
-  };
-  await fetch('/api/trades', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  ['tEntry', 'tExit', 'tPnl'].forEach(id => document.getElementById(id).value = '');
-  loadTrades();
-  loadSummary();
-});
+// Manual trade entry removed — trades now arrive via /api/alert webhook.
+
+// Refresh trades list periodically so new auto-captured trades show up.
+setInterval(() => { loadTrades(); loadSummary(); }, 15000);
 
 // ---------- Summary + equity curve ----------
 async function loadSummary() {
