@@ -127,9 +127,7 @@ if isORBBar and not gapSet
     rthOpen   := open
     orbHi     := high
     orbLo     := low
-    gapPctVal := not na(prevDayClose) and prevDayClose > 0
-                 ? (rthOpen - prevDayClose) / prevDayClose * 100.0
-                 : na
+    gapPctVal := not na(prevDayClose) and prevDayClose > 0 ? (rthOpen - prevDayClose) / prevDayClose * 100.0 : na
     gapSet    := true
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -161,28 +159,19 @@ bool adxOK = not na(prevDayADX) and prevDayADX < i_adxMax
 //  GAP CLASSIFICATION + ENTRY TRIGGER
 // ═══════════════════════════════════════════════════════════════════════════
 
-bool gapSizeOK = gapSet and not na(gapPctVal)
-                 and math.abs(gapPctVal) >= i_gapMin
-                 and math.abs(gapPctVal) <= i_gapMax
+bool gapSizeOK = gapSet and not na(gapPctVal) and math.abs(gapPctVal) >= i_gapMin and math.abs(gapPctVal) <= i_gapMax
 
 bool isGapUp   = gapSizeOK and gapPctVal > 0
 bool isGapDown = gapSizeOK and gapPctVal < 0
 
 // Setup must pass regime gates + Phase 1 ORB block + not already traded.
-bool setupOK = gapSizeOK and volOK and adxOK
-               and not phase1BlockToday and not tradedToday
-               and strategy.position_size == 0
+bool setupOK = gapSizeOK and volOK and adxOK and not phase1BlockToday and not tradedToday and strategy.position_size == 0
 
 // Entry trigger fires on a bar that CLOSES back through the 9:30 RTH open.
 // Within the entry window only. Fill at next bar open (Pine engine default).
 
-bool longTrigger  = setupOK and isGapDown and isEntryWindow
-                    and not na(rthOpen)
-                    and close > rthOpen
-
-bool shortTrigger = setupOK and isGapUp and isEntryWindow
-                    and not na(rthOpen)
-                    and close < rthOpen
+bool longTrigger  = setupOK and isGapDown and isEntryWindow and not na(rthOpen) and close > rthOpen
+bool shortTrigger = setupOK and isGapUp   and isEntryWindow and not na(rthOpen) and close < rthOpen
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ORDER EXECUTION — fixed R:R 1.75 off gap-extreme stop
