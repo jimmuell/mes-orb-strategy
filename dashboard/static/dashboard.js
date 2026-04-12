@@ -39,6 +39,31 @@ function el(tag, opts = {}, children = []) {
 }
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+function showConfirm(title, message, onConfirm) {
+  const modal = document.getElementById('confirmModal');
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMessage').textContent = message;
+  modal.style.display = 'flex';
+
+  const okBtn = document.getElementById('confirmOk');
+  const cancelBtn = document.getElementById('confirmCancel');
+
+  function cleanup() {
+    modal.style.display = 'none';
+    okBtn.replaceWith(okBtn.cloneNode(true));
+    cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+  }
+
+  document.getElementById('confirmOk').addEventListener('click', () => {
+    cleanup();
+    onConfirm();
+  });
+  document.getElementById('confirmCancel').addEventListener('click', cleanup);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) cleanup();
+  }, { once: true });
+}
+
 // ---------- Clock + countdown ----------
 function updateClock() {
   const now = new Date();
@@ -157,18 +182,28 @@ async function loadTrades() {
   });
 }
 
-async function deleteTrade(id) {
-  if (!confirm('Delete this trade?')) return;
-  await fetch(`/api/trades/${id}`, { method: 'DELETE' });
-  loadTrades();
-  loadSummary();
+function deleteTrade(id) {
+  showConfirm(
+    'Delete Trade',
+    'Remove this trade from the log? This cannot be undone.',
+    async () => {
+      await fetch(`/api/trades/${id}`, { method: 'DELETE' });
+      loadTrades();
+      loadSummary();
+    }
+  );
 }
 
-document.getElementById('clearAllTrades').addEventListener('click', async () => {
-  if (!confirm('Delete ALL trades? This cannot be undone.')) return;
-  await fetch('/api/trades/all', { method: 'DELETE' });
-  loadTrades();
-  loadSummary();
+document.getElementById('clearAllTrades').addEventListener('click', () => {
+  showConfirm(
+    'Clear All Trades',
+    'Delete every trade in the log? This cannot be undone.',
+    async () => {
+      await fetch('/api/trades/all', { method: 'DELETE' });
+      loadTrades();
+      loadSummary();
+    }
+  );
 });
 
 // Manual trade entry removed — trades now arrive via /api/alert webhook.

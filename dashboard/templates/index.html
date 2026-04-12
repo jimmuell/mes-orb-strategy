@@ -188,6 +188,17 @@ svg.equity { width:100%; height:140px; }
   </div>
 </div>
 
+<div id="confirmModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#181c23; border:1px solid #2E75B6; border-radius:8px; padding:32px; max-width:400px; width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div id="confirmTitle" style="font-family:'Space Mono',monospace; font-size:14px; color:#4d9fff; margin-bottom:12px; text-transform:uppercase; letter-spacing:0.05em;"></div>
+    <div id="confirmMessage" style="font-family:'DM Sans',sans-serif; font-size:15px; color:#e8edf5; margin-bottom:28px; line-height:1.5;"></div>
+    <div style="display:flex; gap:12px; justify-content:flex-end;">
+      <button id="confirmCancel" style="padding:8px 20px; background:transparent; border:1px solid #2a3244; border-radius:4px; color:#5a6478; font-family:'DM Sans',sans-serif; font-size:13px; cursor:pointer;">Cancel</button>
+      <button id="confirmOk" style="padding:8px 20px; background:#ff4560; border:none; border-radius:4px; color:#fff; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; cursor:pointer;">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script src="/static/dashboard.js"></script>
 </body>
 </html>
