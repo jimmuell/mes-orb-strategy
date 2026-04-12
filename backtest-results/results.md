@@ -1111,3 +1111,203 @@ Only R:R ratio affected results — EMA length and retest tolerance produced ide
 - Evaluate adding a tighter trailing stop after partial profit
 
 ---
+
+# PHASE 2 — VWAP Reversion Scalp
+
+> Phase 2 kicks off 2026-04-12 while Phase 1 paper trades on TradingView.
+> Mean-reversion strategy intended to complement Phase 1 ORB by trading on
+> choppy/ranging days (ADX < 20) that ORB sits out. See
+> `backtest/strategies/vwap-scalp/STRATEGY.md` for the full spec.
+
+### Phase 2 Targets
+
+| Metric | Target |
+|---|---|
+| Win Rate | ≥ 65% |
+| Profit Factor | ≥ 1.5 |
+| Max Drawdown | ≤ 15% |
+| Trades/day | 1–3 on active days |
+| Walk-forward | validated (IS 2008-2019, OOS 2020-2026) |
+
+---
+
+### Phase 2 Run 001 — Baseline VWAP Deviation Entry
+
+**Date:** 2026-04-12
+**Script:** `backtest/strategies/vwap-scalp/vwap_scalp.py`
+**Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt` — 1,289,036 bars, Jan 2008 – Apr 2026
+**Contract:** 1 MES ($5/point, $0.62 commission/side)
+**Slippage:** 0 (not simulated)
+
+**Configuration:**
+- Session: RTH only (9:30–15:55 ET)
+- Daily VWAP: reset at 9:30, typical-price × volume cumulative
+- Regime gates: ADX < 20 (prev day, 14p), ATR% 0.3–2.0 (prev day, 10p), 200-day SMA
+- Entry: close deviates from VWAP by ≥ threshold; long=green candle below VWAP above SMA; short=red candle above VWAP below SMA
+- Exit: bar close within 2 ticks of VWAP (TP) / 0.20% fixed SL / flatten at 15:55
+- Max 3 trades/day; no re-entry in stopped-out direction
+- Fill: next-bar open; SL before TP on same bar (pessimistic)
+
+#### Ablation — VWAP deviation threshold
+
+| Variant | Trades | Win Rate | PF | Net $ | Max DD $ | Max DD % | Avg Win | Avg Loss | T/day |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **0.10%** | 1,627 | 51.6% | 0.885 | -$2,706 | $3,045 | 30.36% | $25 | -$30 | 1.25 |
+| 0.15% | 1,216 | 44.9% | 0.860 | -$2,726 | $2,975 | 29.78% | $31 | -$30 | 1.15 |
+| 0.20% | 953 | 41.3% | 0.830 | -$2,764 | $3,023 | 30.25% | $35 | -$29 | 1.10 |
+| 0.25% | 752 | 39.8% | 0.850 | -$1,969 | $2,756 | 27.53% | $39 | -$30 | 1.06 |
+
+**All four variants are unprofitable.** No configuration meets Phase 2 targets.
+Best by PF is 0.10% (highest trade count, highest win rate); best by net $ is 0.25%.
+
+#### Best variant (0.10%) — full dataset
+
+| Metric | Value | Target | Status |
+|---|---|---|---|
+| Trades | 1,627 | ≥ 20 | ✅ |
+| Win Rate | **51.6%** | ≥ 65% | ❌ (-13.4 pts) |
+| Profit Factor | **0.885** | ≥ 1.5 | ❌ |
+| Net Profit | -$2,706 | > 0 | ❌ |
+| Max Drawdown | **30.36%** | ≤ 15% | ❌ |
+| Avg Win / Loss | $24.79 / -$29.82 | — | — |
+| Trades/day | 1.25 | 1–3 | ✅ |
+
+Avg loss > avg win — the 0.20% fixed SL is 4× the payoff profile of a 2-tick
+VWAP-touch exit when deviation is only 0.10%. At threshold 0.25% the reward
+distance grows but win rate collapses to 39.8% because price rarely retraces
+that far. The reward/risk math of this entry is the core problem.
+
+#### Yearly breakdown (best variant, 0.10%)
+
+| Year | Trades | Win Rate | PF | Net $ |
+|---|---:|---:|---:|---:|
+| 2009 | 51 | 52.9% | 0.91 | -24 |
+| 2010 | 107 | 45.8% | 0.46 | -391 |
+| 2011 | 93 | 50.5% | 0.75 | -158 |
+| 2012 | 138 | 54.3% | 0.73 | -251 |
+| 2013 | 113 | 62.8% | 0.87 | -93 |
+| 2014 | 117 | 51.3% | 0.70 | -347 |
+| 2015 | 109 | 52.3% | 0.82 | -190 |
+| 2016 | 121 | 61.2% | 0.97 | -30 |
+| 2017 | 73 | 63.0% | 0.75 | -159 |
+| 2018 | 93 | 62.4% | 1.12 | +119 |
+| 2019 | 71 | 57.7% | 1.21 | +177 |
+| 2020 | 80 | 53.8% | 1.30 | +386 |
+| 2021 | 120 | 49.2% | 0.97 | -77 |
+| 2022 | 63 | 38.1% | 1.38 | +640 |
+| 2023 | 104 | 34.6% | 0.55 | -1,264 |
+| 2024 | 44 | 40.9% | 0.65 | -521 |
+| 2025 | 95 | 42.1% | 0.98 | -72 |
+| 2026 | 35 | 40.0% | 0.70 | -451 |
+
+5 profitable years out of 18. 2018–2020 and 2022 were positive; 2023 is the
+worst single year (-$1,264) driven by win rate collapsing to 34.6%.
+
+#### Walk-forward validation (best variant, 0.10%)
+
+| | In-Sample 2008-2019 | Out-of-Sample 2020-2026 |
+|---|---|---|
+| Trades | 1,086 | 541 |
+| Win Rate | 55.7% | 43.3% |
+| Profit Factor | 0.849 | 0.907 |
+| Net Profit | -$1,347 | -$1,359 |
+| Max Drawdown | $1,728 (17.23%) | $2,806 (25.20%) |
+
+Both regimes unprofitable. **OOS win rate collapses (55.7% → 43.3%)** — the
+post-2020 regime is hostile to this specific entry rule. Win rate trended
+down monotonically year-over-year since 2017. This is the exact inverse of
+Phase 1 ORB, which came alive post-2020 — a useful data point for
+regime-complementarity, but not a path to a profitable Phase 2 strategy
+in its current form.
+
+#### ADX regime confirmation (threshold 0.10%, no ADX filter)
+
+Ran the strategy with the ADX filter removed and split trades by daily ADX bucket:
+
+| Bucket | Trades | Win Rate | PF | Net $ | Max DD % |
+|---|---:|---:|---:|---:|---:|
+| **ADX < 20** (choppy, strategy target) | 1,627 | **51.6%** | **0.885** | -$2,706 | 30.36% |
+| **ADX ≥ 20** (trending, expected worse) | 1,522 | 46.3% | 0.732 | -$6,936 | 73.94% |
+
+✅ **Regime premise validated directionally.** The ADX < 20 bucket clearly
+outperforms ADX ≥ 20 on every dimension (win rate +5.3 pts, PF +0.15, net
+$4,230 better, DD less than half). The ADX < 20 filter is earning its keep
+— mean-reversion entries in trending regimes are a disaster. But even the
+"good" regime is still unprofitable with this entry model.
+
+#### Gap to Phase 2 targets
+
+| Metric | Actual | Target | Gap |
+|---|---|---|---|
+| Win Rate | 51.6% | ≥ 65% | **-13.4 pts** |
+| Profit Factor | 0.885 | ≥ 1.5 | **-0.615** |
+| Max Drawdown | 30.36% | ≤ 15% | **+15.36 pts** |
+
+None of the four variants meet any target. This is a significant gap and
+confirms that the baseline entry rule (close-side-of-VWAP + one-bar color
+confirmation) does not contain a live edge on 5-min bars.
+
+#### Observations
+
+1. **The regime filter works, the entry doesn't.** ADX<20 clearly beats
+   ADX≥20, validating Senior Claude's complementary-regime thesis. But the
+   entry rule has no edge even in the target regime.
+
+2. **Reward/risk geometry is inverted.** A 0.20% fixed SL corresponds to
+   ~12 points on ES at current prices. Exit targets average well under
+   that when deviation thresholds are tight — avg win $25 vs avg loss $30
+   at 0.10%. Winners need to be larger than losers, not smaller.
+
+3. **"Closes up/down" is not confirmation — it's noise.** On 5-min RTH bars
+   a single green/red candle at a VWAP deviation gives essentially coin-flip
+   follow-through (51.6% on best variant). The trigger needs structure —
+   candidates: higher low / lower high over 2 bars, divergence, volume
+   spike, delta flip.
+
+4. **OOS decay is severe.** Win rate 55.7% → 43.3% across the 2020 regime
+   break. Phase 1 ORB is post-2020 dependent; this Phase 2 baseline is
+   pre-2020 dependent. The 2020+ environment is hostile to naive mean
+   reversion on 5-min ES.
+
+5. **Timeframe mismatch.** Spec calls for 1–2 min target TF; Run 001 uses
+   5-min for dataset reuse. A shorter TF will produce tighter VWAP
+   touches (better R:R) and more setups per day. This is the highest-
+   leverage knob to test next.
+
+6. **Session P&L gate missing.** We flatten at 15:55 unconditionally — no
+   breakeven trailing, no move-to-BE after partial retrace. Scalp strategies
+   almost always need a BE+1 rule after the first leg closes in favor.
+
+#### Next Steps (for Senior Claude)
+
+The baseline is not salvageable by parameter tweaks alone. Options to consider:
+
+a) **Drop to 1-min or 2-min TF.** Will require a new data source (current
+   dataset is 5-min). Tighter VWAP touches mean TPs fire before SLs have
+   a chance to trigger — the reward/risk inversion may flip.
+
+b) **Replace single-bar color with 2-bar confirmation.** E.g. long = two
+   consecutive higher lows while below VWAP by ≥ threshold.
+
+c) **Widen SL, tighten TP.** If we're going to lose 50% of the time, we
+   need losers smaller than winners, not larger. Counterintuitively, a
+   *smaller* SL (0.10%) with a non-VWAP fixed TP may do better than the
+   current "wait for VWAP return" logic which gives away profits to time.
+
+d) **Replace ADX<20 with a direct chop/range detector.** ADX is a lagging
+   smoothed indicator; BB width, Choppiness Index, or simple range/ATR
+   ratio might identify mean-reverting days more precisely.
+
+e) **Session time-of-day gate.** Mean reversion works best in the 10:30–
+   14:30 midday drift window. Entries in the first 30 minutes are fighting
+   the ORB and entries in the last hour fight the close auction. Test
+   restricting entries to 10:30–14:30 ET.
+
+f) **VWAP bands instead of raw deviation.** Use σ bands (e.g. 1× stdev of
+   typical price from VWAP) so the threshold auto-scales with volatility.
+
+Recommendation: Option (a) — drop to 1-min TF — is the biggest structural
+change and most likely to move the needle. Options (e) and (f) are cheap
+refinements that can be stacked on whichever TF wins.
+
+---
