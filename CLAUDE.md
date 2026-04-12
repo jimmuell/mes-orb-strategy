@@ -182,9 +182,31 @@ This gives ~20 potential ORB setups — enough for preliminary validation.
 ### 7. Use tv_launch(kill_existing=False) to reconnect CDP
 Run if MCP loses connection to the desktop app.
 
-### 8. Pine Script timezone — always use America/Chicago session strings
-CORRECT:   time("5", "0930-0935:23456", "America/Chicago")
-WRONG:     hour == 9 and minute == 30  (matches UTC not CT)
+### 8. Pine Script timezone — session strings use America/Chicago BUT times are CT not ET
+
+The FirstRateData ES dataset uses Eastern Time timestamps.
+The US cash open (NYSE) is 9:30 ET = 8:30 CT.
+
+CORRECT for ES ORB bar (9:30 ET = 8:30 CT):
+  time("5", "0830-0835:23456", "America/Chicago")
+
+WRONG — this matches 10:30 ET (one hour AFTER the cash open):
+  time("5", "0930-0935:23456", "America/Chicago")
+
+WRONG — never use raw hour/minute comparisons:
+  hour == 9 and minute == 30
+
+Full RTH session strings for ES on TradingView (all in America/Chicago):
+  Session bar:    "0830-1500:23456"  (9:30-16:00 ET = 8:30-15:00 CT)
+  ORB bar:        "0830-0835:23456"  (9:30-9:35 ET = 8:30-8:35 CT)
+  Entry window:   "0835-1000:23456"  (9:35-11:00 ET, Phase 2 gap fade only)
+  Session end:    "1455-1500:23456"  (15:55-16:00 ET = 14:55-15:00 CT)
+
+Historical note: this lesson was originally written with "0930-0935" for
+the ORB bar, which silently produced an ORB one hour late (10:30 ET).
+Both mes_orb_v2.pine and gap_fade_v1.pine were affected and corrected
+2026-04-12 after Jim caught a 7-pt "ORB" on 2026-03-27 in the TV Data
+Window while the Python backtest saw the correct 23.75-pt 9:30 ET bar.
 
 ### 9. Do NOT use ta.vwap() — calculate VWAP manually
 Avoids conflict with existing VWAP Session indicator already on chart.

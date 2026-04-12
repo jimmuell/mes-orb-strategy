@@ -37,11 +37,12 @@ i_rrRatio        = input.float(1.75, "R:R Ratio", minval=0.5, step=0.25,
                      tooltip="Take-profit as multiple of stop-loss distance. Fixed exit, no VWAP/PDC touch.")
 
 // ─── Entry Window (America/Chicago timezone) ────────────────────────────
-// NOTE: Phase 1 Pine uses 0930-1600 as 'session' in America/Chicago. This
-// script uses the same convention so the two strategies share a consistent
-// session definition. The 9:35-11:00 entry window starts one 5-min bar
-// after the opening (ORB) bar so ORB high/low are locked in, and ends at
-// 11:00 per historical gap-fade completion statistics.
+// NOTE: Session strings are in CT wall-clock (the third arg to time()).
+// The ES cash open is 9:30 ET = 8:30 CT, so the ORB bar is 0830-0835 CT.
+// The 9:35-11:00 ET entry window = 0835-1000 CT, starting one 5-min bar
+// after the opening (ORB) bar so ORB high/low are locked in, and ending
+// at 11:00 ET per historical gap-fade completion statistics.
+// See CLAUDE.md Critical Lesson #8 for the full timezone rationale.
 
 // ─── Regime Filters ──────────────────────────────────────────────────────
 i_atrLen         = input.int(10, "ATR Length (daily)", minval=5,
@@ -88,18 +89,24 @@ TICK_SIZE = syminfo.mintick  // 0.25 for MES/ES
 //  SESSION DETECTION (America/Chicago — matches Phase 1 convention)
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Full RTH session: 9:30-16:00
-isSessionBar  = not na(time("5", "0930-1600:23456", "America/Chicago"))
+// TIMEZONE FIX: ES FirstRateData is ET-stamped. US cash open is
+// 9:30 ET = 8:30 CT. Pine time() strings use the CT wall clock when
+// "America/Chicago" is supplied, so the CT times are what must be used.
+// The prior "0930" (CT) values matched 10:30 ET, one hour AFTER the
+// cash open. See CLAUDE.md Critical Lesson #8 (corrected).
+
+// Full RTH session: 9:30-16:00 ET = 8:30-15:00 CT
+isSessionBar  = not na(time("5", "0830-1500:23456", "America/Chicago"))
 isNewSession  = isSessionBar and not isSessionBar[1]
 
-// The 9:30-9:35 opening bar (the "ORB" bar — our gap extreme reference)
-isORBBar      = not na(time("5", "0930-0935:23456", "America/Chicago"))
+// The ORB bar (the 9:30-9:35 ET opening bar = 8:30-8:35 CT)
+isORBBar      = not na(time("5", "0830-0835:23456", "America/Chicago"))
 
-// Entry window: 9:35-11:00 (after the ORB bar, before mid-morning)
-isEntryWindow = not na(time("5", "0935-1100:23456", "America/Chicago"))
+// Entry window: 9:35-11:00 ET = 8:35-10:00 CT
+isEntryWindow = not na(time("5", "0835-1000:23456", "America/Chicago"))
 
-// Session end flatten window: 15:55-16:00
-isSessionEnd  = not na(time("5", "1555-1600:23456", "America/Chicago"))
+// Session end flatten window: 15:55-16:00 ET = 14:55-15:00 CT
+isSessionEnd  = not na(time("5", "1455-1500:23456", "America/Chicago"))
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  PER-SESSION STATE (reset on each new RTH session)

@@ -98,10 +98,17 @@ TICK_SIZE = syminfo.mintick  // 0.25 for MES/ES
 //  SESSION DETECTION (America/Chicago timezone — lesson #8)
 // ═══════════════════════════════════════════════════════════════════════════
 
-isORBBar      = not na(time("5", "0930-0935:23456", "America/Chicago"))
-isSessionBar  = not na(time("5", "0930-1600:23456", "America/Chicago"))
+// TIMEZONE FIX: ES FirstRateData is ET-stamped. US cash open is
+// 9:30 ET = 8:30 CT. Pine time() session strings are in the timezone
+// supplied as the third argument (America/Chicago), so the CT wall-clock
+// times are what must be used. Using "0930-0935" here matches 10:30 ET
+// which is an hour AFTER the cash open — the bug that produced a 7-pt
+// "ORB" on 2026-03-27 (10:30 ET bar) instead of the correct 23.75-pt
+// ORB (9:30 ET bar = 8:30 CT bar).
+isORBBar      = not na(time("5", "0830-0835:23456", "America/Chicago"))
+isSessionBar  = not na(time("5", "0830-1500:23456", "America/Chicago"))
 isNewSession  = isSessionBar and not isSessionBar[1]
-isSessionEnd  = not na(time("5", "1555-1600:23456", "America/Chicago"))
+isSessionEnd  = not na(time("5", "1455-1500:23456", "America/Chicago"))
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ORB TRACKING
