@@ -1311,3 +1311,200 @@ change and most likely to move the needle. Options (e) and (f) are cheap
 refinements that can be stacked on whichever TF wins.
 
 ---
+
+### Phase 2 Run 002 — 1-Minute VWAP Reversion Scalp
+
+**Date:** 2026-04-12
+**Script:** `backtest/strategies/vwap-scalp/vwap_scalp_1min.py`
+**Data:** `data/raw/ES_full_1min_continuous_UNadjusted.txt` — 6,390,913 bars, Jan 2008 – Apr 2026
+**Contract:** 1 MES ($5/point, $0.62 commission/side)
+**Slippage:** 0 (not simulated)
+
+**Deltas vs Run 001:**
+- Timeframe: **1-min** instead of 5-min
+- TP tolerance: **1 tick** (0.25 pt) instead of 2 ticks
+- SL: **0.10%** fixed instead of 0.20%
+- Entry window: **10:30–14:30 ET only** (midday mean-reversion window)
+- Added σ-band deviation modes (20-bar rolling stdev of close − VWAP)
+- Everything else (ADX<20, ATR% 0.3–2.0, SMA200, max 3 trades/day,
+  no re-entry in stopped-out direction, flatten 15:55) identical
+
+#### Ablation
+
+| Variant | Trades | Win Rate | PF | Net $ | Max DD $ | DD % | Avg Win | Avg Loss | T/day |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **fixed 0.10%** | 1,547 | 37.0% | **0.898** | -$1,552 | $2,129 | 21.30% | $24 | -$16 | 1.20 |
+| fixed 0.15% | 1,220 | 30.2% | 0.860 | -$1,861 | $2,433 | 24.34% | $31 | -$16 | 1.12 |
+| σ 1.0 | 2,273 | 51.3% | 0.860 | -$2,453 | $3,329 | 33.31% | $13 | -$16 | 1.49 |
+| σ 1.5 | 2,003 | 46.9% | 0.850 | -$2,426 | $3,094 | 30.96% | $15 | -$16 | 1.40 |
+
+**All four variants still unprofitable.** Best PF 0.898 (fixed 0.10%).
+σ-band modes trade more frequently and hold win rate closer to 50% but
+produce much smaller winners — the TP fires near VWAP with very little
+travel, so avg win drops to $13–$15 and PF is worse than the fixed variants.
+
+#### Run 001 vs Run 002 (best variants)
+
+| Metric | Run 001 (5-min) | Run 002 (1-min) | Δ |
+|---|---:|---:|---:|
+| Trades | 1,627 | 1,547 | -80 |
+| Win Rate | 51.6% | **37.0%** | **-14.6 pts** |
+| Profit Factor | 0.885 | 0.898 | +0.013 |
+| Net Profit | -$2,706 | -$1,552 | +$1,154 |
+| Avg Win | $24.79 | $23.91 | -$0.88 |
+| Avg Loss | -$29.82 | **-$15.62** | **+$14.20** |
+| **Win/Loss Ratio** | **0.83 (inverted)** | **1.53 ✅** | **+0.70** |
+| Max DD % | 30.36% | 21.30% | -9.06 pts |
+| Trades/Day | 1.25 | 1.20 | -0.05 |
+
+✅ **Reward/risk geometry flipped as predicted.** W/L ratio went from 0.83
+(losers bigger than winners) to 1.53 (winners bigger than losers). Tighter
+SL did its job — avg loss halved from -$29.82 to -$15.62. DD dropped from
+30% to 21%. Net profit moved from -$2,706 toward breakeven (-$1,552).
+
+❌ **But win rate collapsed 51.6% → 37.0%.** The geometric win was almost
+exactly cancelled by a hit-rate loss. PF is still ~0.90. The 1-min bars
+catch VWAP touches earlier (good for R/R) but also trigger on more false
+deviations that get stopped out before the retracement (bad for WR). The
+net effect on PF is near zero.
+
+#### Best Variant (fixed 0.10%) — Gap to Phase 2 Targets
+
+| Metric | Actual | Target | Status |
+|---|---|---|---|
+| Win Rate | 37.0% | ≥ 65% | ❌ (-28.0 pts) |
+| Profit Factor | 0.898 | ≥ 1.5 | ❌ |
+| Max Drawdown | 21.30% | ≤ 15% | ❌ |
+
+#### Yearly breakdown (best variant)
+
+| Year | Trades | Win Rate | PF | Net $ |
+|---|---:|---:|---:|---:|
+| 2009 | 53 | 37.7% | 0.48 | -106 |
+| 2010 | 100 | 35.0% | 0.53 | -213 |
+| 2011 | 81 | 25.9% | 0.36 | -298 |
+| 2012 | 119 | 32.8% | 0.47 | -347 |
+| 2013 | 106 | 45.3% | 0.89 | -59 |
+| 2014 | 105 | 39.0% | 0.77 | -158 |
+| 2015 | 102 | 34.3% | 0.63 | -286 |
+| 2016 | 120 | 41.7% | 0.88 | -97 |
+| 2017 | 75 | 46.7% | 0.87 | -68 |
+| 2018 | 85 | 38.8% | 0.68 | -258 |
+| 2019 | 66 | 45.5% | 1.12 | **+65** |
+| 2020 | 69 | 39.1% | 1.00 | -2 |
+| 2021 | 128 | 43.8% | 1.20 | **+309** |
+| 2022 | 56 | 19.6% | 1.35 | **+347** |
+| 2023 | 111 | 31.5% | 0.73 | -450 |
+| 2024 | 41 | 29.3% | 0.77 | -195 |
+| 2025 | 99 | 34.3% | 0.97 | -66 |
+| 2026 | 31 | 32.3% | 1.44 | **+330** |
+
+5 profitable years (2019, 2021, 2022, 2026 solidly; 2020 flat).
+**All profitable years are 2019 or later** — the post-2020 regime shift
+that was hostile to Run 001 is *favorable* to Run 002. 2022 is the
+standout: only 19.6% WR but PF 1.35 (the tail wins are huge).
+
+#### Walk-forward (best variant)
+
+| | In-Sample 2008-2019 | Out-of-Sample 2020-2026 |
+|---|---|---|
+| Trades | 1,012 | 535 |
+| Win Rate | 38.2% | 34.6% |
+| Profit Factor | 0.718 | **1.031** |
+| Net Profit | -$1,825 | **+$273** |
+| Max Drawdown $ | $1,962 | $988 |
+| Max Drawdown % | 19.63% | **9.25%** |
+| Trades/Day | 1.21 | 1.19 |
+
+✅ **OOS is slightly profitable and meets the DD target.** This is the
+first glimmer of a live edge anywhere in Phase 2. PF 1.031 on 535 trades,
+DD 9.25% (well under the 15% target), net +$273. It's not yet an edge —
+PF 1.031 is statistically indistinguishable from 1.0 — but the regime
+geometry has shifted. Post-2020, the 1-min mean-reversion setup has
+positive expectancy; pre-2020 it does not.
+
+Compare to Run 001 which had **the opposite** regime profile (IS slightly
+better, OOS decay). **Run 002 is post-2020-regime dependent, same as
+Phase 1 ORB.** Useful data point — the two live strategies can both be
+expected to perform in the current regime, but neither has pre-2020
+validation.
+
+#### ADX regime confirmation (best variant, no ADX filter)
+
+| Bucket | Trades | Win Rate | PF | Net $ | DD % |
+|---|---:|---:|---:|---:|---:|
+| **ADX < 20** (choppy — target) | 1,547 | **37.0%** | **0.898** | -$1,552 | 21.30% |
+| ADX ≥ 20 (trending) | 1,508 | 35.2% | 0.824 | -$2,891 | 38.31% |
+
+✅ **Regime premise still validated** — ADX<20 beats ADX≥20 on all four
+metrics. Gap is narrower than Run 001 (PF delta 0.07 vs 0.15) because the
+tighter SL on 1-min bars makes losses in both regimes more uniform, but
+the directional signal holds. The filter continues to earn its keep.
+
+#### Observations
+
+1. **The hypothesis was half-right.** The 1-min TF *did* flip reward/risk
+   geometry — a clean mechanical win. But it traded that for a ~15-point
+   win rate drop because the tighter SL stops out many setups that would
+   have recovered given more time. **PF barely moved** (0.885 → 0.898).
+   The two effects almost exactly cancelled.
+
+2. **OOS is now profitable.** First Phase 2 variant to produce positive
+   expectancy anywhere. PF 1.031 with DD 9.25% post-2020 is a legitimate
+   foothold — 535 trades is a reasonable sample size. Pre-2020 is still
+   unprofitable so there's no walk-forward validation yet.
+
+3. **Regime profile is now aligned with Phase 1.** Both strategies are
+   post-2020-dependent. The complementary-regime thesis still holds
+   (trending vs choppy), but the *temporal* regime dependency stacks.
+   Jim has no pre-2020 validation for either strategy.
+
+4. **σ-band modes are worse than fixed %.** Stdev bands give higher
+   trade frequency and better-looking win rates but microscopic winners
+   — the TP fires right at VWAP touch with near-zero travel. Fixed %
+   thresholds are the correct entry-sizing approach for this strategy.
+
+5. **The win rate target of 65% is unreachable with this entry design.**
+   Run 001 best was 51.6%; Run 002 best is 37.0%. Changing TF doesn't
+   change the fundamental hit rate of the entry rule. To get to 65% the
+   entry rule itself has to change — not parameters around it.
+
+6. **Missing: a true confirmation trigger.** Both runs use "closes up/down"
+   as the only confirmation beyond VWAP distance. That's not a trigger,
+   it's a coin flip. Realistic mean-reversion scalps use either (a) a
+   structural reversal pattern (engulfing, pin bar, 2-bar HL/LH),
+   (b) a momentum divergence on an oscillator, or (c) a volume/delta
+   exhaustion signal.
+
+#### Next Steps (for Senior Claude)
+
+The 1-min run is the cleanest demonstration that neither timeframe alone
+fixes the edge problem. The entry *rule* needs to change. Candidates:
+
+a. **Structural reversal trigger** — require a 2-bar HL (long) or LH
+   (short) at the VWAP-deviation threshold instead of a single green/red
+   close. Higher-quality signals, fewer trades, should raise win rate.
+
+b. **RSI divergence trigger** — at the VWAP deviation, require 14-period
+   RSI to have made a lower low / higher high than the price swing
+   (classic bullish/bearish divergence).
+
+c. **Time-stop exit** — exit after N minutes regardless of TP/SL. If the
+   mean-reversion hasn't happened in, say, 15 minutes, the thesis is
+   invalidated. Prevents slow bleed-to-SL.
+
+d. **Remove SL entirely, use time-stop + session close.** Mean-reversion
+   strategies often work better without hard SLs because the "worst"
+   trades become the "biggest wins" when price finally snaps back. High
+   risk but worth testing on historical data.
+
+e. **Tighten the OOS regime filter.** Since post-2020 is the profitable
+   regime, add a "post-2020 regime indicator" — e.g. only trade when
+   realized vol or term structure matches the 2020+ profile. This is
+   data-mining territory but worth a sanity run.
+
+Recommendation: Start with **(a) — 2-bar structural confirmation** — the
+simplest, most mechanical, and most likely to move win rate toward the
+65% target without overfitting.
+
+---
