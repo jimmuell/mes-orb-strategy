@@ -1694,3 +1694,209 @@ unprofitable, Senior Claude should consider Option 3(b) — the VWAP scalp
 paradigm simply may not have an edge on ES futures.
 
 ---
+
+### Phase 2 Run 004 — Fixed R:R Exit (Final VWAP Deviation Test)
+
+**Date:** 2026-04-12
+**Script:** `backtest/strategies/vwap-scalp/vwap_scalp_run004.py`
+**Data:** `data/raw/ES_full_1min_continuous_UNadjusted.txt`
+**Contract:** 1 MES ($5/point, $0.62 commission/side)
+**Slippage:** 0 (not simulated)
+
+Single change from Run 002 best: replace VWAP-touch TP with a fixed R:R
+target off the 0.10% SL distance. Ablates five R:R values (0.5, 0.75,
+1.0, 1.5, 2.0). Senior Claude pre-declared this the final run of the
+VWAP deviation paradigm — PF < 1.0 across all variants = paradigm failure.
+
+#### Ablation
+
+| Variant | Trades | Win Rate | PF | Net $ | Max DD $ | DD % | Avg Win | Avg Loss | T/day |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| R:R 0.5  | 2,265 | **62.8%** | 0.673 | -$4,246 | $4,322 | 43.23% | $6  | -$15 | 1.76 |
+| R:R 0.75 | 1,977 | 53.5% | 0.731 | -$3,805 | $3,897 | 38.99% | $10 | -$16 | 1.54 |
+| R:R 1.0  | 1,801 | 47.3% | 0.764 | -$3,496 | $3,621 | 36.23% | $13 | -$16 | 1.40 |
+| R:R 1.5  | 1,572 | 37.2% | 0.772 | -$3,494 | $3,602 | 36.04% | $20 | -$16 | 1.22 |
+| **R:R 2.0**  | 1,465 | 31.0% | **0.813** | -$2,943 | $3,218 | 32.20% | $28 | -$16 | 1.14 |
+
+**🛑 PARADIGM FAILURE — ALL FIVE VARIANTS PF < 1.0 (range 0.673–0.813).**
+
+Best PF is R:R 2.0 at 0.813 — still below breakeven. Even the R:R 0.5
+variant, which achieves a **62.8% win rate** (finally close to the 65%
+target), has PF 0.673 because winners are so small ($6 avg) that the
+hit-rate advantage doesn't compensate. The ablation reveals a perfect
+tradeoff curve — as R:R grows, WR falls by almost exactly the mathematical
+minimum needed to keep expectancy flat. **There is no point on the
+R:R curve where net expectancy is positive.**
+
+#### Exit breakdown (all 5 variants)
+
+| Variant | TP | SL | Session close |
+|---|---|---|---|
+| R:R 0.5 | 1,423 / 62.8% / +$8,721  | 841   / 37.1% / -$12,965 | 1 / 0.0% / -$2 |
+| R:R 0.75| 1,056 / 53.4% / +$10,477 | 919   / 46.5% / -$14,284 | 2 / 0.1% / +$1 |
+| R:R 1.0 | 848   / 47.1% / +$11,339 | 949   / 52.7% / -$14,833 | 4 / 0.2% / -$2 |
+| R:R 1.5 | 575   / 36.6% / +$11,933 | 986   / 62.7% / -$15,451 | 11 / 0.7% / +$24 |
+| R:R 2.0 | 435   / 29.7% / +$12,639 | 1,006 / 68.7% / -$15,712 | 24 / 1.6% / +$130 |
+
+Gross profits rise monotonically with R:R ($8.7k → $12.6k) — bigger winners,
+as expected. Gross losses also rise monotonically (-$12.9k → -$15.7k)
+because SL is fixed but more trades get stopped as hit rate drops. Net:
+losses outpace profits at every R:R. **The entry has no positive
+expectancy at any exit geometry.**
+
+#### Best variant (R:R 2.0) — Gap to Phase 2 Targets
+
+| Metric | Actual | Target | Gap |
+|---|---|---|---|
+| Win Rate | 31.0% | ≥ 65% | **-34.0 pts** ❌ |
+| Profit Factor | 0.813 | ≥ 1.5 | -0.687 ❌ |
+| Max Drawdown | 32.20% | ≤ 15% | +17.20 pts ❌ |
+
+#### Walk-forward (R:R 2.0)
+
+| | IS 2008-2019 | OOS 2020-2026 |
+|---|---|---|
+| Trades | 933 | 532 |
+| Win Rate | 30.1% | 32.5% |
+| PF | 0.714 | 0.888 |
+| Net | -$1,932 | -$1,010 |
+| DD % | 20.45% | 15.07% |
+
+**The post-2020 foothold from Run 002 is gone.** OOS PF dropped from
+1.031 (Run 002, VWAP-touch TP) to 0.888 (Run 004, fixed R:R 2.0 TP).
+OOS DD is right at the 15% target line. **There is no remaining
+profitable slice of the VWAP deviation paradigm in Phase 2.**
+
+#### Yearly breakdown (R:R 2.0)
+
+| Year | Trades | WR | PF | Net $ |
+|---|---:|---:|---:|---:|
+| 2009 | 43 | 14.0% | 0.24 | -174 |
+| 2010 | 96 | 32.3% | 0.71 | -131 |
+| 2011 | 77 | 22.1% | 0.43 | -264 |
+| 2012 | 112 | 25.9% | 0.54 | -309 |
+| 2013 | 91 | 33.0% | 0.76 | -139 |
+| 2014 | 99 | 34.3% | 0.84 | -113 |
+| 2015 | 97 | 28.9% | 0.66 | -273 |
+| 2016 | 109 | 32.1% | 0.78 | -189 |
+| 2017 | 67 | 37.3% | 0.86 | -79 |
+| 2018 | 77 | 27.3% | 0.63 | -310 |
+| 2019 | 65 | 38.5% | 1.08 | **+47** |
+| 2020 | 66 | 33.3% | 0.89 | -85 |
+| 2021 | 123 | 39.8% | 1.20 | **+329** |
+| 2022 | 56 | 19.6% | 0.43 | -575 |
+| 2023 | 107 | 28.0% | 0.69 | -519 |
+| 2024 | 41 | 24.4% | 0.63 | -339 |
+| 2025 | 104 | 37.5% | 1.09 | **+190** |
+| 2026 | 35 | 34.3% | 0.98 | -13 |
+
+Only 3 profitable years out of 18 (2019, 2021, 2025). 2022 collapsed
+from PF 1.35 in Run 002 to 0.43 here — the fixed R:R exit misses the
+tail-event winners that carried 2022 under VWAP-touch exits.
+
+#### Full Progression (Run 001 → 002 → 003 → 004, best variants)
+
+| Metric | Run 001 (5m) | Run 002 (1m) | Run 003 (2b+TS) | Run 004 (fixed R:R) |
+|---|---:|---:|---:|---:|
+| Trades | 1,627 | 1,547 | 1,547 | 1,465 |
+| Win Rate | 51.6% | 37.0% | 37.0% | 31.0% |
+| Profit Factor | 0.885 | **0.898** | **0.898** | 0.813 |
+| Net Profit | -$2,706 | -$1,552 | -$1,552 | -$2,943 |
+| Avg Win | $24.79 | $23.91 | $23.91 | $28.16 |
+| Avg Loss | -$29.82 | -$15.62 | -$15.62 | -$15.56 |
+| W/L Ratio | 0.83 | 1.53 | 1.53 | 1.81 |
+| Max DD % | 30.36% | 21.30% | 21.30% | 32.20% |
+| Trades/Day | 1.25 | 1.20 | 1.20 | 1.14 |
+
+Run 002/003 remains the peak of the paradigm at PF 0.898. Run 004 is
+worse by every metric except W/L ratio (and the W/L gain is cosmetic —
+achieved by taking fewer but bigger winners from an entry that loses
+2/3 of its trades). **Four runs, no profitable best variant, no path
+forward within this framework.**
+
+#### Paradigm Verdict
+
+🛑 **PARADIGM FAILURE CONFIRMED.**
+
+> **VWAP deviation entry does not contain a live edge on ES futures.**
+> Four runs across 5-min and 1-min timeframes, four deviation thresholds,
+> two confirmation patterns (single-bar and 2-bar structural), two
+> exit frameworks (VWAP-touch and fixed R:R), a time stop ablation, and
+> σ-band entries — no configuration produced PF ≥ 1.0 on the full
+> dataset. The only positive foothold (Run 002 OOS PF 1.031) disappeared
+> when the exit rule was changed. **Senior Claude should call a
+> paradigm pivot.**
+
+#### What we learned
+
+1. **The ADX<20 regime filter does have predictive value** — consistently
+   beats ADX≥20 across all 4 runs by meaningful margins. Whatever comes
+   next in Phase 2 should keep this filter.
+
+2. **The R:R curve is perfectly traded off.** R:R 0.5 gives 62.8% WR /
+   PF 0.67; R:R 2.0 gives 31.0% WR / PF 0.81. There is no sweet spot —
+   the entry's raw signal quality is the ceiling, and no exit geometry
+   can turn negative raw signal into positive expectancy.
+
+3. **VWAP-touch TP was actually the best exit rule empirically.** PF
+   0.898 (Run 002/003) beat every fixed R:R variant (max 0.813). The
+   "slow bleed" problem that motivated Run 004 is real, but fixing it
+   costs more in winners foregone than it saves in losers avoided.
+
+4. **The strategy's best single exit bucket across all runs was
+   session-close flattens.** In Runs 002/003 variants without time stop,
+   those 23–24 trades averaged +$128–$149. That's a strong signal — the
+   trades that hold through a full session are the trades where mean
+   reversion is working. Any replacement strategy should consider
+   longer hold times, not shorter.
+
+5. **The commission drag is not the problem.** $1.24 round-trip per
+   trade on ~1,500 trades = $1,860 total drag. Even zeroing commissions
+   would leave every best variant still unprofitable. The edge is
+   missing, not eroded.
+
+#### Recommendation — Paradigm Pivot Options for Senior Claude
+
+With the VWAP deviation paradigm exhausted, Phase 2 needs a structural
+pivot. Candidates:
+
+a. **Gap fade.** Only trade overnight gaps > 0.3% that partially retrace
+   into the prior-day range. Directly exploits auction theory around
+   value-area rotation. Well-documented edge in the literature, fits
+   the "complementary to ORB" thesis (ORB trades with the gap, gap-fade
+   trades against it).
+
+b. **Opening drive fade.** The 9:30–10:00 ET initial balance often
+   over-extends and retraces between 10:00 and 11:30. Enter against
+   the first 30-min extreme when price pokes back through the IB level.
+   Also complementary to ORB (which enters with the first 5-min move).
+
+c. **Overnight reversal.** Fade the sign of the overnight session
+   (18:00 ET prior day → 09:30 ET today) once RTH opens. Simple,
+   mechanical, trades ~every day. Works in both trending and choppy
+   regimes historically.
+
+d. **Accept Run 002 as a "narrow post-2020 experiment"** and paper
+   trade it in parallel with Phase 1 ORB to see whether the PF 1.031
+   OOS foothold survives live conditions. Low conviction, but zero
+   additional development cost.
+
+e. **Drop Phase 2 entirely for now.** Ship Phase 1 ORB as the sole
+   strategy, revisit a complementary strategy after 30-day paper trade
+   provides more insight into the live ORB profile.
+
+**VS Claude recommendation:** **(a) Gap fade.** It has the cleanest
+theoretical basis, the most documented historical edge on ES, is
+mechanically simple, and is the most directly complementary to Phase 1
+ORB (ORB trades *with* gap direction; gap fade trades *against* it,
+completing the coverage of gap days). Lowest ambiguity, highest expected
+information value from a single run. (b) is a close second and could be
+Run 006.
+
+If Senior Claude prefers to pause Phase 2 development and focus on
+Phase 1 paper trading, option (d) or (e) are entirely reasonable — the
+VWAP work has demonstrated that blind paradigm-following on ES wastes
+research budget, and Phase 1 paper trade feedback may reshape what a
+good complementary strategy should even look like.
+
+---
