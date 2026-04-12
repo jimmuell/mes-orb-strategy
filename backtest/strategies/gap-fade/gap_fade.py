@@ -152,6 +152,8 @@ def run_backtest(df: pd.DataFrame,
                  block_phase1: bool = True,
                  exclude_news: bool = False,
                  phase1_days: set | None = None,
+                 entry_window_start: tuple = ENTRY_WINDOW_START,
+                 entry_window_end: tuple = ENTRY_WINDOW_END,
                  ) -> list[Trade]:
     if target_mode not in ("pdc", "rr"):
         raise ValueError(target_mode)
@@ -194,8 +196,8 @@ def run_backtest(df: pd.DataFrame,
 
     trading_days_list = [pd.Timestamp(dates[ds]) for ds in day_starts]
 
-    ws_h, ws_m = ENTRY_WINDOW_START
-    we_h, we_m = ENTRY_WINDOW_END
+    ws_h, ws_m = entry_window_start
+    we_h, we_m = entry_window_end
 
     def in_entry_window(i):
         hh, mm = hours[i], minutes[i]
