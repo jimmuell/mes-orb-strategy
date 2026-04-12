@@ -1,0 +1,251 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Gap Fade v1 — Phase 2 Final Configuration (Run 006 Variant C)
+//
+// Backtest results (18-year ES data, 327 trades, 1 MES contract):
+//   Win Rate: 47.1% | Profit Factor: 1.385 | Max DD: 5.28% | Net: +$1,946
+//   In-sample  (2008-2019): PF 1.521 | Net +$1,023 | DD 1.56%
+//   Out-of-sample (2020-2026): PF 1.299 | Net +$923 | DD 5.80%
+//   Walk-forward: both windows profitable | 14 of 19 years profitable
+//
+// Complements Phase 1 MES ORB v2: ORB trades WITH gap direction (continuation);
+// Gap Fade trades AGAINST it (reversal). Mutually exclusive by construction.
+//
+// CRITICAL: Chart must be regular Candles (not Heikin Ashi), ETH session.
+// Do NOT plot VWAP or EMA — already on chart as indicators.
+// PRIVATE USE ONLY — do not publish to TradingView public library
+
+//@version=6
+strategy("Gap Fade v1 — Phase 2 Final", overlay=true,
+         default_qty_type=strategy.fixed, default_qty_value=1,
+         commission_type=strategy.commission.cash_per_contract,
+         commission_value=0.62, initial_capital=25000,
+         slippage=0, calc_on_every_tick=false,
+         process_orders_on_close=false)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  INPUTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Gap Filter ──────────────────────────────────────────────────────────
+i_gapMin         = input.float(0.32, "Gap Min %", minval=0.0, step=0.01,
+                     tooltip="Minimum absolute gap size (% of prior close). Below this = noise, no edge.")
+i_gapMax         = input.float(0.55, "Gap Max %", minval=0.1, step=0.01,
+                     tooltip="Maximum absolute gap size (% of prior close). Above this = gap-and-go regime, fade fails.")
+
+// ─── Exit ────────────────────────────────────────────────────────────────
+i_rrRatio        = input.float(1.75, "R:R Ratio", minval=0.5, step=0.25,
+                     tooltip="Take-profit as multiple of stop-loss distance. Fixed exit, no VWAP/PDC touch.")
+
+// ─── Entry Window (America/Chicago timezone) ────────────────────────────
+// NOTE: Phase 1 Pine uses 0930-1600 as 'session' in America/Chicago. This
+// script uses the same convention so the two strategies share a consistent
+// session definition. The 9:35-11:00 entry window starts one 5-min bar
+// after the opening (ORB) bar so ORB high/low are locked in, and ends at
+// 11:00 per historical gap-fade completion statistics.
+
+// ─── Regime Filters ──────────────────────────────────────────────────────
+i_atrLen         = input.int(10, "ATR Length (daily)", minval=5,
+                     tooltip="ATR period for daily volatility regime filter.")
+i_atrMin         = input.float(0.3, "ATR Vol Min %", minval=0.0, step=0.1,
+                     tooltip="Only trade when prior-day ATR% ≥ this (skip ultra-calm).")
+i_atrMax         = input.float(2.0, "ATR Vol Max %", minval=0.1, step=0.1,
+                     tooltip="Only trade when prior-day ATR% ≤ this (skip extreme panic).")
+i_adxLen         = input.int(14, "ADX Length (daily)", minval=5,
+                     tooltip="ADX period for daily trend quality filter.")
+i_adxMax         = input.float(20.0, "ADX Max (choppy regime)", minval=5.0, step=1.0,
+                     tooltip="Only trade when prior-day ADX < this (non-trending, choppy regime). Inverse of Phase 1 ORB's ADX > 15.")
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DAILY AGGREGATION (request.security — prior day values, no look-ahead)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Prior day close (anchor for the gap calculation)
+prevDayClose = request.security(syminfo.tickerid, "D", close[1],
+                 lookahead=barmerge.lookahead_on)
+
+// 10-day ATR% (prior day): ATR / close × 100
+dailyATRval  = request.security(syminfo.tickerid, "D", ta.atr(i_atrLen)[1],
+                 lookahead=barmerge.lookahead_on)
+dailyCloseP  = request.security(syminfo.tickerid, "D", close[1],
+                 lookahead=barmerge.lookahead_on)
+atrPct       = dailyCloseP > 0 ? dailyATRval / dailyCloseP * 100.0 : na
+
+// 14-period ADX (prior day). Uses the same helper pattern as Phase 1 v2.
+f_prevAdx(len) =>
+    [dp, dm, ax] = ta.dmi(len, len)
+    ax[1]
+
+prevDayADX   = request.security(syminfo.tickerid, "D", f_prevAdx(i_adxLen),
+                 lookahead=barmerge.lookahead_on)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+TICK_SIZE = syminfo.mintick  // 0.25 for MES/ES
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SESSION DETECTION (America/Chicago — matches Phase 1 convention)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Full RTH session: 9:30-16:00
+isSessionBar  = not na(time("5", "0930-1600:23456", "America/Chicago"))
+isNewSession  = isSessionBar and not isSessionBar[1]
+
+// The 9:30-9:35 opening bar (the "ORB" bar — our gap extreme reference)
+isORBBar      = not na(time("5", "0930-0935:23456", "America/Chicago"))
+
+// Entry window: 9:35-11:00 (after the ORB bar, before mid-morning)
+isEntryWindow = not na(time("5", "0935-1100:23456", "America/Chicago"))
+
+// Session end flatten window: 15:55-16:00
+isSessionEnd  = not na(time("5", "1555-1600:23456", "America/Chicago"))
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PER-SESSION STATE (reset on each new RTH session)
+// ═══════════════════════════════════════════════════════════════════════════
+
+var float rthOpen          = na    // open of the 9:30 bar
+var float orbHi            = na    // high of the 9:30 bar
+var float orbLo            = na    // low of the 9:30 bar
+var float gapPctVal        = na    // (rth_open - prior_close) / prior_close * 100
+var bool  gapSet           = false
+var bool  tradedToday      = false
+var bool  phase1BlockToday = false // true if Phase 1 ORB breakout has fired today
+
+if isNewSession
+    rthOpen          := na
+    orbHi            := na
+    orbLo            := na
+    gapPctVal        := na
+    gapSet           := false
+    tradedToday      := false
+    phase1BlockToday := false
+
+// Capture the 9:30 bar values (single opening 5-min bar)
+if isORBBar and not gapSet
+    rthOpen   := open
+    orbHi     := high
+    orbLo     := low
+    gapPctVal := not na(prevDayClose) and prevDayClose > 0
+                 ? (rthOpen - prevDayClose) / prevDayClose * 100.0
+                 : na
+    gapSet    := true
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PHASE 1 ORB BLOCK (lightweight — not a full Phase 1 replication)
+// ═══════════════════════════════════════════════════════════════════════════
+// If any post-ORB bar closes beyond the 9:30 bar's high/low, treat as a
+// Phase 1 ORB breakout candidate and block gap fade for the rest of the day.
+// This is intentionally coarser than the actual Phase 1 entry logic (which
+// also requires retest + regime filters). A slightly over-blocking rule is
+// safer than under-blocking — gap fade and ORB are mutually exclusive by
+// thesis, and any conflict on a borderline day should defer to Phase 1.
+
+bool postORB = gapSet and not isORBBar and isSessionBar
+
+if postORB and not phase1BlockToday
+    if not na(orbHi) and close > orbHi
+        phase1BlockToday := true
+    if not na(orbLo) and close < orbLo
+        phase1BlockToday := true
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  REGIME FILTERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+bool volOK = not na(atrPct) and atrPct >= i_atrMin and atrPct <= i_atrMax
+bool adxOK = not na(prevDayADX) and prevDayADX < i_adxMax
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GAP CLASSIFICATION + ENTRY TRIGGER
+// ═══════════════════════════════════════════════════════════════════════════
+
+bool gapSizeOK = gapSet and not na(gapPctVal)
+                 and math.abs(gapPctVal) >= i_gapMin
+                 and math.abs(gapPctVal) <= i_gapMax
+
+bool isGapUp   = gapSizeOK and gapPctVal > 0
+bool isGapDown = gapSizeOK and gapPctVal < 0
+
+// Setup must pass regime gates + Phase 1 ORB block + not already traded.
+bool setupOK = gapSizeOK and volOK and adxOK
+               and not phase1BlockToday and not tradedToday
+               and strategy.position_size == 0
+
+// Entry trigger fires on a bar that CLOSES back through the 9:30 RTH open.
+// Within the entry window only. Fill at next bar open (Pine engine default).
+
+bool longTrigger  = setupOK and isGapDown and isEntryWindow
+                    and not na(rthOpen)
+                    and close > rthOpen
+
+bool shortTrigger = setupOK and isGapUp and isEntryWindow
+                    and not na(rthOpen)
+                    and close < rthOpen
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ORDER EXECUTION — fixed R:R 1.75 off gap-extreme stop
+// ═══════════════════════════════════════════════════════════════════════════
+
+if longTrigger
+    float longSL   = orbLo - TICK_SIZE                 // gap extreme + 1 tick buffer (below)
+    float slDist   = close - longSL                    // signal bar close as proxy; engine fills next open
+    float longTP   = close + i_rrRatio * slDist
+    strategy.entry("GFL", strategy.long)
+    strategy.exit("GFL Exit", "GFL", stop=longSL, limit=longTP)
+    tradedToday := true
+    alert("Gap Fade v1 — LONG ENTRY — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+
+if shortTrigger
+    float shortSL  = orbHi + TICK_SIZE                 // gap extreme + 1 tick buffer (above)
+    float slDist2  = shortSL - close
+    float shortTP  = close - i_rrRatio * slDist2
+    strategy.entry("GFS", strategy.short)
+    strategy.exit("GFS Exit", "GFS", stop=shortSL, limit=shortTP)
+    tradedToday := true
+    alert("Gap Fade v1 — SHORT ENTRY — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+
+// ─── End-of-Session Flatten ──────────────────────────────────────────────
+if isSessionEnd and strategy.position_size != 0
+    strategy.close_all("Session Close")
+    alert("Gap Fade v1 — SESSION CLOSE — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+
+// ─── Exit Alerts (fire on the bar a position closes to flat) ─────────────
+if strategy.position_size == 0 and strategy.position_size[1] > 0
+    alert("Gap Fade v1 — LONG EXIT — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+
+if strategy.position_size == 0 and strategy.position_size[1] < 0
+    alert("Gap Fade v1 — SHORT EXIT — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VISUAL AIDS (minimal — chart already has VWAP, EMA, BB, Volume)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Prior day close = the fade target (theoretical anchor).
+plot(not na(prevDayClose) and isSessionBar ? prevDayClose : na,
+     "Prior Day Close", color=color.new(color.yellow, 20),
+     style=plot.style_linebr, linewidth=2)
+
+// RTH open = the entry trigger reference level.
+plot(gapSet and isSessionBar ? rthOpen : na,
+     "RTH Open (9:30)", color=color.new(color.aqua, 30),
+     style=plot.style_linebr, linewidth=1)
+
+// Entry labels
+if longTrigger
+    label.new(bar_index, low, "GFL",
+              style=label.style_label_up, color=color.green,
+              textcolor=color.white, size=size.small)
+
+if shortTrigger
+    label.new(bar_index, high, "GFS",
+              style=label.style_label_down, color=color.red,
+              textcolor=color.white, size=size.small)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ALERT SETUP INSTRUCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+// Alerts use alert() function calls (alertcondition() does not work in strategies).
+// To set up: Right-click chart → Add Alert → Condition = "Gap Fade v1 — Phase 2 Final"
+// → Select "alert() function calls only" → Configure webhook/notification method.
