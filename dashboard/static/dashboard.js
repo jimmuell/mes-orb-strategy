@@ -141,12 +141,35 @@ async function loadTrades() {
       { text: t.exit_price ?? '', cls: 'num-cell' },
       { text: t.exit_reason || '' },
       { text: pnl == null ? '' : '$' + pnl.toFixed(2), cls: 'num-cell' },
-      { text: '' },
     ];
     cells.forEach(c => tr.appendChild(el('td', { class: c.cls || '', text: String(c.text) })));
+
+    const actionTd = el('td');
+    const del = el('button', {
+      text: 'Del',
+      style: { color: 'var(--red)', borderColor: 'var(--red)', padding: '2px 8px' },
+      onClick: () => deleteTrade(t.id),
+    });
+    actionTd.appendChild(del);
+    tr.appendChild(actionTd);
+
     tbody.appendChild(tr);
   });
 }
+
+async function deleteTrade(id) {
+  if (!confirm('Delete this trade?')) return;
+  await fetch(`/api/trades/${id}`, { method: 'DELETE' });
+  loadTrades();
+  loadSummary();
+}
+
+document.getElementById('clearAllTrades').addEventListener('click', async () => {
+  if (!confirm('Delete ALL trades? This cannot be undone.')) return;
+  await fetch('/api/trades/all', { method: 'DELETE' });
+  loadTrades();
+  loadSummary();
+});
 
 // Manual trade entry removed — trades now arrive via /api/alert webhook.
 

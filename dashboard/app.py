@@ -108,6 +108,24 @@ def add_trade():
     return jsonify({'id': new_id}), 201
 
 
+@app.route('/api/trades/all', methods=['DELETE'])
+def delete_all_trades():
+    conn = get_conn()
+    conn.execute('DELETE FROM trades')
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/trades/<int:trade_id>', methods=['DELETE'])
+def delete_trade(trade_id):
+    conn = get_conn()
+    conn.execute('DELETE FROM trades WHERE id = ?', (trade_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok'})
+
+
 @app.route('/api/trades/<int:trade_id>', methods=['PUT'])
 def update_trade(trade_id):
     d = request.get_json(force=True) or {}
