@@ -11,3 +11,7 @@ backtest/.venv/
 
 # OS
 .DS_Store
+
+# Dashboard
+dashboard/data/trading.db
+dashboard/.env

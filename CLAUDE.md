@@ -285,6 +285,16 @@ Run `git lfs pull` after cloning to download data files.
 Primary dataset: data/raw/ES_full_5min_continuous_UNadjusted.txt (68MB)
 Git LFS version: 3.7.1
 
+## Dashboard
+- Location: `dashboard/`
+- Start: `cd dashboard && python app.py`
+- URL: http://localhost:5000
+- Stack: Flask + SQLite + vanilla JS
+- Notifications: macOS `osascript` + WhatsApp via Twilio webhook (`TWILIO_WEBHOOK_URL`)
+- Task queue: Senior Claude writes tasks via `POST /api/tasks`
+- VS Claude reads pending tasks via `GET /api/tasks/pending`
+- VS Claude completes tasks via `POST /api/tasks/<id>/complete`
+
 ## Claude Code Launch Command
 Always launch Claude Code with:
 ```zsh
