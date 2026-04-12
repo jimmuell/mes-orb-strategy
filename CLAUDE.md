@@ -288,7 +288,7 @@ Git LFS version: 3.7.1
 ## Dashboard
 - Location: `dashboard/`
 - Start: `cd dashboard && python app.py`
-- URL: http://localhost:5000
+- URL: http://localhost:8080
 - Stack: Flask + SQLite + vanilla JS
 - Notifications: macOS `osascript` + WhatsApp via Twilio webhook (`TWILIO_WEBHOOK_URL`)
 - Task queue: Senior Claude writes tasks via `POST /api/tasks`
