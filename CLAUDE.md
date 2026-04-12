@@ -262,3 +262,10 @@ Large data files are managed via Git LFS.
 Run `git lfs pull` after cloning to download data files.
 Primary dataset: data/raw/ES_full_5min_continuous_UNadjusted.txt (68MB)
 Git LFS version: 3.7.1
+
+## Claude Code Launch Command
+Always launch Claude Code with:
+```zsh
+claude --dangerously-skip-permissions
+```
+This skips all permission prompts and allows uninterrupted execution.
