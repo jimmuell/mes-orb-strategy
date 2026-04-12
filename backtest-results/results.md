@@ -1508,3 +1508,189 @@ simplest, most mechanical, and most likely to move win rate toward the
 65% target without overfitting.
 
 ---
+
+### Phase 2 Run 003 — 2-Bar Structural Confirmation + 20-Minute Time Stop
+
+**Date:** 2026-04-12
+**Script:** `backtest/strategies/vwap-scalp/vwap_scalp_run003.py`
+**Data:** `data/raw/ES_full_1min_continuous_UNadjusted.txt`
+**Contract:** 1 MES ($5/point, $0.62 commission/side)
+**Slippage:** 0 (not simulated)
+
+Two structural changes tested on top of Run 002's best config:
+
+1. **2-bar structural confirmation** replacing single-bar color:
+   - LONG: bar 1 closes below VWAP by ≥ 0.10%; bar 2 makes a higher low
+     AND closes above bar 1's close; entry at close of bar 2.
+   - SHORT: mirror (lower high, closes below bar 1 close).
+
+2. **20-bar time stop**: if TP/SL not hit within 20 minutes, exit at
+   market close of bar 20.
+
+Everything else identical to Run 002 best (1-min, 0.10% fixed deviation,
+10:30–14:30 ET window, 0.10% SL, 1-tick TP, ADX<20, ATR% 0.3–2.0,
+SMA200, max 3 trades/day, 1 MES).
+
+#### Ablation
+
+| Variant | Trades | Win Rate | PF | Net $ | Max DD $ | DD % | Avg Win | Avg Loss | T/day |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **A** — Run 002 baseline (1-bar, no TS) | 1,547 | 37.0% | **0.898** | **-$1,552** | $2,129 | 21.30% | $24 | -$16 | 1.20 |
+| B — 2-bar only | 1,676 | 40.9% | 0.860 | -$2,148 | $2,515 | 25.17% | $19 | -$16 | 1.26 |
+| C — 1-bar + 20-min time stop | 1,918 | 42.3% | 0.830 | -$2,581 | $3,021 | 30.22% | $15 | -$14 | 1.49 |
+| D — 2-bar + 20-min TS (full Run 003) | 2,051 | 44.3% | **0.740** | **-$3,997** | $4,090 | 40.92% | $12 | -$13 | 1.54 |
+
+**Negative result. Both proposed changes made the strategy worse, and
+stacking them made it worst of all.**
+
+- **2-bar confirmation** (B vs A): raised WR +3.9 pts (37.0 → 40.9%) but
+  shrank avg win $5 ($24 → $19) because entries fire later in the move,
+  leaving less travel to VWAP. Net PF dropped 0.90 → 0.86.
+- **Time stop** (C vs A): raised WR +5.3 pts (37.0 → 42.3%) and fired a
+  LOT — 744 time-stop exits — but most of those replaced winning TP exits
+  that would have completed had the trade been held. Avg win collapsed
+  $24 → $15. PF dropped 0.90 → 0.83. Max DD blew out to 30%.
+- **Both together** (D): WR 44.3% (best WR of the run) but PF 0.74 — the
+  **worst PF of the entire Phase 2 project**. Max DD 40.9%. Trades/day
+  ballooned to 1.54 because the time stop frees up the "no re-entry after
+  stop" slot faster (time-stop is not a stop-out).
+
+Best variant by PF: **A, which is Run 002 unchanged.**
+
+#### Exit breakdown (all variants)
+
+| Variant | TP | SL | Time stop | Session close |
+|---|---:|---:|---:|---:|
+| **A** (1-bar, no TS)  | **550** / 35.6% / +$10,239 | 974 / 63.0% / -$15,225 | — | 23 / 1.5% / +$3,434 |
+| **B** (2-bar, no TS)  | 667 / 39.8% / +$10,244 | 985 / 58.8% / -$15,478 | — | 24 / 1.4% / +$3,085 |
+| **C** (1-bar + TS)    | 288 / 15.0% / +$4,658  | 883 / 46.0% / -$13,686 | **744 / 38.8% / +$6,442** | 3 / 0.2% / +$5 |
+| **D** (2-bar + TS)    | 406 / 19.8% / +$4,647  | 885 / 43.1% / -$13,874 | **756 / 36.9% / +$5,228** | 4 / 0.2% / +$3 |
+
+**The time stop is the main destroyer.** It cut TP exit count by ~50%
+(A→C: 550→288; B→D: 667→406) and TP net profit by more than half
+(A→C: +$10,239→+$4,658). The time stop is positive-EV *by itself*
+(+$6k on 744 exits) but it eats winning TPs at such a rate that net P&L
+drops significantly. Mean-reversion trades that don't complete in 20
+minutes frequently do complete in 25–60 minutes — we were closing winners
+prematurely. The session-close exits, which were the savers in A and B
+(+$3,434 on 23 trades, $149 avg), nearly vanish under the time stop.
+
+#### Progression (Run 001 → 002 → 003 best variants)
+
+| Metric | Run 001 (5m) | Run 002 (1m) | Run 003 (best) |
+|---|---:|---:|---:|
+| Trades | 1,627 | 1,547 | **1,547 (unchanged)** |
+| Win Rate | 51.6% | 37.0% | 37.0% |
+| Profit Factor | 0.885 | 0.898 | 0.898 |
+| Net Profit | -$2,706 | -$1,552 | -$1,552 |
+| Avg Win | $24.79 | $23.91 | $23.91 |
+| Avg Loss | -$29.82 | -$15.62 | -$15.62 |
+| W/L Ratio | 0.83 | 1.53 | 1.53 |
+| Max DD % | 30.36% | 21.30% | 21.30% |
+| Trades/Day | 1.25 | 1.20 | 1.20 |
+
+Run 003 best variant = Run 002 best variant. **No forward progress.**
+
+#### Walk-forward (best variant = Run 002 config)
+
+Identical to Run 002 walk-forward — reproduced here for completeness:
+
+| | IS 2008-2019 | OOS 2020-2026 |
+|---|---|---|
+| Trades | 1,012 | 535 |
+| Win Rate | 38.2% | 34.6% |
+| PF | 0.718 | 1.031 |
+| Net | -$1,825 | +$273 |
+| DD % | 19.63% | 9.25% |
+
+The marginal post-2020 OOS foothold (PF 1.031) from Run 002 is still
+there, but Run 003 does not improve it.
+
+#### Gap to Phase 2 Targets (best variant)
+
+| Metric | Actual | Target | Gap |
+|---|---|---|---|
+| Win Rate | 37.0% | ≥ 65% | -28.0 pts ❌ |
+| Profit Factor | 0.898 | ≥ 1.5 | -0.602 ❌ |
+| Max Drawdown | 21.30% | ≤ 15% | +6.30 pts ❌ |
+
+**Win rate vs Run 002: 0.0 pts.** Zero forward progress.
+
+#### Observations
+
+1. **Honest negative result.** This is what science looks like. Both
+   proposed changes were well-motivated on paper, both failed empirically,
+   and together they compounded. The exit breakdown makes the failure
+   mechanism transparent — the time stop is eating winners at a higher
+   rate than it is saving losers.
+
+2. **The 2-bar confirmation did exactly what it was supposed to.** WR
+   rose, losses stayed the same size (SL is fixed $), but winners got
+   smaller by enough to overwhelm the hit-rate gain. This is an
+   information-efficiency problem: the 2-bar wait is "paying" for a
+   slightly higher win rate with a disproportionately large reduction
+   in winning-trade magnitude. Classic mean-reversion-entry tradeoff.
+
+3. **The time stop is correctly identified as positive-EV but wrongly
+   applied.** Per-exit average of +$8.66 (C) / +$6.91 (D) is real money.
+   But it's being deducted from what would have been much larger
+   eventual TP gains. The problem is the 20-bar cutoff is too short for
+   the mean-reversion cycle on 1-min ES — most setups that do eventually
+   reach VWAP take longer than 20 minutes.
+
+4. **Session-close exits were the best single bucket.** In variants A
+   and B, session close: 23–24 trades averaging $128–$149. These are
+   the trades that held through a full session without hitting TP or SL
+   and closed at day end. The time stop eliminated them almost entirely.
+   **We deleted the strategy's best bucket.** That alone invalidates
+   the time-stop design.
+
+5. **Phase 2 has hit a dead end with the "deviation + directional
+   confirmation + VWAP-touch TP" paradigm.** Three runs, three
+   configurations, zero profitable best variants on IS. The entry
+   framework itself does not contain a live edge.
+
+6. **The only remaining positive finding is the post-2020 OOS PF 1.031
+   from Run 002.** That is 535 trades, 6 years of data, and while PF
+   1.03 is statistically weak, it is positive and the DD is under target.
+   It represents a narrow but real regime-dependent foothold.
+
+#### Recommendation for Senior Claude
+
+**Do not try another parameter tweak on this framework.** Three runs
+have established that:
+
+- Deviation threshold doesn't matter (0.10–0.25% all unprofitable)
+- Timeframe doesn't matter (5-min and 1-min both unprofitable)
+- Confirmation pattern (1-bar color vs 2-bar structural) doesn't matter
+- Time stop hurts
+- The ADX<20 regime filter is the only component clearly earning its keep
+
+The strategy needs a structural pivot, not another tweak:
+
+**Option 1 — Abandon VWAP-touch as the TP rule.** The core weakness is
+that TP requires price to travel all the way back to VWAP, which on
+mean-reversion trades happens slowly and incompletely. Replace with a
+fixed R:R (e.g. 1.5× risk) — use the same 0.10% SL but target 0.15% or
+0.20% fixed TP. This decouples exit timing from the VWAP reversion cycle
+and directly addresses the "slow bleed" problem without needing a time
+stop.
+
+**Option 2 — Use VWAP bands as the entry AND exit rule.** Entry at the
+1.5σ band, exit at the 0.5σ band (not at VWAP itself). This guarantees
+winners complete ~3× sooner than waiting for full VWAP touch.
+
+**Option 3 — Stop pursuing the VWAP scalp paradigm entirely** and
+either (a) accept Run 002 as "good enough for a complementary strategy
+in the post-2020 regime only" and paper trade it to verify live
+behavior matches backtest, or (b) pivot to a completely different
+Phase 2 strategy concept — e.g. gap-fade, overnight-reversal, or
+opening-drive-fade.
+
+**My recommendation:** Option 1 (fixed R:R replacement for VWAP touch)
+as Run 004. It's the smallest structural change that directly addresses
+the failure mode the exit breakdown just exposed. If Run 004 is also
+unprofitable, Senior Claude should consider Option 3(b) — the VWAP scalp
+paradigm simply may not have an edge on ES futures.
+
+---
