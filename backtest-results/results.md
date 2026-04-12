@@ -1112,7 +1112,56 @@ Only R:R ratio affected results — EMA length and retest tolerance produced ide
 
 ---
 
-# PHASE 2 — VWAP Reversion Scalp
+# PHASE 2 — VWAP Reversion Scalp — PARADIGM ABANDONED (Runs 001–004)
+
+> **Status:** Closed 2026-04-12. Four runs, zero profitable configurations.
+> Paradigm pivot to **Gap Fade** approved by Senior Claude, April 2026.
+> See `backtest/strategies/gap-fade/STRATEGY.md` for the new Phase 2 spec.
+
+Four runs across 5-min and 1-min timeframes, four deviation thresholds, two
+confirmation patterns (single-bar color and 2-bar structural), two exit
+frameworks (VWAP-touch and fixed R:R), a time-stop ablation, σ-band
+entries, and a full five-point R:R sweep. **No configuration produced
+PF ≥ 1.0 on the full dataset.**
+
+Best variant PF progression across all four runs:
+
+| Run | Config | Trades | PF | WR | Net $ | DD % |
+|---|---|---:|---:|---:|---:|---:|
+| 001 | 5-min, 0.10% dev, single-bar | 1,627 | 0.885 | 51.6% | -$2,706 | 30.36% |
+| 002 | 1-min, 0.10% dev, single-bar, 10:30–14:30 | 1,547 | **0.898** | 37.0% | -$1,552 | 21.30% |
+| 003 | 002 + 2-bar structural confirm + 20-min time stop | 1,547 | **0.898** | 37.0% | -$1,552 | 21.30% |
+| 004 | 002 + fixed R:R 2.0 exit | 1,465 | 0.813 | 31.0% | -$2,943 | 32.20% |
+
+Peak PF 0.898 — still 0.6 short of the 1.5 Phase 2 target and below the
+1.0 breakeven threshold. Only glimmer: Run 002 OOS 2020-2026 produced
+PF 1.031 (+$273, DD 9.25%) on 535 trades, but that foothold disappeared
+when the exit rule was changed in Run 004.
+
+**Key finding — the one component that works:** The **ADX < 20 regime
+filter** consistently outperformed ADX ≥ 20 across all four runs (WR +1.8
+to +5.3 pts; PF +0.07 to +0.15; half the drawdown). This is the one
+filter carried forward to Phase 2 Gap Fade. Everything else is abandoned.
+
+**Paradigm failure fingerprint (Run 004 R:R sweep):** R:R 0.5 achieved a
+62.8% win rate — finally near the 65% target — but produced the **worst**
+PF in the ablation (0.673). The R:R curve showed a perfect
+information-theoretic tradeoff: WR dropped almost exactly fast enough to
+keep expectancy flat across the whole 0.5–2.0 sweep. That flat curve is
+the mathematical signature of a zero-edge entry rule. No exit geometry
+can rescue negative raw signal. **The VWAP deviation entry framework has
+no live edge on ES futures.**
+
+Pivot decision: **Gap Fade strategy** (Phase 2 Run 005+). Gap fade is
+mechanically complementary to Phase 1 ORB (ORB trades *with* gap
+direction, gap fade trades *against* it) and has a well-documented
+theoretical basis in auction market theory. Approved by Senior Claude,
+April 2026. See `backtest/strategies/gap-fade/STRATEGY.md` for the full
+specification.
+
+---
+
+## Original Phase 2 — VWAP Reversion Scalp section (archived)
 
 > Phase 2 kicks off 2026-04-12 while Phase 1 paper trades on TradingView.
 > Mean-reversion strategy intended to complement Phase 1 ORB by trading on
