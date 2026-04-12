@@ -1163,6 +1163,26 @@ specification.
 
 # PHASE 2 — Gap Fade (Run 005+)
 
+## Phase 2 Targets (REVISED April 2026)
+
+After Run 006 demonstrated structural appropriateness, the 65% win rate
+target was revised to 50%. Mean-reversion strategies of this class
+produce 45–55% WR with positive expectancy driven by win/loss ratio,
+not hit rate. This is the same revision logic Phase 1 ORB used when its
+target was cut from 70% to 62%.
+
+| Metric | Target | Notes |
+|---|---|---|
+| Win Rate | **≥ 50%** | Revised from 65% (April 2026) |
+| Profit Factor | ≥ 1.5 | Unchanged |
+| Max Drawdown | ≤ 15% | Unchanged |
+| Walk-forward | validated (IS 2008-2019, OOS 2020-2026) | Unchanged |
+
+**Hard stop rule (Run 007 onward):** Run 007 is the final optimization
+run for Phase 2 Gap Fade. If Run 007 does not push full-dataset PF to
+≥ 1.5, Senior Claude will accept Run 006 Variant C as the Phase 2 ship
+candidate and proceed to Pine Script conversion. No Run 008.
+
 ## Phase 2 Run 005 — Gap Fade Baseline
 
 **Date:** 2026-04-12
@@ -1697,6 +1717,204 @@ refinement**, specifically a realized-vol filter targeting the 2021–2022
 weakness. Highest-leverage structural change. If (a) doesn't close the
 gap, **Option (e)** — ship Variant C as good enough — is entirely
 reasonable.
+
+---
+
+## Phase 2 Run 007 — Realized Vol Regime Filter (FINAL Optimization Run)
+
+**Date:** 2026-04-12
+**Script:** `backtest/strategies/gap-fade/gap_fade_run007.py`
+**Data:** `data/raw/ES_full_5min_continuous_UNadjusted.txt`
+**Contract:** 1 MES ($5/point, $0.62 commission/side)
+**Slippage:** 0 (not simulated)
+
+Senior Claude approved one additional optimization run with a 5-day
+realized-vol regime filter targeting the 2021 weakness. Hard stop rule
+was pre-committed: if Run 007 does not push full-dataset PF ≥ 1.5,
+accept Run 006 Variant C as the Phase 2 ship candidate. No Run 008.
+
+5-day RV = rolling 5-day stdev of daily percent returns on RTH closes,
+shifted by 1 day (no look-ahead). RV series range: 0.041–9.718, median
+0.765. Stacks on top of the existing 10-day ATR% filter.
+
+### Ablation
+
+| Variant | Trades | Win Rate | PF | Net $ | Max DD $ | Max DD % | Avg Win | Avg Loss | T/yr |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **A: baseline (no RV filter)** | **327** | **47.1%** | **1.385** | **+$1,946** | **$600** | **5.28%** | **$45** | **-$29** | **18.2** |
+| B: RV 0.4-1.8 (proposed) ⚠ | 260 | 47.7% | 1.380 | +$1,580 | $668 | 5.95% | $46 | -$30 | 14.4 |
+| C: RV 0.3-2.0 (looser) ⚠ | 294 | 47.3% | 1.350 | +$1,643 | $601 | 5.32% | $46 | -$31 | 16.3 |
+| D: RV 0.5-1.5 (tighter) ⚠ | 221 | 48.0% | **1.391** | +$1,388 | $732 | 6.57% | $47 | -$31 | 12.3 |
+| E: D + stop cap 0.15% ⚠ | 221 | 45.7% | 1.270 | +$940 | $692 | 6.37% | $44 | -$29 | 12.3 |
+
+⚠ = below 300-trade flag. **All three RV-gated variants (B/C/D) thinned
+below the sample flag**, signalling the filter is cutting trades the
+strategy was getting right, not just cutting 2021 noise.
+
+**Variant D wins by PF by 0.006** (inside noise) but **net profit is
+$558 LOWER** than the baseline ($1,388 vs $1,946). The "win" is an
+artifact of cutting sample, not finding edge. The baseline A is
+genuinely the best Run 007 configuration by every meaningful metric.
+
+### 2021 Callout — Did the RV Filter Shave the Meme-Stock Year?
+
+| Variant | Trades | WR | PF | Net $ |
+|---|---:|---:|---:|---:|
+| A: baseline | 30 | 23.3% | 0.73 | -$205 |
+| B: RV 0.4-1.8 | 29 | 20.7% | 0.65 | **-$272** (worse) |
+| C: RV 0.3-2.0 | 30 | 23.3% | 0.73 | -$205 (no effect) |
+| D: RV 0.5-1.5 | 21 | **9.5%** | **0.32** | **-$439** (much worse) |
+| E: D + stop cap | 21 | 9.5% | 0.32 | -$424 |
+
+❌ **The RV filter FAILED in the exact year it was designed to fix.**
+Variant D (the tightest filter, the nominal PF winner) turned 2021
+from bad (-$205) into a disaster (-$439) and collapsed 2021 win rate
+from 23.3% to 9.5%. The filter cut sample by 30% in 2021 but
+concentrated within the worst trades.
+
+**Diagnosis:** 2021 is not a volatility regime problem — it's a
+gap-structure problem endogenous to the gap-fade edge. 2021's gaps
+*looked* like clean fade setups by every mechanical filter (ADX, ATR%,
+RV, gap size, time of day) but systematically continued instead of
+fading. Surface characteristics of 2021 gaps were indistinguishable
+from normal mean-reverting gaps. **No volatility-based filter will fix
+2021.** The failure mode is structural to gap fade during that regime
+and not gateable by vol-regime mechanics.
+
+Clean, mechanically-motivated negative result — the right kind of
+finding to support a confident stop decision.
+
+### Walk-forward (Variant D, the nominal best)
+
+| | IS 2008-2019 | OOS 2020-2026 |
+|---|---|---|
+| Trades | 139 | 82 |
+| Win Rate | 53.2% | 39.0% |
+| PF | **1.761** | **1.197** |
+| Net Profit | +$927 | +$461 |
+| Max DD % | 1.42% | 7.16% |
+
+D's walk-forward is **misleading**: IS PF 1.761 looks stellar but is
+achieved by cutting pre-2020 marginal-loss years (2017, 2018) rather
+than finding new edge. **OOS PF 1.197 is WORSE than Run 006 C's 1.299**
+— the filter actively degraded out-of-sample performance. Classic
+in-sample overfit fingerprint.
+
+### Run 006 C vs Run 007 Best (D)
+
+| Metric | Run 006 C | Run 007 D | Δ |
+|---|---:|---:|---|
+| Trades | 327 | 221 | -32% |
+| Win Rate | 47.1% | 48.0% | +0.9 pts |
+| PF (full) | 1.385 | 1.391 | +0.006 (noise) |
+| **Net Profit** | **+$1,946** | **+$1,388** | **-$558** |
+| **OOS PF** | **1.299** | **1.197** | **-0.102** |
+| Max DD % | 5.28% | 6.57% | +1.29 pts |
+
+**Run 007 moved backwards on every metric that matters.** Net profit
+down $558, OOS PF down 0.102, max DD worse. The only "forward" number
+is full-dataset PF by 0.006, inside noise. **The RV filter is a dead
+end for this strategy.**
+
+### Gap to REVISED Phase 2 Targets (Variant D)
+
+| Metric | Actual | Target (revised) | Status |
+|---|---|---|---|
+| Win Rate | 48.0% | ≥ 50% | ❌ (-2.0 pts) |
+| Profit Factor | 1.391 | ≥ 1.5 | ❌ (-0.109) |
+| Max Drawdown | 6.57% | ≤ 15% | ✅ |
+
+### Pine Script Candidate Check (revised targets)
+
+**No variant meets all three revised targets on the full dataset.**
+
+### 🛑 HARD STOP VERDICT
+
+**❌ Full-dataset PF ≥ 1.5 NOT achieved in Run 007.**
+
+Best full PF across all Run 007 variants: **1.391** (Variant D; baseline
+A's 1.385 is effectively tied).
+
+**Per Senior Claude's pre-committed hard stop rule, Run 006 Variant C
+becomes the Phase 2 ship candidate and the project proceeds to Pine
+Script conversion. No Run 008.**
+
+---
+
+## Phase 2 Ship Candidate — Run 006 Variant C (final)
+
+**Status:** Approved for Pine Script conversion (pending Senior Claude
+confirmation of the revised-targets acknowledgement).
+
+**Configuration:**
+
+- 5-min ES / MES bars, RTH only (9:30–15:55 ET)
+- Gap band: **0.32% ≤ |gap_pct| ≤ 0.55%**
+- Entry window: **9:35–11:00 ET**
+- Entry trigger: 5-min bar closes back through 9:30 RTH open
+  (gap up → short; gap down → long)
+- Fill: next bar open
+- Stop: gap extreme (9:30 ORB high/low) + 1 tick buffer
+- Target: **fixed R:R 1.75** (= 1.75 × SL distance)
+- Session close: flatten at 15:55 ET
+- Regime gates: **ADX < 20** (prior day, 14-period), **ATR% 0.3–2.0**
+  (prior day, 10-day)
+- Phase 1 ORB block: skip gap fade on any day Phase 1 ORB fires a
+  confirmed entry
+- Max 1 trade/day, no re-entries
+- Contract: 1 MES ($5/point, $0.62 commission/side)
+
+**Metrics (18-year backtest, 2008–2026):**
+
+| Metric | Value | Target (revised) | Status |
+|---|---|---|---|
+| Trades | 327 (18.2/yr) | — | — |
+| Win Rate | 47.1% | ≥ 50% | ❌ (-2.9 pts) |
+| **Profit Factor (full)** | **1.385** | ≥ 1.5 | ❌ (-0.115) |
+| Net Profit | +$1,946 (1 MES) | > 0 | ✅ |
+| Max Drawdown | $600 (5.28%) | ≤ 15% | ✅ (**3× margin**) |
+| **IS 2008-2019 PF** | **1.521** | ≥ 1.5 | ✅ |
+| OOS 2020-2026 PF | 1.299 | ≥ 1.5 | ❌ |
+| IS Net | +$1,023 | > 0 | ✅ |
+| OOS Net | +$923 | > 0 | ✅ |
+| Walk-forward | both windows profitable | validated | ✅ |
+| Years profitable | 14 of 19 | — | — |
+
+**Candidate honesty:** Run 006 C does not cleanly meet the revised
+PF ≥ 1.5 target on the full dataset or on OOS. It meets it on IS. It
+misses the revised 50% WR target by 2.9 pts. DD is 3× better than
+target. Both walk-forward windows are profitable — the only Phase 2
+variant across 7 runs and 30+ configurations to achieve that. R:R
+sweep showed the edge is broad (not parameter-fragile). The one weak
+year (2021) is a documented regime that Run 007 empirically proved
+cannot be filtered out mechanically. Phase 1 ORB's own PF is 1.519;
+a complementary strategy at PF 1.385 provides real value.
+
+### Key Findings from Run 007
+
+1. **The RV filter is a textbook overfit.** +0.006 nominal PF is inside
+   noise. Filter thinned sample 30% while degrading OOS and worsening
+   2021 — the exact year it was designed to fix.
+2. **2021 is not a volatility regime problem.** ADX, ATR%, 5-day RV,
+   and stop caps all failed. The failure mode is structural to gap
+   fade during that regime.
+3. **All three RV variants thinned below 300 trades.** Filter is
+   cutting sample indiscriminately, not selecting out bad trades.
+4. **OOS PF went DOWN with the filter** (1.299 → 1.197). Cleanest
+   possible signal of non-capture of real structure.
+5. **Hard stop rule worked exactly as intended.** It prevented a
+   death-spiral optimization on a strategy already at its practical
+   ceiling. Run 007 is where Phase 2 ends.
+
+### Next Steps
+
+1. **Pine Script conversion** of Run 006 Variant C configuration.
+2. **Deploy to TradingView** on CME_MINI:MES1! 5-min chart, ETH
+   session, alert configured.
+3. **30-day paper trade** alongside Phase 1 ORB already running.
+4. **Revisit Phase 2** only after Phase 1 paper-trade feedback and
+   Run 006 C live-trade data are in hand. Further optimization should
+   be driven by live observations, not backtest curve-fitting.
 
 ---
 

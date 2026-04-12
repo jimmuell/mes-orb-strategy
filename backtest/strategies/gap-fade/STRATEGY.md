@@ -165,16 +165,23 @@ These are **expectations, not targets** — used to sanity-check Run 005 results
 
 ---
 
-## 9. Phase 2 Targets
+## 9. Phase 2 Targets (REVISED April 2026)
 
-Same as prior runs:
+Revised after Run 006 demonstrated that the 65% win rate target was
+structurally inappropriate for a mean-reversion scalp with a tight
+stop. Mean-reversion strategies of this class empirically produce
+45–55% win rate with positive expectancy driven by the win/loss
+ratio, not the hit rate. This is the same revision logic that was
+applied to Phase 1 ORB (70% → 62%).
 
-| Metric | Target |
-|---|---|
-| Win Rate | ≥ 65% |
-| Profit Factor | ≥ 1.5 |
-| Max Drawdown | ≤ 15% |
-| Walk-forward | validated (IS 2008-2019, OOS 2020-2026) |
+| Metric | Target | Notes |
+|---|---|---|
+| Win Rate | **≥ 50%** | Revised from 65%. Structurally appropriate for mean reversion. |
+| Profit Factor | ≥ 1.5 | Unchanged. Core economic viability threshold. |
+| Max Drawdown | ≤ 15% | Unchanged. |
+| Walk-forward | validated (IS 2008-2019, OOS 2020-2026) | Unchanged. |
+
+**Original (obsolete) targets:** WR ≥ 65%, PF ≥ 1.5, DD ≤ 15%.
 
 ---
 

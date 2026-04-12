@@ -154,6 +154,10 @@ def run_backtest(df: pd.DataFrame,
                  phase1_days: set | None = None,
                  entry_window_start: tuple = ENTRY_WINDOW_START,
                  entry_window_end: tuple = ENTRY_WINDOW_END,
+                 rv_series: pd.Series | None = None,
+                 min_rv: float | None = None,
+                 max_rv: float | None = None,
+                 stop_cap_pct: float | None = None,
                  ) -> list[Trade]:
     if target_mode not in ("pdc", "rr"):
         raise ValueError(target_mode)
@@ -170,6 +174,10 @@ def run_backtest(df: pd.DataFrame,
     rth["atr_pct"] = daily["atr_pct"].reindex(rth_dates).values
     rth["adx"]     = daily["adx"].reindex(rth_dates).values
     rth["sma200"]  = daily["sma200"].reindex(rth_dates).values
+    if rv_series is not None:
+        rth["rv"] = rv_series.reindex(rth_dates).values
+    else:
+        rth["rv"] = np.nan
 
     # Prior day RTH close, shifted 1 day — last 5-min bar's close of prior day
     last_per_day = rth["Close"].groupby(rth_dates).last()
@@ -185,6 +193,7 @@ def run_backtest(df: pd.DataFrame,
     atr_pcts = rth["atr_pct"].values
     adxs     = rth["adx"].values
     sma200s  = rth["sma200"].values
+    rvs      = rth["rv"].values
     pclose   = rth["prior_close"].values
     hours    = rth.index.hour.values
     minutes  = rth.index.minute.values
@@ -222,6 +231,16 @@ def run_backtest(df: pd.DataFrame,
         if use_adx_filter and (np.isnan(adx) or adx >= max_adx):
             continue
 
+        # Realized-vol filter (Run 007+)
+        if min_rv is not None or max_rv is not None:
+            rv = rvs[ds]
+            if np.isnan(rv):
+                continue
+            if min_rv is not None and rv < min_rv:
+                continue
+            if max_rv is not None and rv > max_rv:
+                continue
+
         # 9:30 ORB bar = first bar of day (RTH starts at 9:30)
         orb_open = opens[ds]
         orb_hi   = highs[ds]
@@ -256,11 +275,24 @@ def run_backtest(df: pd.DataFrame,
         if exclude_news and is_news_day(day, trading_days_list):
             continue
 
-        # Set stop level based on direction
+        # Set stop level based on direction (gap extreme + 1 tick buffer)
         if direction == "short":
             sl_level = orb_hi + ONE_TICK_BUFFER
         else:
             sl_level = orb_lo - ONE_TICK_BUFFER
+
+        # Optional stop cap: if gap-extreme stop is wider than cap_pct of
+        # price, pull it in. Only tightens; never loosens.
+        if stop_cap_pct is not None:
+            cap_dist = orb_open * stop_cap_pct
+            if direction == "short":
+                cap_level = orb_open + cap_dist
+                if cap_level < sl_level:
+                    sl_level = cap_level
+            else:
+                cap_level = orb_open - cap_dist
+                if cap_level > sl_level:
+                    sl_level = cap_level
 
         # Scan for entry trigger between 9:35 and 11:00
         fired = False
