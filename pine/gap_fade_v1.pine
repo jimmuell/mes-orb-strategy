@@ -188,23 +188,35 @@ bool shortTrigger = setupOK and isGapUp and isEntryWindow
 //  ORDER EXECUTION — fixed R:R 1.75 off gap-extreme stop
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Two-step entry/exit: submit strategy.entry() on the signal bar, then on
+// the next bar (when the fill has occurred and strategy.position_avg_price
+// reflects the actual fill price) compute exact SL/TP levels and submit
+// strategy.exit(). This eliminates TP anchor drift — SL is anchored to the
+// exact gap extreme and TP is anchored to the exact fill price.
+
 if longTrigger
-    float longSL   = orbLo - TICK_SIZE                 // gap extreme + 1 tick buffer (below)
-    float slDist   = close - longSL                    // signal bar close as proxy; engine fills next open
-    float longTP   = close + i_rrRatio * slDist
     strategy.entry("GFL", strategy.long)
-    strategy.exit("GFL Exit", "GFL", stop=longSL, limit=longTP)
     tradedToday := true
     alert("Gap Fade v1 — LONG ENTRY — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
 
+if strategy.position_size > 0 and strategy.position_size[1] == 0
+    float fillPrice = strategy.position_avg_price
+    float longSL    = orbLo - TICK_SIZE
+    float slDist    = fillPrice - longSL
+    float longTP    = fillPrice + i_rrRatio * slDist
+    strategy.exit("GFL Exit", "GFL", stop=longSL, limit=longTP)
+
 if shortTrigger
-    float shortSL  = orbHi + TICK_SIZE                 // gap extreme + 1 tick buffer (above)
-    float slDist2  = shortSL - close
-    float shortTP  = close - i_rrRatio * slDist2
     strategy.entry("GFS", strategy.short)
-    strategy.exit("GFS Exit", "GFS", stop=shortSL, limit=shortTP)
     tradedToday := true
     alert("Gap Fade v1 — SHORT ENTRY — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+
+if strategy.position_size < 0 and strategy.position_size[1] == 0
+    float fillPrice2 = strategy.position_avg_price
+    float shortSL    = orbHi + TICK_SIZE
+    float slDist2    = shortSL - fillPrice2
+    float shortTP    = fillPrice2 - i_rrRatio * slDist2
+    strategy.exit("GFS Exit", "GFS", stop=shortSL, limit=shortTP)
 
 // ─── End-of-Session Flatten ──────────────────────────────────────────────
 if isSessionEnd and strategy.position_size != 0
