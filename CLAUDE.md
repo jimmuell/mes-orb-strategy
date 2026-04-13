@@ -314,3 +314,25 @@ Always launch Claude Code with:
 claude --dangerously-skip-permissions
 ```
 This skips all permission prompts and allows uninterrupted execution.
+
+## Future Development — Pending Senior Claude Approval
+
+### 1. Dashboard Command Center Enhancement
+Replace the current Task Queue with a full Command Center that eliminates
+the manual relay step between Senior Claude and VS Claude. Planned features:
+- Agent Activity Feed: real-time log of Senior Claude tasks and VS Claude results
+- Auto-polling: VS Claude polls /api/tasks/pending every 60 seconds automatically
+- Results panel: VS Claude posts results directly to dashboard via /api/tasks/<id>/complete
+- Jim reads results in dashboard — no copy/paste relay needed
+Status: Deferred — revisit after 30-day paper trade period
+
+### 2. TradingView MCP Morning Brief Integration
+Currently the /morning-brief slash command exists in .claude/commands/ but
+requires manual invocation from Claude Desktop or Claude.ai chat.
+Planned enhancement:
+- Auto-run morning brief at 8:20 CT each trading day
+- Read ADX, ATR%, gap%, prior close directly from TradingView chart via MCP
+- POST values automatically to /api/sessions
+- Dashboard Morning Brief tab populates without any manual input
+- Requires TradingView desktop app running with MCP connected
+Status: Deferred — revisit after 30-day paper trade period
