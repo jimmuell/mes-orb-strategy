@@ -304,11 +304,193 @@ def price():
 
 # ---------- Economic calendar ----------
 
+def scrape_investing_calendar():
+    try:
+        from bs4 import BeautifulSoup
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+        resp = requests.get('https://www.investing.com/economic-calendar/', headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        rows = soup.select('tr.js-event-item')
+        if not rows:
+            # Page is JS-rendered when accessed without session cookies — no
+            # event rows in the raw HTML. Signal failure so the next source runs.
+            return None
+        events = []
+        for row in rows:
+            if row.get('data-importance', '') != '3':
+                continue
+            time_el = row.select_one('td.time')
+            event_el = row.select_one('td.event')
+            forecast_el = row.select_one('td.forecast')
+            prev_el = row.select_one('td.prev')
+            if event_el:
+                events.append({
+                    'time': time_el.text.strip() if time_el else '',
+                    'event': event_el.text.strip(),
+                    'forecast': forecast_el.text.strip() if forecast_el else '',
+                    'previous': prev_el.text.strip() if prev_el else '',
+                    'impact': 'HIGH',
+                    'source': 'Investing.com',
+                })
+        return events
+    except Exception as e:
+        print(f'[calendar] Investing.com scrape failed: {e}')
+        return None
+
+
+def scrape_forexfactory_calendar():
+    """Scrape ForexFactory weekly calendar, filter to today's red-impact rows.
+
+    The FF weekly page lists Sun-Sat. Rows are separated by day-breaker rows
+    (class `calendar__row--day-breaker`). We track the current day label and
+    only emit events where current_day matches today's `%a %b D` format.
+    """
+    try:
+        from bs4 import BeautifulSoup
+        now = datetime.now()
+        today_label = f"{now.strftime('%a %b ')}{now.day}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
+        resp = requests.get('https://www.forexfactory.com/calendar', headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        events = []
+        current_day = None
+        last_time = ''
+        for row in soup.select('tr.calendar__row'):
+            classes = row.get('class', [])
+            if 'calendar__row--day-breaker' in classes:
+                current_day = row.get_text(' ', strip=True)
+                last_time = ''
+                continue
+            if current_day != today_label:
+                continue
+            icon = row.select_one('td.calendar__impact span')
+            if not icon:
+                continue
+            if 'icon--ff-impact-red' not in ' '.join(icon.get('class', [])):
+                continue
+            time_el = row.select_one('td.calendar__time')
+            event_el = row.select_one('td.calendar__event')
+            cur_el = row.select_one('td.calendar__currency')
+            forecast_el = row.select_one('td.calendar__forecast')
+            prev_el = row.select_one('td.calendar__previous')
+            raw_time = time_el.get_text(strip=True) if time_el else ''
+            # FF leaves time blank for events at the same minute — inherit prior
+            if raw_time:
+                last_time = raw_time
+            name = event_el.get_text(strip=True) if event_el else ''
+            cur = cur_el.get_text(strip=True) if cur_el else ''
+            display = f'{cur} {name}'.strip() if cur else name
+            events.append({
+                'time': raw_time or last_time,
+                'event': display,
+                'forecast': forecast_el.get_text(strip=True) if forecast_el else '',
+                'previous': prev_el.get_text(strip=True) if prev_el else '',
+                'impact': 'HIGH',
+                'source': 'ForexFactory',
+            })
+        return events
+    except Exception as e:
+        print(f'[calendar] ForexFactory scrape failed: {e}')
+        return None
+
+
+def fetch_fmp_calendar():
+    try:
+        today = datetime.now().strftime('%Y-%m-%d')
+        url = f'https://financialmodelingprep.com/api/v3/economic_calendar?from={today}&to={today}&apikey=demo'
+        resp = requests.get(url, timeout=5)
+        if resp.status_code != 200:
+            return []
+        data = resp.json() or []
+        return [
+            {
+                'time': e.get('date', '')[-8:-3] if e.get('date') else '',
+                'event': e.get('event', ''),
+                'forecast': str(e.get('estimate', '') or ''),
+                'previous': str(e.get('previous', '') or ''),
+                'impact': 'HIGH',
+                'source': 'FMP',
+            }
+            for e in data if e.get('impact') == 'High'
+        ]
+    except Exception as e:
+        print(f'[calendar] FMP failed: {e}')
+        return []
+
+
 @app.route('/api/calendar', methods=['GET'])
-def calendar():
-    # Free sources require API keys or scraping; return empty array by default.
-    # Populate via scheduled job or manual POST in a future iteration.
-    return jsonify([])
+def get_calendar():
+    """Try sources in order. A source returning [] (worked, no events) is
+    treated as success — we do NOT fall through to the next source, since
+    "nothing on the calendar today" is a valid answer."""
+    for name, fn in [
+        ('Investing.com', scrape_investing_calendar),
+        ('ForexFactory', scrape_forexfactory_calendar),
+        ('FMP', fetch_fmp_calendar),
+    ]:
+        events = fn()
+        if events is not None:
+            return jsonify({
+                'events': events,
+                'date': datetime.now().strftime('%Y-%m-%d'),
+                'source': name,
+            })
+    return jsonify({
+        'events': [],
+        'date': datetime.now().strftime('%Y-%m-%d'),
+        'source': None,
+    })
+
+
+# ---------- Pre-market news ----------
+
+def _parse_rss(xml, source):
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(xml, 'xml')
+    out = []
+    for item in soup.select('item'):
+        title = item.find('title')
+        link = item.find('link')
+        if not title:
+            continue
+        out.append({
+            'headline': title.get_text(strip=True),
+            'url': link.get_text(strip=True) if link else '',
+            'source': source,
+        })
+    return out
+
+
+def fetch_market_news():
+    """Pre-market headlines from Yahoo Finance and CNBC RSS feeds.
+    MarketWatch and Reuters' public feeds are blocked/decommissioned."""
+    headlines = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
+
+    for source, url in [
+        ('Yahoo', 'https://finance.yahoo.com/news/rssindex'),
+        ('CNBC', 'https://www.cnbc.com/id/10000664/device/rss/rss.html'),
+    ]:
+        try:
+            resp = requests.get(url, headers=headers, timeout=8)
+            if resp.status_code == 200:
+                headlines.extend(_parse_rss(resp.text, source)[:6])
+        except Exception as e:
+            print(f'[news] {source} RSS failed: {e}')
+
+    return headlines[:12]
+
+
+@app.route('/api/news', methods=['GET'])
+def get_news():
+    news = fetch_market_news()
+    return jsonify({
+        'headlines': news,
+        'updated': datetime.now().strftime('%H:%M CT'),
+    })
 
 
 # ---------- Tasks ----------

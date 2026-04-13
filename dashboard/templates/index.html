@@ -109,6 +109,25 @@ svg.equity { width:100%; height:140px; }
   border-radius:6px; padding:20px; white-space:pre-wrap; margin:0;
 }
 .brief .hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.brief-section-title {
+  font-family:'Space Mono',monospace; font-size:11px; font-weight:700;
+  letter-spacing:1.5px; color:var(--muted); text-transform:uppercase;
+  margin:24px 0 10px 0; padding-bottom:6px; border-bottom:1px solid var(--border);
+}
+.cal-ev { display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--border); }
+.cal-ev:last-child { border-bottom:none; }
+.cal-ev .dot { width:10px; height:10px; border-radius:50%; margin-top:5px; flex-shrink:0; }
+.cal-ev .dot.high { background:var(--red); }
+.cal-ev .dot.med { background:var(--amber); }
+.cal-ev .time { font-family:'Space Mono',monospace; font-size:12px; color:var(--muted); width:72px; flex-shrink:0; }
+.cal-ev .body { flex:1; }
+.cal-ev .name { color:var(--text); font-size:13px; font-weight:500; }
+.cal-ev .stats { color:var(--muted); font-size:11px; font-family:'Space Mono',monospace; margin-top:3px; }
+.news-item { display:block; padding:9px 0; border-bottom:1px solid var(--border); color:var(--text); text-decoration:none; font-size:13px; }
+.news-item:last-child { border-bottom:none; }
+.news-item:hover { color:var(--blue); }
+.news-item .src { color:var(--muted); font-family:'Space Mono',monospace; font-size:10px; margin-left:8px; text-transform:uppercase; letter-spacing:1px; }
+.good { color:var(--green); }
 </style>
 </head>
 <body>
@@ -186,6 +205,16 @@ svg.equity { width:100%; height:140px; }
       <div style="margin-top:12px; color:var(--muted); font-size:12px;">
         Run <code class="mono">/morning-brief</code> from a Claude session with TradingView MCP
         available (Claude.ai chat / Claude Desktop) to refresh live chart values.
+      </div>
+
+      <div id="calendarSection">
+        <div class="brief-section-title">Economic Calendar — High Impact</div>
+        <div id="calendarEvents">Loading…</div>
+      </div>
+
+      <div id="newsSection">
+        <div class="brief-section-title">Pre-market Headlines</div>
+        <div id="newsHeadlines">Loading…</div>
       </div>
     </div>
   </div>

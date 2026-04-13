@@ -314,27 +314,87 @@ async function completeTask(id) {
 setInterval(loadTasks, 10000);
 
 
-// ---------- Calendar ----------
+// ---------- Calendar + News (brief tab + overview strip) ----------
+function renderCalendarInto(container, events, emptyText) {
+  clear(container);
+  if (!events || !events.length) {
+    container.appendChild(el('div', {
+      class: 'good',
+      text: emptyText || 'No high-impact events today ✓',
+    }));
+    return;
+  }
+  events.forEach(e => {
+    const row = el('div', { class: 'cal-ev' });
+    row.appendChild(el('div', { class: 'dot high' }));
+    row.appendChild(el('div', { class: 'time', text: e.time || '—' }));
+    const body = el('div', { class: 'body' });
+    body.appendChild(el('div', { class: 'name', text: e.event || '' }));
+    const stats = `Forecast: ${e.forecast || '—'}  |  Previous: ${e.previous || '—'}`;
+    body.appendChild(el('div', { class: 'stats', text: stats }));
+    row.appendChild(body);
+    container.appendChild(row);
+  });
+}
+
 async function loadCalendar() {
   try {
-    const evs = await api('/api/calendar');
-    const container = document.getElementById('calendar');
-    clear(container);
-    if (!evs.length) {
-      container.appendChild(el('div', { text: 'No high-impact events scheduled today', style: { color: 'var(--muted)' } }));
+    const d = await api('/api/calendar');
+    const events = (d && d.events) || [];
+
+    const briefBox = document.getElementById('calendarEvents');
+    if (briefBox) renderCalendarInto(briefBox, events);
+
+    const strip = document.getElementById('calendar');
+    if (strip) {
+      clear(strip);
+      if (!events.length) {
+        strip.appendChild(el('div', { text: 'No high-impact events scheduled today', style: { color: 'var(--muted)' } }));
+      } else {
+        events.forEach(e => {
+          const box = el('div', { class: 'cal-event' });
+          box.appendChild(el('span', { class: 'badge blue mono', text: e.time || '' }));
+          box.appendChild(el('span', { text: e.event || '' }));
+          box.appendChild(el('span', { class: 'badge red', text: e.impact || '' }));
+          box.appendChild(el('span', { class: 'mono', text: `${e.forecast || ''} / ${e.previous || ''}` }));
+          strip.appendChild(box);
+        });
+      }
+    }
+  } catch (err) {
+    const briefBox = document.getElementById('calendarEvents');
+    if (briefBox) { clear(briefBox); briefBox.appendChild(el('div', { text: 'Error loading calendar', style: { color: 'var(--red)' } })); }
+  }
+}
+
+async function loadNews() {
+  const box = document.getElementById('newsHeadlines');
+  if (!box) return;
+  try {
+    const d = await api('/api/news');
+    const items = (d && d.headlines) || [];
+    clear(box);
+    if (!items.length) {
+      box.appendChild(el('div', { text: 'No headlines available', style: { color: 'var(--muted)' } }));
       return;
     }
-    evs.forEach(e => {
-      const box = el('div', { class: 'cal-event' });
-      box.appendChild(el('span', { class: 'badge blue mono', text: e.time_ct || '' }));
-      box.appendChild(el('span', { text: e.name || '' }));
-      box.appendChild(el('span', { class: 'badge red', text: e.impact || '' }));
-      box.appendChild(el('span', { class: 'mono', text: `${e.forecast || ''} / ${e.previous || ''}` }));
-      container.appendChild(box);
+    items.forEach(h => {
+      const a = document.createElement('a');
+      a.className = 'news-item';
+      a.href = h.url || '#';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = h.headline;
+      const src = el('span', { class: 'src', text: h.source || '' });
+      a.appendChild(src);
+      box.appendChild(a);
     });
-  } catch {}
+  } catch {
+    clear(box);
+    box.appendChild(el('div', { text: 'Error loading news', style: { color: 'var(--red)' } }));
+  }
 }
-setInterval(loadCalendar, 300000);
+setInterval(() => { loadCalendar(); loadNews(); }, 300000);
 
 // ---------- Tabs ----------
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -344,7 +404,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => {
       p.classList.toggle('active', p.id === 'panel-' + target);
     });
-    if (target === 'brief') loadMorningBrief();
+    if (target === 'brief') { loadMorningBrief(); loadCalendar(); loadNews(); }
   });
 });
 
@@ -409,4 +469,5 @@ loadTrades();
 loadSummary();
 loadTasks();
 loadCalendar();
+loadNews();
 loadMorningBrief();
