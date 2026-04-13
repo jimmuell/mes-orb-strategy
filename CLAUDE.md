@@ -14,6 +14,15 @@ Designs strategy logic, analyzes results, and issues task prompts via Jim.
 
 **Jim** — Relays prompts and results between Senior Claude and VS Claude.
 
+## Jim's Timezone
+Jim is on Central Time (CT). All session times referenced in conversation
+and documentation should use CT unless explicitly stated otherwise.
+Key times:
+- Market open: 8:30 AM CT
+- ORB bar closes: 8:35 AM CT
+- Phase 2 entry window closes: 10:00 AM CT
+- Session end flatten: 2:55 PM CT
+
 **Workflow:**
 1. Senior Claude issues a task prompt (via Jim)
 2. VS Claude reads context files, implements the task, runs it, reports results to Jim
