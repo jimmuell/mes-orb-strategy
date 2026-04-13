@@ -192,6 +192,56 @@ def upsert_session():
     return jsonify({'ok': True})
 
 
+# ---------- Morning brief ----------
+
+@app.route('/api/morning-brief', methods=['GET'])
+def morning_brief():
+    """Computed morning brief based on latest session row."""
+    conn = get_conn()
+    row = conn.execute(
+        'SELECT * FROM sessions ORDER BY date DESC LIMIT 1'
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'status': 'no_data'})
+
+    session = dict(row)
+    adx = session.get('adx_value')
+    atr = session.get('atr_pct')
+    gap = session.get('gap_pct')
+    mes_open = session.get('mes_open')
+    prior_close = session.get('prior_day_close')
+
+    adx_ok_p1 = adx is not None and adx >= 15
+    adx_ok_p2 = adx is not None and adx < 20
+    atr_ok = atr is not None and 0.3 <= atr <= 2.0
+    gap_ok = gap is not None and 0.32 <= abs(gap) <= 0.55
+
+    return jsonify({
+        'status': 'ok',
+        'date': session.get('date'),
+        'mes_open': mes_open,
+        'prior_day_close': prior_close,
+        'gap_pct': gap,
+        'adx_value': adx,
+        'atr_pct': atr,
+        'phase1': {
+            'valid': bool(session.get('phase1_valid')),
+            'adx_ok': adx_ok_p1,
+            'atr_ok': atr_ok,
+        },
+        'phase2': {
+            'valid': bool(session.get('phase2_valid')),
+            'adx_ok': adx_ok_p2,
+            'atr_ok': atr_ok,
+            'gap_ok': gap_ok,
+        },
+        'notes': session.get('notes'),
+        'updated_at': session.get('created_at'),
+    })
+
+
 # ---------- Summary ----------
 
 @app.route('/api/summary', methods=['GET'])

@@ -214,10 +214,15 @@ setInterval(() => { loadTrades(); loadSummary(); }, 15000);
 // ---------- Summary + equity curve ----------
 async function loadSummary() {
   const s = await api('/api/summary');
-  document.getElementById('mTrades').textContent = s.total_trades;
-  document.getElementById('mWR').textContent = s.win_rate + '%';
-  document.getElementById('mPnl').textContent = '$' + s.total_pnl.toFixed(2);
-  document.getElementById('mPF').textContent = s.profit_factor ?? '—';
+  const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  setTxt('mTrades', s.total_trades);
+  setTxt('mWR', s.win_rate + '%');
+  setTxt('mPnl', '$' + s.total_pnl.toFixed(2));
+  setTxt('mPF', s.profit_factor ?? '—');
+  setTxt('mTradesOv', s.total_trades);
+  setTxt('mWROv', s.win_rate + '%');
+  setTxt('mPnlOv', '$' + s.total_pnl.toFixed(2));
+  setTxt('mPFOv', s.profit_factor ?? '—');
 
   const svg = document.getElementById('equitySvg');
   clear(svg);
@@ -308,9 +313,6 @@ async function completeTask(id) {
 }
 setInterval(loadTasks, 10000);
 
-document.getElementById('taskHead').addEventListener('click', () => {
-  document.getElementById('taskBody').classList.toggle('hidden');
-});
 
 // ---------- Calendar ----------
 async function loadCalendar() {
@@ -334,8 +336,77 @@ async function loadCalendar() {
 }
 setInterval(loadCalendar, 300000);
 
+// ---------- Tabs ----------
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.toggle('active', p.id === 'panel-' + target);
+    });
+    if (target === 'brief') loadMorningBrief();
+  });
+});
+
+// ---------- Morning brief ----------
+function pad(s, n) { s = String(s ?? ''); return s + ' '.repeat(Math.max(0, n - s.length)); }
+function fmtNum(v, d = 2) { return (v == null || isNaN(v)) ? '—' : Number(v).toFixed(d); }
+function mark(ok) { return ok ? '✓' : '✗'; }
+
+function renderBrief(b) {
+  if (!b || b.status === 'no_data') {
+    return 'No session data yet.\n\nRun /morning-brief from a Claude session with TradingView MCP\navailable to populate this view.';
+  }
+  const date = b.date || '—';
+  const open = fmtNum(b.mes_open);
+  const prior = fmtNum(b.prior_day_close);
+  const gap = b.gap_pct;
+  const gapStr = gap == null ? '—' : `${gap >= 0 ? '+' : ''}${gap.toFixed(2)}%`;
+  const adx = fmtNum(b.adx_value);
+  const atr = fmtNum(b.atr_pct);
+
+  const p1 = b.phase1 || {};
+  const p2 = b.phase2 || {};
+
+  const lines = [];
+  lines.push(`MORNING BRIEF — ${date}`);
+  lines.push('━'.repeat(44));
+  lines.push('');
+  lines.push(`MES1!  Open: ${open}    Prior Close: ${prior}`);
+  lines.push(`Gap:   ${gapStr}`);
+  lines.push('');
+  lines.push('REGIME FILTERS');
+  lines.push(`  ADX (14):  ${pad(adx, 8)} P1(≥15) ${mark(p1.adx_ok)}   P2(<20) ${mark(p2.adx_ok)}`);
+  lines.push(`  ATR%(10):  ${pad(atr + '%', 8)} both(0.3-2.0) ${mark(p1.atr_ok)}`);
+  lines.push('');
+  lines.push('PHASE 1 — MES ORB');
+  lines.push(`  Status: ${p1.valid ? 'WATCHING ✓' : 'BLOCKED ✗'}`);
+  lines.push('');
+  lines.push('PHASE 2 — GAP FADE');
+  lines.push(`  Status: ${p2.valid ? 'WATCHING ✓' : 'BLOCKED ✗'}`);
+  lines.push(`  Gap in 0.32-0.55% band: ${mark(p2.gap_ok)}`);
+  if (b.notes) { lines.push(''); lines.push('NOTES'); lines.push('  ' + b.notes); }
+  lines.push('');
+  lines.push('━'.repeat(44));
+  lines.push(`Last updated: ${b.updated_at || '—'}`);
+  return lines.join('\n');
+}
+
+async function loadMorningBrief() {
+  const pre = document.getElementById('briefText');
+  if (!pre) return;
+  try {
+    const b = await api('/api/morning-brief');
+    pre.textContent = renderBrief(b);
+  } catch (e) {
+    pre.textContent = 'Error loading brief: ' + e;
+  }
+}
+document.getElementById('refreshBrief')?.addEventListener('click', loadMorningBrief);
+
 // ---------- Init ----------
 loadTrades();
 loadSummary();
 loadTasks();
 loadCalendar();
+loadMorningBrief();

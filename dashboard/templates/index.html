@@ -92,6 +92,23 @@ tr.loss td { background:rgba(255,69,96,0.06); }
 .quick-log input, .quick-log select { width:auto; }
 
 svg.equity { width:100%; height:140px; }
+
+.tabs { display:flex; gap:2px; padding:0 24px; background:var(--surface); border-bottom:1px solid var(--border); position:sticky; top:74px; z-index:9; }
+.tab-btn {
+  background:transparent; color:var(--muted); border:none; border-bottom:2px solid transparent;
+  padding:12px 20px; font-family:'Space Mono',monospace; font-size:12px; font-weight:700;
+  letter-spacing:1.5px; cursor:pointer; border-radius:0;
+}
+.tab-btn:hover { color:var(--text); border-color:transparent; }
+.tab-btn.active { color:var(--blue); border-bottom-color:var(--blue); }
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+.brief pre {
+  font-family:'Space Mono',monospace; font-size:13px; line-height:1.55;
+  color:var(--text); background:var(--bg); border:1px solid var(--border);
+  border-radius:6px; padding:20px; white-space:pre-wrap; margin:0;
+}
+.brief .hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
 </style>
 </head>
 <body>
@@ -110,77 +127,110 @@ svg.equity { width:100%; height:140px; }
 
 <div class="toast" id="toast">NEW TASK QUEUED</div>
 
+<div class="tabs">
+  <button class="tab-btn active" data-tab="overview">OVERVIEW</button>
+  <button class="tab-btn" data-tab="brief">MORNING BRIEF</button>
+  <button class="tab-btn" data-tab="trades">TRADE LOG</button>
+  <button class="tab-btn" data-tab="tasks">TASK QUEUE</button>
+</div>
+
 <div class="container">
 
-  <!-- Status row -->
-  <div class="row row-4">
-    <div class="card metric-card">
-      <div class="label">Phase 1</div>
-      <div id="phase1Badge" class="badge amber" style="margin-top:14px; font-size:14px; padding:8px 16px;">—</div>
+  <!-- ========== OVERVIEW TAB ========== -->
+  <div class="tab-panel active" id="panel-overview">
+    <div class="row row-4">
+      <div class="card metric-card">
+        <div class="label">Phase 1</div>
+        <div id="phase1Badge" class="badge amber" style="margin-top:14px; font-size:14px; padding:8px 16px;">—</div>
+      </div>
+      <div class="card metric-card">
+        <div class="label">Phase 2</div>
+        <div id="phase2Badge" class="badge amber" style="margin-top:14px; font-size:14px; padding:8px 16px;">—</div>
+      </div>
+      <div class="card metric-card">
+        <div class="label">ADX</div>
+        <div class="big-num" id="adxVal" contenteditable="true">--</div>
+      </div>
+      <div class="card metric-card">
+        <div class="label">ATR %</div>
+        <div class="big-num" id="atrVal" contenteditable="true">--</div>
+      </div>
     </div>
-    <div class="card metric-card">
-      <div class="label">Phase 2</div>
-      <div id="phase2Badge" class="badge amber" style="margin-top:14px; font-size:14px; padding:8px 16px;">—</div>
+    <div style="margin-top:16px;"><button class="primary" id="saveSession">Save Session</button></div>
+
+    <div class="card" style="margin-top:20px;">
+      <div class="label">Today — High Impact Events</div>
+      <div class="calendar-strip" id="calendar" style="margin-top:10px;">
+        <div style="color:var(--muted);">No high-impact events scheduled today</div>
+      </div>
     </div>
-    <div class="card metric-card">
-      <div class="label">ADX</div>
-      <div class="big-num" id="adxVal" contenteditable="true">--</div>
-    </div>
-    <div class="card metric-card">
-      <div class="label">ATR %</div>
-      <div class="big-num" id="atrVal" contenteditable="true">--</div>
+
+    <div class="card" style="margin-top:20px;">
+      <div class="row row-4" style="grid-template-columns:repeat(2,1fr);">
+        <div class="metric-card"><div class="label">Trades</div><div class="val mono" id="mTradesOv">0</div></div>
+        <div class="metric-card"><div class="label">Win Rate</div><div class="val mono" id="mWROv">0%</div></div>
+        <div class="metric-card"><div class="label">P&amp;L</div><div class="val mono" id="mPnlOv">$0</div></div>
+        <div class="metric-card"><div class="label">PF</div><div class="val mono" id="mPFOv">—</div></div>
+      </div>
     </div>
   </div>
-  <div><button class="primary" id="saveSession">Save Session</button></div>
 
-  <!-- Calendar -->
-  <div class="card">
-    <div class="label">Today — High Impact Events</div>
-    <div class="calendar-strip" id="calendar" style="margin-top:10px;">
-      <div style="color:var(--muted);">No high-impact events scheduled today</div>
+  <!-- ========== MORNING BRIEF TAB ========== -->
+  <div class="tab-panel" id="panel-brief">
+    <div class="card brief">
+      <div class="hdr">
+        <div class="label">Morning Brief</div>
+        <button class="primary" id="refreshBrief">Refresh</button>
+      </div>
+      <pre id="briefText">Loading…</pre>
+      <div style="margin-top:12px; color:var(--muted); font-size:12px;">
+        Run <code class="mono">/morning-brief</code> from a Claude session with TradingView MCP
+        available (Claude.ai chat / Claude Desktop) to refresh live chart values.
+      </div>
     </div>
   </div>
 
-  <!-- Trade log + metrics -->
-  <div class="row row-2">
+  <!-- ========== TRADE LOG TAB ========== -->
+  <div class="tab-panel" id="panel-trades">
+    <div class="row row-2">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="label">Paper Trade Log</div>
+          <button id="clearAllTrades" style="color:var(--red); border-color:var(--red);">Clear All</button>
+        </div>
+        <table style="margin-top:10px;">
+          <thead>
+            <tr><th>Date</th><th>Strat</th><th>Dir</th><th>Entry</th><th>Exit</th><th>Reason</th><th>P&amp;L</th><th></th></tr>
+          </thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+        <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); color:var(--muted); font-size:12px;">
+          Trades are captured automatically from TradingView alerts via <code class="mono">/api/alert</code>.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row row-4" style="grid-template-columns:repeat(2,1fr);">
+          <div class="metric-card"><div class="label">Trades</div><div class="val mono" id="mTrades">0</div></div>
+          <div class="metric-card"><div class="label">Win Rate</div><div class="val mono" id="mWR">0%</div></div>
+          <div class="metric-card"><div class="label">P&amp;L</div><div class="val mono" id="mPnl">$0</div></div>
+          <div class="metric-card"><div class="label">PF</div><div class="val mono" id="mPF">—</div></div>
+        </div>
+        <div style="margin-top:16px;">
+          <div class="label">Equity Curve</div>
+          <svg class="equity" id="equitySvg"></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== TASK QUEUE TAB ========== -->
+  <div class="tab-panel" id="panel-tasks">
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div class="label">Paper Trade Log</div>
-        <button id="clearAllTrades" style="color:var(--red); border-color:var(--red);">Clear All</button>
+        <div><span class="label">Task Queue</span> <span class="badge amber" id="pendCount">0</span></div>
       </div>
-      <table style="margin-top:10px;">
-        <thead>
-          <tr><th>Date</th><th>Strat</th><th>Dir</th><th>Entry</th><th>Exit</th><th>Reason</th><th>P&amp;L</th><th></th></tr>
-        </thead>
-        <tbody id="tradesBody"></tbody>
-      </table>
-      <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); color:var(--muted); font-size:12px;">
-        Trades are captured automatically from TradingView alerts via <code class="mono">/api/alert</code>.
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="row row-4" style="grid-template-columns:repeat(2,1fr);">
-        <div class="metric-card"><div class="label">Trades</div><div class="val mono" id="mTrades">0</div></div>
-        <div class="metric-card"><div class="label">Win Rate</div><div class="val mono" id="mWR">0%</div></div>
-        <div class="metric-card"><div class="label">P&amp;L</div><div class="val mono" id="mPnl">$0</div></div>
-        <div class="metric-card"><div class="label">PF</div><div class="val mono" id="mPF">—</div></div>
-      </div>
-      <div style="margin-top:16px;">
-        <div class="label">Equity Curve</div>
-        <svg class="equity" id="equitySvg"></svg>
-      </div>
-    </div>
-  </div>
-
-  <!-- Task queue -->
-  <div class="card collapsible">
-    <div class="head" id="taskHead">
-      <div><span class="label">Task Queue</span> <span class="badge amber" id="pendCount">0</span></div>
-      <button>Toggle</button>
-    </div>
-    <div id="taskBody" style="margin-top:12px;">
-      <table>
+      <table style="margin-top:12px;">
         <thead><tr><th>Pri</th><th>Title</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
         <tbody id="tasksBody"></tbody>
       </table>
