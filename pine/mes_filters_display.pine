@@ -1,0 +1,26 @@
+// MES Filter Values Display
+// Add this indicator to the TradingView chart so the MCP morning brief
+// can read ADX and ATR% values via data_get_study_values.
+// These are the two daily regime filter values not available from the
+// strategy scripts directly.
+
+//@version=6
+indicator("MES Filter Values", overlay=false)
+
+// ADX (14-period daily, prior day value — no lookahead)
+f_prevAdx(len) =>
+    [dp, dm, ax] = ta.dmi(len, len)
+    ax[1]
+
+prevDayADX = request.security(syminfo.tickerid, "D", f_prevAdx(14),
+             lookahead=barmerge.lookahead_on)
+
+// ATR% (10-period daily, prior day value — no lookahead)
+dailyATR   = request.security(syminfo.tickerid, "D", ta.atr(10)[1],
+             lookahead=barmerge.lookahead_on)
+dailyClose = request.security(syminfo.tickerid, "D", close[1],
+             lookahead=barmerge.lookahead_on)
+atrPct     = dailyClose > 0 ? dailyATR / dailyClose * 100.0 : na
+
+plot(prevDayADX, title="ADX (14-day)",  color=color.blue)
+plot(atrPct,     title="ATR% (10-day)", color=color.orange)
