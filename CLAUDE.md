@@ -308,6 +308,11 @@ Git LFS version: 3.7.1
   forwards original message to Twilio if `TWILIO_WEBHOOK_URL` is set.
   Point ngrok at `http://localhost:8080/api/alert`.
 
+## Visual Improvements — April 14, 2026
+- MES ORB v3: ORB lines linewidth=3, yellow zone fill between high/low
+- Gap Fade v1: Prior Day Close and RTH Open lines linewidth=3
+- Both committed in ada31ae, fee61b3, b899c72
+
 ## Claude Code Launch Command
 Always launch Claude Code with:
 ```zsh
