@@ -278,12 +278,12 @@ if strategy.position_size == 0 and strategy.position_size[1] < 0
 // ORB high/low lines — extended to right edge, wider, with zone fill
 orbHighLine = plot(orbSet ? orbHigh : na, "ORB High",
      color=color.new(color.green, 0),
-     style=plot.style_linebr,
+     style=plot.style_line,
      linewidth=3)
 
 orbLowLine = plot(orbSet ? orbLow : na, "ORB Low",
      color=color.new(color.red, 0),
-     style=plot.style_linebr,
+     style=plot.style_line,
      linewidth=3)
 
 // Light yellow fill between ORB high and low
