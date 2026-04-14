@@ -235,16 +235,14 @@ plot(not na(prevDayClose) and isSessionBar ? prevDayClose : na,
      "Prior Day Close",
      color=color.new(color.yellow, 0),
      style=plot.style_linebr,
-     linewidth=3,
-     extend=extend.right)
+     linewidth=3)
 
 // RTH open = the entry trigger reference level.
 plot(gapSet and isSessionBar ? rthOpen : na,
      "RTH Open (9:30)",
      color=color.new(color.aqua, 0),
      style=plot.style_linebr,
-     linewidth=3,
-     extend=extend.right)
+     linewidth=3)
 
 // Entry labels
 if longTrigger
