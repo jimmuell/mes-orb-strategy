@@ -275,11 +275,23 @@ if strategy.position_size == 0 and strategy.position_size[1] < 0
 //  VISUAL AIDS (minimal — chart already has VWAP, EMA, BB, Volume)
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ORB high/low lines (current day only)
-plot(orbSet ? orbHigh : na, "ORB High", color=color.new(color.green, 30),
-     style=plot.style_linebr, linewidth=2)
-plot(orbSet ? orbLow  : na, "ORB Low",  color=color.new(color.red, 30),
-     style=plot.style_linebr, linewidth=2)
+// ORB high/low lines — extended to right edge, wider, with zone fill
+orbHighLine = plot(orbSet ? orbHigh : na, "ORB High",
+     color=color.new(color.green, 0),
+     style=plot.style_linebr,
+     linewidth=3,
+     extend=extend.right)
+
+orbLowLine = plot(orbSet ? orbLow : na, "ORB Low",
+     color=color.new(color.red, 0),
+     style=plot.style_linebr,
+     linewidth=3,
+     extend=extend.right)
+
+// Light yellow fill between ORB high and low
+fill(orbHighLine, orbLowLine,
+     color=color.new(color.yellow, 88),
+     title="ORB Zone")
 
 // Entry labels
 if longRetest and strategy.position_size == 0

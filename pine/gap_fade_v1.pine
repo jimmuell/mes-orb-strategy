@@ -232,13 +232,19 @@ if strategy.position_size == 0 and strategy.position_size[1] < 0
 
 // Prior day close = the fade target (theoretical anchor).
 plot(not na(prevDayClose) and isSessionBar ? prevDayClose : na,
-     "Prior Day Close", color=color.new(color.yellow, 20),
-     style=plot.style_linebr, linewidth=2)
+     "Prior Day Close",
+     color=color.new(color.yellow, 0),
+     style=plot.style_linebr,
+     linewidth=3,
+     extend=extend.right)
 
 // RTH open = the entry trigger reference level.
 plot(gapSet and isSessionBar ? rthOpen : na,
-     "RTH Open (9:30)", color=color.new(color.aqua, 30),
-     style=plot.style_linebr, linewidth=1)
+     "RTH Open (9:30)",
+     color=color.new(color.aqua, 0),
+     style=plot.style_linebr,
+     linewidth=3,
+     extend=extend.right)
 
 // Entry labels
 if longTrigger
