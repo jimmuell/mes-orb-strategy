@@ -63,7 +63,7 @@ Final configuration:
 
 Remaining steps:
 1. ~~Runs 001-014 — Backtest optimization~~ ✅ complete
-2. ~~Pine Script conversion~~ ✅ complete (mes_orb_v2.pine)
+2. ~~Pine Script conversion~~ ✅ complete (mes_orb_v3.pine — current deployed version, supersedes v2)
 3. ~~TradingView deployment~~ ✅ complete (MES1! 5-min chart, alert active)
 4. 30-day paper trade validation ← current (started April 14, 2026)
 5. TradingView alert expires June 11, 2026 — renew before that date
@@ -138,12 +138,17 @@ for Micro E-mini S&P 500 Futures (CME_MINI:MES1!) using TradingView Pine Script 
 Two independent systems — a Pine Script strategy for TradingView and a Python backtest engine:
 
 - **`pine/`** — Pine Script v6 strategy source
-  - `mes_orb_v2.pine` — Phase 1 final configuration (active)
+  - `mes_orb_v3.pine` — Phase 1 ORB strategy (deployed; supersedes v2)
+  - `mes_orb_v2.pine` — Prior Phase 1 version (kept for reference)
+  - `gap_fade_v1.pine` — Phase 2 gap fade strategy
+  - `mes_filters_display.pine` — Read-only indicator that prints live filter values (ADX, ATR%, ORB range%, gap%) on chart for the morning brief
 - **`backtest/`** — Python backtesting engine (pandas/numpy)
-  - `engine/engine.py` — Core run_backtest() function
-  - `engine/data.py` — Data loading from CSV
-  - `strategies/` — Strategy implementations
-  - `data/` — Cached OHLCV CSVs
+  - `engine/engine.py` — Core `run_backtest()` / `run_backtest_long_short()` (TV-matching fill mechanics)
+  - `engine/data.py` — Data loading from CSV / TV exports
+  - `strategies/mes_orb_strategy.py` — Active MES ORB backtest (1308 lines; Run 014 final config)
+  - `strategies/gap-fade/`, `strategies/vwap-scalp/` — Phase 2 work
+  - `MEMORY.md` — **Read this before writing any backtest code.** Pine Script sanitization checklist, signal-generator pitfalls, KPI display rules, available indicators
+  - `BACKTESTING.md` — Engine internals: order-of-operations, EMA/commission formulas, `process_orders_on_close` pitfalls, reversal handling
 - **`backtest-results/results.md`** — Iteration log for all 14 backtest runs
 - **`docs/`** — Deployment guides and documentation
 - **`data/raw/`** — Primary dataset (ES 18-year 5-min data, managed via Git LFS)
