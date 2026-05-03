@@ -4,6 +4,7 @@ from datetime import datetime
 
 import requests
 from flask import Flask, jsonify, render_template, request
+from supabase import create_client
 
 from database import get_conn, init_db
 from notifier import notify_task_complete, notify_task_ready
@@ -12,6 +13,11 @@ app = Flask(__name__)
 
 # In-memory open trade tracker. Key: "{strategy}_{direction}", value: dict.
 open_trades = {}
+
+# Supabase client for /webhook/trade. Init lazily so the app can boot without the env var.
+SUPABASE_URL = "https://iwvpbnhsabnioxrlddqx.supabase.co"
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+sb = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_KEY else None
 
 
 def parse_alert(message: str):
@@ -673,6 +679,107 @@ def receive_alert():
 def test_alert():
     """Local curl-testable proxy to /api/alert."""
     return receive_alert()
+
+
+@app.route('/webhook/health', methods=['GET'])
+def webhook_health():
+    return jsonify({'status': 'ok', 'service': 'tradinggym-webhook'}), 200
+
+
+@app.route('/webhook/trade', methods=['POST'])
+def webhook_trade():
+    """Receive trade alerts from TradingView, write to Supabase live_trades."""
+    if sb is None:
+        return jsonify({'error': 'Supabase not configured (set SUPABASE_ANON_KEY)'}), 503
+
+    data = request.get_json(silent=True)
+    if not data or 'action' not in data:
+        return jsonify({'error': 'Invalid payload'}), 400
+
+    action = data.get('action')         # 'entry' or 'exit'
+    direction = data.get('direction')   # 'long' or 'short'
+    price = float(data.get('price', 0))
+    contracts = int(data.get('contracts', 1))
+    strategy_name = data.get('strategy', 'unknown')
+    ticker = data.get('ticker', 'MES1!')
+
+    session = sb.table('trading_sessions') \
+        .select('*') \
+        .eq('status', 'active') \
+        .order('started_at', desc=True) \
+        .limit(1) \
+        .execute()
+
+    if not session.data:
+        return jsonify({'error': 'No active trading session'}), 400
+
+    sess = session.data[0]
+    session_id = sess['id']
+    user_id = sess['user_id']
+    commission_per_rt = float(sess.get('cost_per_trade', 1.27))
+    tick_value = float(sess.get('tick_value', 1.25))
+    tick_size = 0.25  # MES/ES
+
+    if action == 'entry':
+        trade = {
+            'user_id': user_id,
+            'trading_session_id': session_id,
+            'direction': direction,
+            'entry_price': price,
+            'contracts': contracts,
+            'strategy': strategy_name,
+            'commission': commission_per_rt * contracts,
+            'opened_at': datetime.utcnow().isoformat(),
+        }
+        result = sb.table('live_trades').insert(trade).execute()
+        return jsonify({'status': 'entry_logged', 'trade_id': result.data[0]['id']}), 200
+
+    elif action == 'exit':
+        open_trade = sb.table('live_trades') \
+            .select('*') \
+            .eq('trading_session_id', session_id) \
+            .eq('direction', direction) \
+            .is_('result', 'null') \
+            .order('opened_at', desc=True) \
+            .limit(1) \
+            .execute()
+
+        if not open_trade.data:
+            return jsonify({'error': 'No matching open trade'}), 400
+
+        trade = open_trade.data[0]
+        entry_price = float(trade['entry_price'])
+        cts = int(trade['contracts'])
+
+        if direction == 'long':
+            ticks = (price - entry_price) / tick_size
+        else:
+            ticks = (entry_price - price) / tick_size
+
+        gross_pnl = ticks * tick_value * cts
+        commission = commission_per_rt * cts
+        net_pnl = gross_pnl - commission
+        result_val = 'win' if gross_pnl > 0 else ('loss' if gross_pnl < 0 else 'breakeven')
+
+        sb.table('live_trades') \
+            .update({
+                'result': result_val,
+                'gross_pnl': round(gross_pnl, 2),
+                'net_pnl': round(net_pnl, 2),
+                'ticks': round(ticks, 2),
+                'commission': round(commission, 4),
+            }) \
+            .eq('id', trade['id']) \
+            .execute()
+
+        return jsonify({
+            'status': 'exit_logged',
+            'gross_pnl': round(gross_pnl, 2),
+            'net_pnl': round(net_pnl, 2),
+            'fee_drag': round((commission / gross_pnl * 100), 1) if gross_pnl > 0 else 0,
+        }), 200
+
+    return jsonify({'error': 'Unknown action'}), 400
 
 
 if __name__ == '__main__':
