@@ -250,6 +250,7 @@ if longRetest
     strategy.exit("Long Exit", "Long", stop=longSL, limit=longTP)
     tradedToday := true
     alert("MES ORB v3 — LONG ENTRY — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+    alert('{"action":"entry","direction":"long","price":' + str.tostring(close) + ',"contracts":1,"strategy":"ORB","ticker":"' + syminfo.tickerid + '","time":"' + str.tostring(timenow) + '"}', alert.freq_once_per_bar)
 
 if shortRetest
     float shortSL = close + slDist
@@ -258,6 +259,7 @@ if shortRetest
     strategy.exit("Short Exit", "Short", stop=shortSL, limit=shortTP)
     tradedToday := true
     alert("MES ORB v3 — SHORT ENTRY — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+    alert('{"action":"entry","direction":"short","price":' + str.tostring(close) + ',"contracts":1,"strategy":"ORB","ticker":"' + syminfo.tickerid + '","time":"' + str.tostring(timenow) + '"}', alert.freq_once_per_bar)
 
 // ─── End-of-Session Flatten ──────────────────────────────────────────────
 if isSessionEnd and strategy.position_size != 0
@@ -267,9 +269,11 @@ if isSessionEnd and strategy.position_size != 0
 // ─── Exit Alerts ─────────────────────────────────────────────────────────
 if strategy.position_size == 0 and strategy.position_size[1] > 0
     alert("MES ORB v3 — LONG EXIT — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+    alert('{"action":"exit","direction":"long","price":' + str.tostring(close) + ',"contracts":1,"strategy":"ORB","ticker":"' + syminfo.tickerid + '","time":"' + str.tostring(timenow) + '"}', alert.freq_once_per_bar)
 
 if strategy.position_size == 0 and strategy.position_size[1] < 0
     alert("MES ORB v3 — SHORT EXIT — " + syminfo.ticker + " @ " + str.tostring(close), alert.freq_once_per_bar)
+    alert('{"action":"exit","direction":"short","price":' + str.tostring(close) + ',"contracts":1,"strategy":"ORB","ticker":"' + syminfo.tickerid + '","time":"' + str.tostring(timenow) + '"}', alert.freq_once_per_bar)
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  VISUAL AIDS (minimal — chart already has VWAP, EMA, BB, Volume)
