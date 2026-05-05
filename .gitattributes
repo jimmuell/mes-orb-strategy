@@ -3,3 +3,4 @@
 
 # API test fixture — small enough to commit as a regular blob, no LFS
 api/data/ES_test_1yr.txt !filter !diff !merge text
+api/requirements.txt !filter !diff !merge text
