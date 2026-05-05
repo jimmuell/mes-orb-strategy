@@ -181,6 +181,21 @@ async def health():
     }
 
 
+@app.get("/ping")
+async def ping():
+    """Simple ping that doesn't load data — for Railway deploy diagnostics."""
+    import os
+    data_exists = os.path.exists(DATA_PATH)
+    data_size = os.path.getsize(DATA_PATH) if data_exists else 0
+    return {
+        "status": "pong",
+        "engine_version": ENGINE_VERSION,
+        "data_path": DATA_PATH,
+        "data_exists": data_exists,
+        "data_size_bytes": data_size,
+    }
+
+
 @app.post("/run", response_model=BacktestResponse, dependencies=[Depends(verify_api_key)])
 async def run(req: BacktestRequest):
     """Run a backtest with AI-generated signal code."""
