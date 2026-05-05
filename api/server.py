@@ -52,8 +52,7 @@ API_KEY = os.environ.get("BACKTEST_API_KEY", "tg-backtest-dev-2026")
 DATA_PATH = os.environ.get(
     "DATA_PATH",
     os.path.join(
-        os.path.dirname(__file__), '..', 'data', 'raw',
-        'ES_full_5min_continuous_UNadjusted.txt',
+        os.path.dirname(__file__), 'data', 'ES_test_1yr.txt',
     ),
 )
 

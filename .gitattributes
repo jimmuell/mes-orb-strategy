@@ -1,2 +1,5 @@
 *.txt filter=lfs diff=lfs merge=lfs -text
 *.csv filter=lfs diff=lfs merge=lfs -text
+
+# API test fixture — small enough to commit as a regular blob, no LFS
+api/data/ES_test_1yr.txt !filter !diff !merge text
