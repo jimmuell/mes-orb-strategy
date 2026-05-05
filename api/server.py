@@ -129,6 +129,14 @@ SAFE_BUILTINS = {
     'int': int, 'float': float, 'str': str, 'bool': bool,
     'round': round, 'sum': sum, 'enumerate': enumerate, 'zip': zip,
     'True': True, 'False': False, 'None': None, 'print': print,
+    'isinstance': isinstance, 'issubclass': issubclass, 'type': type,
+    'list': list, 'dict': dict, 'tuple': tuple, 'set': set, 'frozenset': frozenset,
+    'map': map, 'filter': filter, 'sorted': sorted, 'reversed': reversed,
+    'any': any, 'all': all, 'hasattr': hasattr,
+    'slice': slice, 'property': property,
+    'ValueError': ValueError, 'TypeError': TypeError, 'KeyError': KeyError,
+    'IndexError': IndexError, 'AttributeError': AttributeError,
+    'StopIteration': StopIteration,
 }
 
 BLOCKED_NAMES = {
