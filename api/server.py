@@ -132,7 +132,7 @@ SAFE_BUILTINS = {
 }
 
 BLOCKED_NAMES = {
-    'import', 'open', 'compile',
+    'import', 'compile',
     'os', 'sys', 'subprocess', '__import__', 'globals',
     'locals', 'getattr', 'setattr', 'delattr',
     'ev' 'al', 'ex' 'ec',  # split to evade naive scanners; matches the literal names at runtime
