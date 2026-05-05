@@ -7,7 +7,6 @@ import builtins
 import math
 import os
 import re
-import sys
 import time
 import traceback
 from typing import Optional
@@ -15,9 +14,6 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-
-# Add backtest/ to path so we can import the engine package
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backtest'))
 
 from engine import (
     BacktestConfig, run_backtest, run_backtest_long_short,
