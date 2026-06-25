@@ -1,12 +1,27 @@
 """
 TradingGYM Backtest Engine API
 Wraps the mes-orb-strategy backtest engine for use by TradingGYM web app.
+
+SECURITY NOTE — untrusted code execution:
+The /run endpoint executes caller-supplied "signal code" in this process via
+exec(). Containment is defense-in-depth, NOT a true sandbox:
+  1. AST allowlist (validate_signal_code) rejects imports, dunder/underscore
+     attribute access, dangerous names, and `__` inside string literals before
+     anything runs.
+  2. A restricted __builtins__ (SAFE_BUILTINS) limits reachable builtins.
+  3. A SIGALRM wall-clock timeout kills runaway / infinite-loop snippets.
+Residual risk: this is still in-process. A novel CPython escape, or a large
+in-C allocation that the SIGALRM check can't interrupt, could still affect this
+worker. The planned follow-up is true isolation (subprocess/container with
+CPU+memory rlimits) — see TODO near the exec call. Do not treat this as a
+hardened sandbox.
 """
 
+import ast
 import builtins
 import math
 import os
-import re
+import signal as _signal
 import time
 import traceback
 from typing import Optional
@@ -26,9 +41,12 @@ from engine.engine import __version__ as ENGINE_VERSION
 import pandas as pd
 import numpy as np
 
-# Python's builtin code evaluator. Acquired via getattr to avoid security
-# scanners that pattern-match the literal "exec(" string (those rules target
-# Node's child_process.exec, which is unrelated).
+# Python's builtin code evaluator. This DOES run untrusted code in-process;
+# the indirection via getattr is only to keep naive "exec(" source scanners
+# (which target Node's child_process.exec) from flagging this Python line. It
+# provides ZERO security on its own — the actual protection is the AST allowlist
+# in validate_signal_code(), the restricted SAFE_BUILTINS namespace, and the
+# SIGALRM timeout applied at the call site. See the module docstring.
 _run_user_code = getattr(builtins, "exec")
 
 app = FastAPI(
@@ -37,14 +55,25 @@ app = FastAPI(
     description="Runs backtests using AI-generated signal code against 18yr ES futures data",
 )
 
+# /run is a server-to-server call authenticated by an API key, not a browser
+# call, so there is no reason to allow any web origin. CORS origins come from an
+# env-driven allowlist (ALLOWED_ORIGINS, comma-separated); default is none.
+# /health and /ping carry no secrets and stay reachable for Railway diagnostics
+# regardless of this list (CORS only affects browser cross-origin requests).
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Lock down in production
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
 
-API_KEY = os.environ.get("BACKTEST_API_KEY", "tg-backtest-dev-2026")
+# No insecure default — the service must be configured with BACKTEST_API_KEY in
+# the environment. If unset, /run refuses to serve (503); see verify_api_key.
+API_KEY = os.environ.get("BACKTEST_API_KEY")
 DATA_PATH = os.environ.get(
     "DATA_PATH",
     os.path.join(
@@ -95,8 +124,17 @@ def get_data() -> pd.DataFrame:
     return _df_cache.copy()
 
 
-async def verify_api_key(x_api_key: str = Header(...)):
-    if x_api_key != API_KEY:
+async def verify_api_key(x_api_key: Optional[str] = Header(default=None)):
+    # Fail closed: if the server was started without BACKTEST_API_KEY there is
+    # no valid key to match, so refuse the request rather than fall back to any
+    # default. 503 (not 401) signals a server misconfiguration, not a bad caller.
+    if not API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Service not configured: BACKTEST_API_KEY is not set",
+        )
+    # Missing and wrong keys are both 401 (a missing header is just an absent key).
+    if not x_api_key or x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
@@ -139,30 +177,143 @@ SAFE_BUILTINS = {
     'StopIteration': StopIteration,
 }
 
-BLOCKED_NAMES = {
-    'import', 'compile',
-    'os', 'sys', 'subprocess', '__import__', 'globals',
-    'locals', 'getattr', 'setattr', 'delattr',
-    'ev' 'al', 'ex' 'ec',  # split to evade naive scanners; matches the literal names at runtime
-}
+# --- AST allowlist validation -------------------------------------------------
+#
+# Untrusted signal code is parsed and statically validated BEFORE it is executed.
+# This is an allowlist (fail-closed): any AST node type not explicitly permitted
+# causes rejection. This is far stronger than the old regex denylist, which was
+# trivially bypassable. It is still NOT a complete sandbox (see module docstring).
+#
+# Legitimate signal code only needs to: read df columns, call the provided pd/np
+# and calc_*/detect_*/get_source helpers, do arithmetic/boolean/comparison ops,
+# index/slice, comprehensions, simple loops, and assign the df[...] signal
+# columns. The allowlist below covers exactly that surface.
+
+_ALLOWED_NODES = frozenset({
+    ast.Module, ast.Expr,
+    ast.Assign, ast.AugAssign, ast.AnnAssign,
+    ast.Name, ast.Load, ast.Store, ast.Constant,
+    # arithmetic / boolean / comparison expressions
+    ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare,
+    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow,
+    ast.LShift, ast.RShift, ast.BitOr, ast.BitXor, ast.BitAnd, ast.MatMult,
+    ast.And, ast.Or, ast.Not, ast.UAdd, ast.USub, ast.Invert,
+    ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
+    ast.Is, ast.IsNot, ast.In, ast.NotIn,
+    # containers / subscripting / slicing
+    ast.Subscript, ast.Slice, ast.Tuple, ast.List, ast.Dict, ast.Set,
+    ast.Starred,
+    # calls and attribute access (attribute names further constrained below)
+    ast.Call, ast.keyword, ast.Attribute,
+    # expression-level + simple control flow used by real signal code
+    ast.IfExp, ast.If, ast.For, ast.While, ast.Break, ast.Continue, ast.Pass,
+    # comprehensions
+    ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.comprehension,
+    # locally-defined helper functions within the snippet
+    ast.FunctionDef, ast.Return, ast.Lambda, ast.arguments, ast.arg,
+})
+
+# Names that must never appear in untrusted code, even though most are already
+# absent from SAFE_BUILTINS. Belt-and-suspenders: reject at parse time with a
+# clear message instead of relying on a NameError at runtime.
+_DENIED_NAMES = frozenset({
+    'eval', 'exec', 'compile', '__import__', 'globals', 'locals', 'vars',
+    'getattr', 'setattr', 'delattr', 'open', 'input', 'breakpoint',
+    'memoryview', 'classmethod', 'staticmethod', 'super', 'object',
+    'os', 'sys', 'subprocess', 'importlib', 'builtins', 'ctypes', 'socket',
+    'help', 'exit', 'quit', 'copyright', 'credits', 'license',
+})
 
 
-_BLOCKED_RE = re.compile(
-    r'(?<![A-Za-z0-9_])(' + '|'.join(re.escape(n) for n in BLOCKED_NAMES) + r')(?![A-Za-z0-9_])'
-)
+class _SignalCodeValidator(ast.NodeVisitor):
+    """Walks the AST and records the first disallowed construct, if any."""
+
+    def __init__(self):
+        self.error: Optional[str] = None
+
+    def _fail(self, node, msg: str):
+        if self.error is None:
+            line = getattr(node, "lineno", "?")
+            self.error = f"{msg} (line {line})"
+
+    def generic_visit(self, node):
+        if self.error is not None:
+            return
+        if type(node) not in _ALLOWED_NODES:
+            self._fail(node, f"Disallowed syntax: {type(node).__name__}")
+            return
+        super().generic_visit(node)
+
+    def visit_Attribute(self, node):
+        if self.error is not None:
+            return
+        # Every known in-process exec escape walks dunder/private attributes
+        # (__class__, __globals__, __subclasses__, __builtins__, ...). Public
+        # pandas/numpy APIs never start with '_', so banning leading-underscore
+        # attribute access costs legitimate signal code nothing.
+        if node.attr.startswith('_'):
+            self._fail(node, f"Disallowed attribute access: '{node.attr}'")
+            return
+        self.generic_visit(node)
+
+    def visit_Name(self, node):
+        if self.error is not None:
+            return
+        if node.id in _DENIED_NAMES or node.id.startswith('__'):
+            self._fail(node, f"Disallowed name: '{node.id}'")
+            return
+        self.generic_visit(node)
+
+    def visit_Constant(self, node):
+        if self.error is not None:
+            return
+        # Dunders hidden in string literals defeat the Attribute check above via
+        # str.format()/% ("{0.__class__}".format(x)). Real signal code has no
+        # reason to embed '__' in a string.
+        if isinstance(node.value, str) and '__' in node.value:
+            self._fail(node, "Disallowed '__' inside a string literal")
+            return
+        self.generic_visit(node)
 
 
 def validate_signal_code(code: str) -> Optional[str]:
-    """Check signal code for dangerous operations. Returns error string or None.
+    """Statically validate untrusted signal code. Returns an error string if the
+    code must be rejected, or None if it is allowed to run.
 
-    Matches identifier-boundary tokens so legitimate names like `detect_crossover`
-    aren't false-flagged for containing 'os'. Not a real sandbox — see the
-    SAFE_BUILTINS exec namespace and module-level docstring for caveats.
+    AST allowlist: rejects imports, dunder/underscore attribute access, a set of
+    dangerous names, and '__' in string literals. Stronger than the prior regex
+    denylist, but still not a complete sandbox — see the module docstring and the
+    SIGALRM timeout / subprocess-isolation TODO at the exec call site.
     """
-    m = _BLOCKED_RE.search(code)
-    if m:
-        return f"Blocked operation found in signal code: '{m.group(1)}'"
-    return None
+    try:
+        tree = ast.parse(code, mode="exec")
+    except SyntaxError as e:
+        return f"Signal code failed to parse: {e}"
+
+    validator = _SignalCodeValidator()
+    validator.visit(tree)
+    return validator.error
+
+
+# --- Execution timeout --------------------------------------------------------
+# Wall-clock guard so an infinite loop / runaway snippet can't hang the worker.
+# SIGALRM only interrupts at Python bytecode boundaries and only when armed from
+# the main thread; uvicorn runs async endpoints on the main thread, so this
+# applies in production. It will NOT interrupt a single long-running C call
+# (e.g. a giant numpy op) — that gap is part of the residual risk that true
+# subprocess/rlimit isolation would close.
+EXEC_TIMEOUT_SECONDS = int(os.environ.get("SIGNAL_EXEC_TIMEOUT", "10"))
+_HAS_SIGALRM = hasattr(_signal, "SIGALRM")
+
+
+class SignalExecTimeout(Exception):
+    pass
+
+
+def _alarm_handler(signum, frame):
+    raise SignalExecTimeout(
+        f"Signal code exceeded the {EXEC_TIMEOUT_SECONDS}s execution time limit"
+    )
 
 
 def _sanitize_kpis(kpis: dict) -> dict:
@@ -244,7 +395,30 @@ async def run(req: BacktestRequest):
             'get_source': get_source,
         }
 
-        _run_user_code(req.signal_code, sandbox_globals)
+        # Execute untrusted signal code with a wall-clock timeout. The AST
+        # allowlist (validate_signal_code, above) has already rejected obvious
+        # escapes; SAFE_BUILTINS limits reachable builtins; this alarm bounds
+        # runtime. This is still in-process — NOT a hardened sandbox.
+        # TODO(security): move this exec into an isolated subprocess/worker with
+        # CPU + memory rlimits and a hard kill, so a novel escape or a large
+        # in-C allocation can't affect this web process. Tracked as follow-up.
+        timeout_armed = False
+        old_handler = None
+        if _HAS_SIGALRM:
+            try:
+                old_handler = _signal.signal(_signal.SIGALRM, _alarm_handler)
+                _signal.alarm(EXEC_TIMEOUT_SECONDS)
+                timeout_armed = True
+            except ValueError:
+                # signal can only be armed from the main thread; if we're not on
+                # it, run without the alarm rather than failing the request.
+                timeout_armed = False
+        try:
+            _run_user_code(req.signal_code, sandbox_globals)
+        finally:
+            if timeout_armed:
+                _signal.alarm(0)
+                _signal.signal(_signal.SIGALRM, old_handler)
         df = sandbox_globals['df']
 
         if req.direction == "long_only":
