@@ -151,6 +151,7 @@ Two independent systems — a Pine Script strategy for TradingView and a Python 
   - `BACKTESTING.md` — Engine internals: order-of-operations, EMA/commission formulas, `process_orders_on_close` pitfalls, reversal handling
 - **`backtest-results/results.md`** — Iteration log for all 14 backtest runs
 - **`docs/`** — Deployment guides and documentation
+  - `DECISIONS.md` — Architecture Decision Records (ADR-018 MES $5/point economics, ADR-020 dependency/Python pins, ADR-021 signal-exec sandbox); engine economics + dependency pointer
 - **`data/raw/`** — Primary dataset (ES 18-year 5-min data, managed via Git LFS)
 
 ## Backtest Engine Commands
