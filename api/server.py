@@ -53,15 +53,13 @@ from backtester.instruments import Instrument
 _ET = ZoneInfo("America/New_York")
 
 # IMPORTANT — economics must match the engine for the bar-based benchmarks to be
-# meaningful. The engine computes trade pnl as qty*(exit_price-entry_price) with
-# NO point-value multiplier (engine.py: gross_pnl = entry_qty*(fill_price-entry_price)),
-# i.e. $1 per index point per contract. The validator's random-entry / buy-hold
-# benchmarks compute $ from bars as (exit-entry)*point_value*qty. To compare the
-# strategy's net against those on identical economics we must set point_value=1.0;
-# the default MES instrument ($5/point) would inflate the benchmark 5x and make the
-# signal-vs-exposure rank meaningless. (Bumping the engine to true MES $5/point is a
-# separate, deliberate change — out of scope here.)
-_ENGINE_INSTRUMENT = Instrument(symbol="ES", point_value=1.0, tick_size=0.25)
+# meaningful. The engine now emits trade pnl on true MES economics ($5 per index
+# point per contract, via engine.MES_POINT_VALUE), and the validator's random-entry
+# / buy-hold benchmarks compute $ from bars as (exit-entry)*point_value*qty. Both
+# halves MUST use the same point value, so this instrument is pinned to MES $5/point
+# to match the engine. (If these ever diverge, the signal-vs-exposure rank becomes
+# meaningless — keep engine.MES_POINT_VALUE and this point_value in lockstep.)
+_ENGINE_INSTRUMENT = Instrument(symbol="MES", point_value=5.0, tick_size=0.25)
 
 
 def _to_et(ts):
