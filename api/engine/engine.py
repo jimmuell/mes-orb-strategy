@@ -27,6 +27,15 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+# MES (Micro E-mini S&P 500) contract economics. The engine computes trade
+# P&L from raw price differences (qty * priceΔ); MES is $5 per index point.
+# This multiplier converts every dollar-denominated quantity (realized and
+# unrealized P&L, notional/commission, position market value) into real MES
+# dollars. Ratios (win rate, profit factor, payoff) are scale-invariant and
+# unchanged; only dollar fields and account-relative percentages change.
+MES_POINT_VALUE = 5.0  # $ per index point per contract (4 ticks * $1.25)
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -657,9 +666,9 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
         if pending_exit and position_qty > 0:
             fill_price = bar["Open"]
             for pos in open_positions:
-                trade_value = pos.entry_qty * fill_price
+                trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                 exit_commission = trade_value * commission_rate
-                gross_pnl = pos.entry_qty * (fill_price - pos.entry_price)
+                gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
 
                 cash += trade_value - exit_commission
@@ -667,7 +676,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 pos.exit_date = bar_date
                 pos.exit_price = fill_price
                 pos.pnl = net_pnl
-                entry_value = pos.entry_qty * pos.entry_price
+                entry_value = pos.entry_qty * pos.entry_price * MES_POINT_VALUE
                 pos.pnl_pct = (net_pnl / entry_value) * 100
                 pos.exit_commission = exit_commission
                 trades.append(pos)
@@ -682,11 +691,11 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
             if pending_entry_qty > 0:
                 # Signal-time sized: entry_qty column, cash, or partial pct_equity
                 qty = pending_entry_qty
-                trade_value = qty * fill_price
             else:
-                # Default 100% equity at fill time (backward compatible)
-                trade_value = equity / (1 + commission_rate)
-                qty = trade_value / fill_price
+                # Default 100% equity sizing. Dividing the budget by the scaled
+                # notional keeps this path self-normalizing (identical to pre-MES).
+                qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
+            trade_value = qty * fill_price * MES_POINT_VALUE
             entry_commission = trade_value * commission_rate
 
             position_qty += qty
@@ -730,7 +739,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                     worst_price = fill_price       # gap-through, exited at Open
                 else:
                     worst_price = bar["Low"]       # exact TP: held through bar range
-                equity_at_worst = cash + position_qty * worst_price
+                equity_at_worst = cash + position_qty * worst_price * MES_POINT_VALUE
                 dd = equity_at_worst - peak_equity
                 dd_pct = (dd / peak_equity) * 100 if peak_equity != 0 else 0.0
                 if dd < max_intrabar_dd:
@@ -740,9 +749,9 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
                 # Close ALL open positions at TP/SL price
                 for pos in open_positions:
-                    tv = pos.entry_qty * fill_price
+                    tv = pos.entry_qty * fill_price * MES_POINT_VALUE
                     ec = tv * commission_rate
-                    gpnl = pos.entry_qty * (fill_price - pos.entry_price)
+                    gpnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                     npnl = gpnl - pos.entry_commission - ec
 
                     cash += tv - ec
@@ -750,7 +759,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                     pos.exit_date = bar_date
                     pos.exit_price = fill_price
                     pos.pnl = npnl
-                    ev = pos.entry_qty * pos.entry_price
+                    ev = pos.entry_qty * pos.entry_price * MES_POINT_VALUE
                     pos.pnl_pct = (npnl / ev) * 100
                     pos.exit_commission = ec
                     trades.append(pos)
@@ -765,7 +774,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
         # 2a) Intrabar drawdown check (only while holding; skip if TP/SL handled it)
         if bar_in_range and position_qty > 0 and not tpsl_filled:
-            equity_at_low = cash + position_qty * bar["Low"]
+            equity_at_low = cash + position_qty * bar["Low"] * MES_POINT_VALUE
             dd = equity_at_low - peak_equity
             dd_pct = (dd / peak_equity) * 100 if peak_equity != 0 else 0.0
             if dd < max_intrabar_dd:
@@ -775,7 +784,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
         # 2b) Mark-to-market equity at Close
         if position_qty > 0:
-            equity = cash + position_qty * bar["Close"]
+            equity = cash + position_qty * bar["Close"] * MES_POINT_VALUE
         else:
             equity = cash
 
@@ -818,9 +827,9 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
             if pending_exit and position_qty > 0:
                 fill_price = bar["Close"]
                 for pos in open_positions:
-                    trade_value = pos.entry_qty * fill_price
+                    trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                     exit_commission = trade_value * commission_rate
-                    gross_pnl = pos.entry_qty * (fill_price - pos.entry_price)
+                    gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
 
                     cash += trade_value - exit_commission
@@ -828,7 +837,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                     pos.exit_date = bar_date
                     pos.exit_price = fill_price
                     pos.pnl = net_pnl
-                    entry_value = pos.entry_qty * pos.entry_price
+                    entry_value = pos.entry_qty * pos.entry_price * MES_POINT_VALUE
                     pos.pnl_pct = (net_pnl / entry_value) * 100
                     pos.exit_commission = exit_commission
                     trades.append(pos)
@@ -847,11 +856,10 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 fill_price = bar["Close"]
                 if pending_entry_qty > 0:
                     qty = pending_entry_qty
-                    trade_value = qty * fill_price
                 else:
-                    # 100% equity at fill time
-                    trade_value = equity / (1 + commission_rate)
-                    qty = trade_value / fill_price
+                    # 100% equity, self-normalizing across point value
+                    qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
+                trade_value = qty * fill_price * MES_POINT_VALUE
                 entry_commission = trade_value * commission_rate
 
                 position_qty += qty
@@ -870,7 +878,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
             # Re-mark equity after Close fills
             if position_qty > 0:
-                equity = cash + position_qty * bar["Close"]
+                equity = cash + position_qty * bar["Close"] * MES_POINT_VALUE
             else:
                 equity = cash
 
@@ -1026,15 +1034,15 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
         if pending_long_exit and position_side == "long" and position_qty > 0:
             fill_price = bar["Open"]
             for pos in open_positions:
-                trade_value = pos.entry_qty * fill_price
+                trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                 exit_commission = trade_value * commission_rate
-                gross_pnl = pos.entry_qty * (fill_price - pos.entry_price)
+                gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
                 cash += trade_value - exit_commission
                 pos.exit_date = bar_date
                 pos.exit_price = fill_price
                 pos.pnl = net_pnl
-                entry_value = pos.entry_qty * pos.entry_price
+                entry_value = pos.entry_qty * pos.entry_price * MES_POINT_VALUE
                 pos.pnl_pct = (net_pnl / entry_value) * 100
                 pos.exit_commission = exit_commission
                 trades.append(pos)
@@ -1054,15 +1062,15 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             fill_price = bar["Open"]
             for pos in open_positions:
                 abs_qty = pos.entry_qty
-                trade_value = abs_qty * fill_price
+                trade_value = abs_qty * fill_price * MES_POINT_VALUE
                 exit_commission = trade_value * commission_rate
-                gross_pnl = abs_qty * (pos.entry_price - fill_price)
+                gross_pnl = abs_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
                 cash = cash + gross_pnl - exit_commission
                 pos.exit_date = bar_date
                 pos.exit_price = fill_price
                 pos.pnl = net_pnl
-                entry_value = abs_qty * pos.entry_price
+                entry_value = abs_qty * pos.entry_price * MES_POINT_VALUE
                 pos.pnl_pct = (net_pnl / entry_value) * 100
                 pos.exit_commission = exit_commission
                 trades.append(pos)
@@ -1094,15 +1102,15 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             fill_price = bar["Open"]
             for pos in open_positions:
                 abs_qty = pos.entry_qty
-                trade_value = abs_qty * fill_price
+                trade_value = abs_qty * fill_price * MES_POINT_VALUE
                 exit_commission = trade_value * commission_rate
-                gross_pnl = abs_qty * (pos.entry_price - fill_price)
+                gross_pnl = abs_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
                 cash = cash + gross_pnl - exit_commission
                 pos.exit_date = bar_date
                 pos.exit_price = fill_price
                 pos.pnl = net_pnl
-                entry_value = abs_qty * pos.entry_price
+                entry_value = abs_qty * pos.entry_price * MES_POINT_VALUE
                 pos.pnl_pct = (net_pnl / entry_value) * 100
                 pos.exit_commission = exit_commission
                 trades.append(pos)
@@ -1119,10 +1127,9 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             fill_price = bar["Open"]
             if pending_entry_qty > 0:
                 qty = pending_entry_qty
-                trade_value = qty * fill_price
             else:
-                trade_value = equity / (1 + commission_rate)
-                qty = trade_value / fill_price
+                qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
+            trade_value = qty * fill_price * MES_POINT_VALUE
             entry_commission = trade_value * commission_rate
             position_qty += qty
             position_side = "long"
@@ -1142,15 +1149,15 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
         if pending_short_entry and position_side == "long" and position_qty > 0:
             fill_price = bar["Open"]
             for pos in open_positions:
-                trade_value = pos.entry_qty * fill_price
+                trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                 exit_commission = trade_value * commission_rate
-                gross_pnl = pos.entry_qty * (fill_price - pos.entry_price)
+                gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
                 cash += trade_value - exit_commission
                 pos.exit_date = bar_date
                 pos.exit_price = fill_price
                 pos.pnl = net_pnl
-                entry_value = pos.entry_qty * pos.entry_price
+                entry_value = pos.entry_qty * pos.entry_price * MES_POINT_VALUE
                 pos.pnl_pct = (net_pnl / entry_value) * 100
                 pos.exit_commission = exit_commission
                 trades.append(pos)
@@ -1167,10 +1174,9 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             fill_price = bar["Open"]
             if pending_entry_qty > 0:
                 abs_qty = pending_entry_qty
-                trade_value = abs_qty * fill_price
             else:
-                trade_value = equity / (1 + commission_rate)
-                abs_qty = trade_value / fill_price
+                abs_qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
+            trade_value = abs_qty * fill_price * MES_POINT_VALUE
             entry_commission = trade_value * commission_rate
             position_qty -= abs_qty  # more negative = larger short
             position_side = "short"
@@ -1212,19 +1218,19 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                         worst_price = fill_price
                     else:
                         worst_price = bar["Low"]
-                    equity_at_worst = cash + position_qty * worst_price
+                    equity_at_worst = cash + position_qty * worst_price * MES_POINT_VALUE
 
                     # Settle each long sub-position at TP/SL price
                     for pos in open_positions:
-                        trade_value = pos.entry_qty * fill_price
+                        trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                         exit_commission = trade_value * commission_rate
-                        gross_pnl = pos.entry_qty * (fill_price - pos.entry_price)
+                        gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                         net_pnl = gross_pnl - pos.entry_commission - exit_commission
                         cash += trade_value - exit_commission
                         pos.exit_date = bar_date
                         pos.exit_price = fill_price
                         pos.pnl = net_pnl
-                        entry_value = pos.entry_qty * pos.entry_price
+                        entry_value = pos.entry_qty * pos.entry_price * MES_POINT_VALUE
                         pos.pnl_pct = (net_pnl / entry_value) * 100
                         pos.exit_commission = exit_commission
                         trades.append(pos)
@@ -1239,21 +1245,21 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                         worst_price = fill_price
                     else:
                         worst_price = bar["High"]
-                    unrealised_pnl_worst = abs_qty * (position_entry_price - worst_price)
+                    unrealised_pnl_worst = abs_qty * (position_entry_price - worst_price) * MES_POINT_VALUE
                     equity_at_worst = cash + unrealised_pnl_worst
 
                     # Settle each short sub-position at TP/SL price
                     for pos in open_positions:
                         p_qty = pos.entry_qty
-                        trade_value = p_qty * fill_price
+                        trade_value = p_qty * fill_price * MES_POINT_VALUE
                         exit_commission = trade_value * commission_rate
-                        gross_pnl = p_qty * (pos.entry_price - fill_price)
+                        gross_pnl = p_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                         net_pnl = gross_pnl - pos.entry_commission - exit_commission
                         cash = cash + gross_pnl - exit_commission
                         pos.exit_date = bar_date
                         pos.exit_price = fill_price
                         pos.pnl = net_pnl
-                        entry_value = p_qty * pos.entry_price
+                        entry_value = p_qty * pos.entry_price * MES_POINT_VALUE
                         pos.pnl_pct = (net_pnl / entry_value) * 100
                         pos.exit_commission = exit_commission
                         trades.append(pos)
@@ -1280,11 +1286,11 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
         if bar_in_range and position_qty != 0 and not tpsl_filled:
             if position_side == "long":
                 # Worst case for long: price drops to bar Low
-                equity_at_worst = cash + position_qty * bar["Low"]
+                equity_at_worst = cash + position_qty * bar["Low"] * MES_POINT_VALUE
             else:
                 # Worst case for short: price spikes to bar High
                 abs_qty = abs(position_qty)
-                unrealised_pnl = abs_qty * (position_entry_price - bar["High"])
+                unrealised_pnl = abs_qty * (position_entry_price - bar["High"]) * MES_POINT_VALUE
                 equity_at_worst = cash + unrealised_pnl
 
             dd = equity_at_worst - peak_equity
@@ -1296,10 +1302,10 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
         # 2b) Mark-to-market equity at Close
         if position_side == "long" and position_qty > 0:
-            equity = cash + position_qty * bar["Close"]
+            equity = cash + position_qty * bar["Close"] * MES_POINT_VALUE
         elif position_side == "short" and position_qty < 0:
             abs_qty = abs(position_qty)
-            unrealised_pnl = abs_qty * (position_entry_price - bar["Close"])
+            unrealised_pnl = abs_qty * (position_entry_price - bar["Close"]) * MES_POINT_VALUE
             equity = cash + unrealised_pnl
         else:
             equity = cash
@@ -1358,15 +1364,15 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             if pending_long_exit and position_side == "long" and position_qty > 0:
                 fill_price = bar["Close"]
                 for pos in open_positions:
-                    trade_value = pos.entry_qty * fill_price
+                    trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                     exit_commission = trade_value * commission_rate
-                    gross_pnl = pos.entry_qty * (fill_price - pos.entry_price)
+                    gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
                     cash += trade_value - exit_commission
                     pos.exit_date = bar_date
                     pos.exit_price = fill_price
                     pos.pnl = net_pnl
-                    entry_value = pos.entry_qty * pos.entry_price
+                    entry_value = pos.entry_qty * pos.entry_price * MES_POINT_VALUE
                     pos.pnl_pct = (net_pnl / entry_value) * 100
                     pos.exit_commission = exit_commission
                     trades.append(pos)
@@ -1386,15 +1392,15 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 fill_price = bar["Close"]
                 for pos in open_positions:
                     abs_qty = pos.entry_qty
-                    trade_value = abs_qty * fill_price
+                    trade_value = abs_qty * fill_price * MES_POINT_VALUE
                     exit_commission = trade_value * commission_rate
-                    gross_pnl = abs_qty * (pos.entry_price - fill_price)
+                    gross_pnl = abs_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
                     cash = cash + gross_pnl - exit_commission
                     pos.exit_date = bar_date
                     pos.exit_price = fill_price
                     pos.pnl = net_pnl
-                    entry_value = abs_qty * pos.entry_price
+                    entry_value = abs_qty * pos.entry_price * MES_POINT_VALUE
                     pos.pnl_pct = (net_pnl / entry_value) * 100
                     pos.exit_commission = exit_commission
                     trades.append(pos)
@@ -1414,15 +1420,15 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 fill_price = bar["Close"]
                 for pos in open_positions:
                     abs_qty = pos.entry_qty
-                    trade_value = abs_qty * fill_price
+                    trade_value = abs_qty * fill_price * MES_POINT_VALUE
                     exit_commission = trade_value * commission_rate
-                    gross_pnl = abs_qty * (pos.entry_price - fill_price)
+                    gross_pnl = abs_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
                     cash = cash + gross_pnl - exit_commission
                     pos.exit_date = bar_date
                     pos.exit_price = fill_price
                     pos.pnl = net_pnl
-                    entry_value = abs_qty * pos.entry_price
+                    entry_value = abs_qty * pos.entry_price * MES_POINT_VALUE
                     pos.pnl_pct = (net_pnl / entry_value) * 100
                     pos.exit_commission = exit_commission
                     trades.append(pos)
@@ -1440,10 +1446,9 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 fill_price = bar["Close"]
                 if pending_entry_qty > 0:
                     qty = pending_entry_qty
-                    trade_value = qty * fill_price
                 else:
-                    trade_value = equity / (1 + commission_rate)
-                    qty = trade_value / fill_price
+                    qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
+                trade_value = qty * fill_price * MES_POINT_VALUE
                 entry_commission = trade_value * commission_rate
                 position_qty += qty
                 position_side = "long"
@@ -1463,15 +1468,15 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             if pending_short_entry and position_side == "long" and position_qty > 0:
                 fill_price = bar["Close"]
                 for pos in open_positions:
-                    trade_value = pos.entry_qty * fill_price
+                    trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                     exit_commission = trade_value * commission_rate
-                    gross_pnl = pos.entry_qty * (fill_price - pos.entry_price)
+                    gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
                     cash += trade_value - exit_commission
                     pos.exit_date = bar_date
                     pos.exit_price = fill_price
                     pos.pnl = net_pnl
-                    entry_value = pos.entry_qty * pos.entry_price
+                    entry_value = pos.entry_qty * pos.entry_price * MES_POINT_VALUE
                     pos.pnl_pct = (net_pnl / entry_value) * 100
                     pos.exit_commission = exit_commission
                     trades.append(pos)
@@ -1488,10 +1493,9 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 fill_price = bar["Close"]
                 if pending_entry_qty > 0:
                     abs_qty = pending_entry_qty
-                    trade_value = abs_qty * fill_price
                 else:
-                    trade_value = equity / (1 + commission_rate)
-                    abs_qty = trade_value / fill_price
+                    abs_qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
+                trade_value = abs_qty * fill_price * MES_POINT_VALUE
                 entry_commission = trade_value * commission_rate
                 position_qty -= abs_qty
                 position_side = "short"
@@ -1509,10 +1513,10 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
             # Re-mark equity after Close fills
             if position_side == "long" and position_qty > 0:
-                equity = cash + position_qty * bar["Close"]
+                equity = cash + position_qty * bar["Close"] * MES_POINT_VALUE
             elif position_side == "short" and position_qty < 0:
                 abs_qty = abs(position_qty)
-                unrealised_pnl = abs_qty * (position_entry_price - bar["Close"])
+                unrealised_pnl = abs_qty * (position_entry_price - bar["Close"]) * MES_POINT_VALUE
                 equity = cash + unrealised_pnl
             else:
                 equity = cash
