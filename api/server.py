@@ -41,6 +41,22 @@ from engine.engine import __version__ as ENGINE_VERSION
 import pandas as pd
 import numpy as np
 
+# Edge-validation library (Monte Carlo + temporal-stability + honest verdict).
+# Purely additive: its output is attached to /run responses; it never alters the
+# backtest itself. Installed from git (see requirements.txt).
+from zoneinfo import ZoneInfo
+from backtester import validate, summarize
+from backtester.ingest.models import Trade as BtTrade
+
+_ET = ZoneInfo("America/New_York")
+
+
+def _to_et(ts):
+    """Coerce an engine timestamp to a tz-aware Eastern datetime for the validator."""
+    ts = pd.Timestamp(ts)
+    ts = ts.tz_localize(_ET) if ts.tzinfo is None else ts.tz_convert(_ET)
+    return ts.to_pydatetime()
+
 # Python's builtin code evaluator. This DOES run untrusted code in-process;
 # the indirection via getattr is only to keep naive "exec(" source scanners
 # (which target Node's child_process.exec) from flagging this Python line. It
@@ -150,6 +166,7 @@ class BacktestRequest(BaseModel):
     qty_type: str = Field(default="fixed")
     qty_value: float = Field(default=1.0)
     max_trades_per_day: int = Field(default=1, description="Informational only — enforced in signal code")
+    run_validation: bool = Field(default=True, description="run edge-validation")
 
 
 class BacktestResponse(BaseModel):
@@ -160,6 +177,8 @@ class BacktestResponse(BaseModel):
     trades: Optional[list] = None
     equity_curve: Optional[list] = None
     error: Optional[str] = None
+    validation: Optional[dict] = None
+    validation_error: Optional[str] = None
 
 
 SAFE_BUILTINS = {
@@ -479,6 +498,44 @@ async def run(req: BacktestRequest):
 
         kpis = _sanitize_kpis(kpis)
 
+        # --- Edge validation (additive) --------------------------------------
+        # Convert the engine's CLOSED trades to backtester Trades and run the
+        # validation suite. engine.py sets Trade.pnl NET of commission
+        # (engine.py: net_pnl = gross_pnl - entry_commission - exit_commission),
+        # so t.pnl is used as-is — no further commission adjustment.
+        validation, validation_error = None, None
+        if req.run_validation:
+            bt_trades, tid = [], 1
+            for t in trades_raw:
+                if t.exit_date is None or t.exit_price is None:
+                    continue  # skip still-open trades; the validator needs closed trades
+                bt_trades.append(BtTrade(
+                    trade_id=tid, direction=t.direction,
+                    entry_time=_to_et(t.entry_date), entry_price=float(t.entry_price),
+                    exit_time=_to_et(t.exit_date), exit_price=float(t.exit_price),
+                    qty=int(round(t.entry_qty)), pnl=float(t.pnl),
+                ))
+                tid += 1
+
+            if len(bt_trades) >= 2:
+                try:
+                    result = validate(bt_trades)  # bars omitted → benchmarks/regimes auto-skip
+                    v = summarize(result)
+                    validation = {
+                        "overall": v.overall,
+                        "summary": v.summary,
+                        "findings": [
+                            {"key": f.key, "title": f.title, "status": f.status,
+                             "headline": f.headline, "detail": f.detail, "stat": f.stat}
+                            for f in v.findings
+                        ],
+                        "skipped": result.skipped,
+                    }
+                except Exception as e:
+                    # Validation is ADDITIVE and must never break the live backtest.
+                    # Surface the failure (don't swallow) so a real bug stays visible.
+                    validation_error = f"{type(e).__name__}: {e}"
+
         execution_ms = int((time.time() - start_time) * 1000)
 
         return BacktestResponse(
@@ -488,6 +545,8 @@ async def run(req: BacktestRequest):
             kpis=kpis,
             trades=trades_json[:500],  # Cap at 500 trades for response size
             equity_curve=None,         # TODO: add equity curve sampling
+            validation=validation,
+            validation_error=validation_error,
         )
 
     except Exception as e:
