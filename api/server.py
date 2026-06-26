@@ -45,10 +45,23 @@ import numpy as np
 # Purely additive: its output is attached to /run responses; it never alters the
 # backtest itself. Installed from git (see requirements.txt).
 from zoneinfo import ZoneInfo
-from backtester import validate, summarize
+from backtester import validate, summarize, ValidationConfig
 from backtester.ingest.models import Trade as BtTrade
+from backtester.ingest.firstrate import BarSet
+from backtester.instruments import Instrument
 
 _ET = ZoneInfo("America/New_York")
+
+# IMPORTANT — economics must match the engine for the bar-based benchmarks to be
+# meaningful. The engine computes trade pnl as qty*(exit_price-entry_price) with
+# NO point-value multiplier (engine.py: gross_pnl = entry_qty*(fill_price-entry_price)),
+# i.e. $1 per index point per contract. The validator's random-entry / buy-hold
+# benchmarks compute $ from bars as (exit-entry)*point_value*qty. To compare the
+# strategy's net against those on identical economics we must set point_value=1.0;
+# the default MES instrument ($5/point) would inflate the benchmark 5x and make the
+# signal-vs-exposure rank meaningless. (Bumping the engine to true MES $5/point is a
+# separate, deliberate change — out of scope here.)
+_ENGINE_INSTRUMENT = Instrument(symbol="ES", point_value=1.0, tick_size=0.25)
 
 
 def _to_et(ts):
@@ -56,6 +69,31 @@ def _to_et(ts):
     ts = pd.Timestamp(ts)
     ts = ts.tz_localize(_ET) if ts.tzinfo is None else ts.tz_convert(_ET)
     return ts.to_pydatetime()
+
+
+def _f(x):
+    """Scalar inf/nan -> None for JSON serialization (mirrors _sanitize_kpis)."""
+    if isinstance(x, float) and (math.isinf(x) or math.isnan(x)):
+        return None
+    return x
+
+
+def _df_to_barset(df: pd.DataFrame) -> BarSet:
+    """Convert the engine DataFrame to a backtester BarSet.
+
+    CRITICAL: at this point df also holds the signal columns (long_entry/…) added
+    by the signal code — select ONLY OHLCV so they never reach the validator.
+    """
+    out = df[["Open", "High", "Low", "Close", "Volume"]].copy()
+    out.columns = ["open", "high", "low", "close", "volume"]
+    idx = pd.DatetimeIndex(out.index)
+    idx = idx.tz_localize("America/New_York").tz_convert("UTC") if idx.tz is None \
+        else idx.tz_convert("UTC")
+    idx.name = "timestamp"
+    out.index = idx
+    out = out.astype(float)
+    # timeframe is metadata only (not used in the validation math); "1min" is a safe label.
+    return BarSet(symbol="ES", timeframe="1min", adjustment="ratio", df=out)
 
 # Python's builtin code evaluator. This DOES run untrusted code in-process;
 # the indirection via getattr is only to keep naive "exec(" source scanners
@@ -167,6 +205,9 @@ class BacktestRequest(BaseModel):
     qty_value: float = Field(default=1.0)
     max_trades_per_day: int = Field(default=1, description="Informational only — enforced in signal code")
     run_validation: bool = Field(default=True, description="run edge-validation")
+    validation_iterations: int = Field(
+        default=2000, ge=100, le=20000,
+        description="Monte Carlo / random-entry iteration budget for edge validation")
 
 
 class BacktestResponse(BaseModel):
@@ -519,7 +560,16 @@ async def run(req: BacktestRequest):
 
             if len(bt_trades) >= 2:
                 try:
-                    result = validate(bt_trades)  # bars omitted → benchmarks/regimes auto-skip
+                    # Feed the EXACT bars the backtest ran on so the random-entry
+                    # and regime analyses light up (instead of "inconclusive: no
+                    # bars"). Economics pinned to the engine's $1/point via
+                    # _ENGINE_INSTRUMENT; iteration budget is caller-controlled.
+                    cfg = ValidationConfig(
+                        mc_iterations=req.validation_iterations,
+                        random_entry_iterations=req.validation_iterations,
+                        instrument=_ENGINE_INSTRUMENT,
+                    )
+                    result = validate(bt_trades, bars=_df_to_barset(df), config=cfg)
                     v = summarize(result)
                     validation = {
                         "overall": v.overall,
@@ -530,6 +580,19 @@ async def run(req: BacktestRequest):
                             for f in v.findings
                         ],
                         "skipped": result.skipped,
+                        "regimes": {
+                            scheme: {
+                                "trade_counts": rb.trade_counts,
+                                "per_regime": {
+                                    label: {"n_trades": m.total_trades,
+                                            "expectancy": _f(m.expectancy),
+                                            "win_rate": _f(m.win_rate),
+                                            "net_profit": _f(m.net_profit)}
+                                    for label, m in rb.per_regime.items()
+                                },
+                            }
+                            for scheme, rb in result.regimes.items()
+                        },
                     }
                 except Exception as e:
                     # Validation is ADDITIVE and must never break the live backtest.
