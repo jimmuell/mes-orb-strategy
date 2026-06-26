@@ -5,5 +5,6 @@ numpy>=1.24.0
 requests>=2.31.0
 # Edge-validation library (Monte Carlo + temporal-stability + verdict). Installed
 # from git at deploy; Railway must be able to reach GitHub during pip install.
-# For reproducibility this may later be pinned to @<commit-sha> instead of @main.
-backtester @ git+https://github.com/jimmuell/back-tester.git@main
+# Pinned to an exact commit for reproducible deploys (back-tester main HEAD =
+# v0.2.0 repackage). Bump this sha deliberately to adopt a newer backtester.
+backtester @ git+https://github.com/jimmuell/back-tester.git@ef6fb684d482832f02a7f906cf01acc8e853c207
