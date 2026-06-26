@@ -602,6 +602,19 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     start = pd.Timestamp(config.start_date)
     end = pd.Timestamp(config.end_date)
 
+    # Normalize the date bounds to the bar index's timezone so comparisons below
+    # (data_first > start, and start <= bar_date <= end in the loop) never mix
+    # tz-aware and tz-naive timestamps. The bars may be tz-aware (e.g. UTC from the
+    # API) or tz-naive (CSV loads); match whichever the index is. Never alter the
+    # bars themselves — the validation layer relies on their tz info.
+    _idx_tz = df.index.tz
+    if _idx_tz is not None:
+        start = start.tz_localize(_idx_tz) if start.tzinfo is None else start.tz_convert(_idx_tz)
+        end = end.tz_localize(_idx_tz) if end.tzinfo is None else end.tz_convert(_idx_tz)
+    elif start.tzinfo is not None:
+        start = start.tz_localize(None)
+        end = end.tz_localize(None)
+
     # --- start-date safeguard ------------------------------------------------
     # If the data doesn't go back far enough, adjust start_date to the first
     # available bar.  This prevents mismatched KPIs when the user's CSV export
@@ -977,6 +990,19 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
     df = df.copy()
     start = pd.Timestamp(config.start_date)
     end = pd.Timestamp(config.end_date)
+
+    # Normalize the date bounds to the bar index's timezone so comparisons below
+    # (data_first > start, and start <= bar_date <= end in the loop) never mix
+    # tz-aware and tz-naive timestamps. The bars may be tz-aware (e.g. UTC from the
+    # API) or tz-naive (CSV loads); match whichever the index is. Never alter the
+    # bars themselves — the validation layer relies on their tz info.
+    _idx_tz = df.index.tz
+    if _idx_tz is not None:
+        start = start.tz_localize(_idx_tz) if start.tzinfo is None else start.tz_convert(_idx_tz)
+        end = end.tz_localize(_idx_tz) if end.tzinfo is None else end.tz_convert(_idx_tz)
+    elif start.tzinfo is not None:
+        start = start.tz_localize(None)
+        end = end.tz_localize(None)
 
     # --- start-date safeguard ------------------------------------------------
     data_first = df.index[0]
