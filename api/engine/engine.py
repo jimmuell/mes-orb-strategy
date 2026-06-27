@@ -666,6 +666,8 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     peak_equity = config.initial_capital
     max_intrabar_dd = 0.0       # worst absolute drawdown (negative or zero)
     max_intrabar_dd_pct = 0.0   # worst percentage drawdown (negative or zero)
+    sl_exits = 0                # count of TP/SL fill events that exited at stop loss
+    tp_exits = 0                # count of TP/SL fill events that exited at take profit
 
     # --- bar-by-bar loop (matches TV execution order) ------------------------
     for i in range(len(df)):
@@ -744,6 +746,11 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
             )
             if fill_price is not None:
                 tpsl_filled = True
+                # Count the fill event once (not per closed sub-position)
+                if fill_type == "sl":
+                    sl_exits += 1
+                elif fill_type == "tp":
+                    tp_exits += 1
 
                 # Drawdown while still holding (before exit settles)
                 if fill_type == "sl":
@@ -913,6 +920,10 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     # Include the actual start/end dates used (may differ from config if adjusted)
     kpis["actual_start_date"] = str(start.date())
     kpis["actual_end_date"] = str(end.date())
+    kpis["received_stop_loss_pct"] = config.stop_loss_pct
+    kpis["received_take_profit_pct"] = config.take_profit_pct
+    kpis["sl_exit_count"] = sl_exits
+    kpis["tp_exit_count"] = tp_exits
     return kpis
 
 
@@ -1047,6 +1058,8 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
     peak_equity = config.initial_capital
     max_intrabar_dd = 0.0
     max_intrabar_dd_pct = 0.0
+    sl_exits = 0                # count of TP/SL fill events that exited at stop loss
+    tp_exits = 0                # count of TP/SL fill events that exited at take profit
 
     # --- bar-by-bar loop -----------------------------------------------------
     for i in range(len(df)):
@@ -1235,6 +1248,11 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             )
             if fill_price is not None:
                 tpsl_filled = True
+                # Count the fill event once (not per closed sub-position)
+                if fill_type == "sl":
+                    sl_exits += 1
+                elif fill_type == "tp":
+                    tp_exits += 1
 
                 if position_side == "long":
                     # Drawdown while still holding (aggregate)
@@ -1564,6 +1582,10 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                         max_intrabar_dd, max_intrabar_dd_pct)
     kpis["actual_start_date"] = str(start.date())
     kpis["actual_end_date"] = str(end.date())
+    kpis["received_stop_loss_pct"] = config.stop_loss_pct
+    kpis["received_take_profit_pct"] = config.take_profit_pct
+    kpis["sl_exit_count"] = sl_exits
+    kpis["tp_exit_count"] = tp_exits
     return kpis
 
 
