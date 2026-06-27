@@ -1,0 +1,4 @@
+# Dev/test-only dependencies (NOT installed on Railway deploy — see requirements.txt).
+# Run the engine test suite with:  cd api && python -m pytest -v
+-r requirements.txt
+pytest>=8,<9

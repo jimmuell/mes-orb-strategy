@@ -53,6 +53,8 @@ class BacktestConfig:
     end_date: str = "2069-12-31"
     take_profit_pct: float = 0.0  # 0.0 = disabled; e.g. 5.0 = exit at +5% from entry
     stop_loss_pct: float = 0.0    # 0.0 = disabled; e.g. 3.0 = exit at -3% from entry
+    take_profit_points: float = 0.0  # 0.0 = disabled; points from entry (1 pt = $5 MES). Beats *_pct.
+    stop_loss_points: float = 0.0    # 0.0 = disabled; points from entry. Beats *_pct.
     process_orders_on_close: bool = False  # True = fill at bar Close (not next bar Open)
 
 
@@ -655,6 +657,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     has_tp_off = "tp_offset" in df.columns
     has_sl_off = "sl_offset" in df.columns
     tp_sl_active = (config.take_profit_pct > 0 or config.stop_loss_pct > 0
+                    or config.take_profit_points > 0 or config.stop_loss_points > 0
                     or has_tp_col or has_sl_col or has_tp_off or has_sl_off)
 
     # --- intrabar drawdown tracking (TV methodology) -------------------------
@@ -735,8 +738,8 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
             tpsl_entry_price = open_positions[0].entry_price
             bar_tp = bar["tp_price"] if has_tp_col else 0.0
             bar_sl = bar["sl_price"] if has_sl_col else 0.0
-            bar_tp_off = bar["tp_offset"] if has_tp_off else 0.0
-            bar_sl_off = bar["sl_offset"] if has_sl_off else 0.0
+            bar_tp_off = bar["tp_offset"] if has_tp_off else config.take_profit_points
+            bar_sl_off = bar["sl_offset"] if has_sl_off else config.stop_loss_points
             fill_price, fill_type = _check_tpsl_fill(
                 bar_open=bar["Open"], bar_high=bar["High"], bar_low=bar["Low"],
                 entry_price=tpsl_entry_price, position_side="long",
@@ -922,6 +925,8 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     kpis["actual_end_date"] = str(end.date())
     kpis["received_stop_loss_pct"] = config.stop_loss_pct
     kpis["received_take_profit_pct"] = config.take_profit_pct
+    kpis["received_stop_loss_points"] = config.stop_loss_points
+    kpis["received_take_profit_points"] = config.take_profit_points
     kpis["sl_exit_count"] = sl_exits
     kpis["tp_exit_count"] = tp_exits
     return kpis
@@ -1052,6 +1057,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
     has_tp_off = "tp_offset" in df.columns
     has_sl_off = "sl_offset" in df.columns
     tp_sl_active = (config.take_profit_pct > 0 or config.stop_loss_pct > 0
+                    or config.take_profit_points > 0 or config.stop_loss_points > 0
                     or has_tp_col or has_sl_col or has_tp_off or has_sl_off)
 
     # --- intrabar drawdown tracking ------------------------------------------
@@ -1237,8 +1243,8 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
         if tp_sl_active and bar_in_range and position_qty != 0 and i > entry_bar_idx:
             bar_tp = bar["tp_price"] if has_tp_col else 0.0
             bar_sl = bar["sl_price"] if has_sl_col else 0.0
-            bar_tp_off = bar["tp_offset"] if has_tp_off else 0.0
-            bar_sl_off = bar["sl_offset"] if has_sl_off else 0.0
+            bar_tp_off = bar["tp_offset"] if has_tp_off else config.take_profit_points
+            bar_sl_off = bar["sl_offset"] if has_sl_off else config.stop_loss_points
             fill_price, fill_type = _check_tpsl_fill(
                 bar_open=bar["Open"], bar_high=bar["High"], bar_low=bar["Low"],
                 entry_price=position_entry_price, position_side=position_side,
@@ -1584,6 +1590,8 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
     kpis["actual_end_date"] = str(end.date())
     kpis["received_stop_loss_pct"] = config.stop_loss_pct
     kpis["received_take_profit_pct"] = config.take_profit_pct
+    kpis["received_stop_loss_points"] = config.stop_loss_points
+    kpis["received_take_profit_points"] = config.take_profit_points
     kpis["sl_exit_count"] = sl_exits
     kpis["tp_exit_count"] = tp_exits
     return kpis
