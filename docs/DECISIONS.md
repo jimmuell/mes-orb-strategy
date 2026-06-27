@@ -65,6 +65,36 @@ there is no memory rlimit.
 
 ---
 
+## ADR-023 — Constant point-denominated stops & targets (alongside % stops)
+
+**Status:** Accepted.
+
+**Context:** `take_profit_pct`/`stop_loss_pct` were the only constant exit levels exposed through
+config and the API. Futures traders size exits in points/ticks, not percent, and a percent stop on
+multi-year MES is unintuitive (the "0.1% ≈ 5pt" confusion behind the earlier stop-loss
+investigation). The engine already supports point offsets internally (`_check_tpsl_fill` offset
+branch), but only via per-bar signal-emitted columns — there was no constant config-level point stop.
+
+**Decision:** Add `take_profit_points` / `stop_loss_points` (float, default 0.0 = disabled) to
+`BacktestConfig`. `_check_tpsl_fill` is **not** modified — its existing offset input is reused. At
+both call sites the constant feeds the offset slot when no per-bar offset column is present:
+`bar_sl_off = bar["sl_offset"] if has_sl_off else config.stop_loss_points`. The two fields are
+exposed on `BacktestRequest` and passed into `BacktestConfig` in `server.py`, and echoed in `kpis`
+as `received_stop_loss_points`/`received_take_profit_points`.
+
+**Consequence / precedence:** Effective per-trade exit priority is (1) per-bar absolute price column,
+(2) per-bar offset column **or** `config.*_points`, (3) `config.*_pct`. A signal's own dynamic offset
+still wins over the config constant; the config constant wins over percent. If both a points stop and
+a pct stop are set, **points wins** (offset > pct in the primitive); the UI makes them mutually
+exclusive, the engine keeps a deterministic documented tiebreak. Canonical engine unit is **index
+points** (1 pt = 1.0 price unit = $5); tick and per-contract dollar display are handled at the UI
+(pts ×0.25 → ticks; pts ×$5 → $/contract).
+
+**RULE:** point stops feed the existing offset slot — never add a parallel offset code path in
+`_check_tpsl_fill`. The math has one home.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument

@@ -199,6 +199,8 @@ class BacktestRequest(BaseModel):
     end_date: str = Field(default="2026-12-31")
     take_profit_pct: float = Field(default=0.0)
     stop_loss_pct: float = Field(default=0.0)
+    take_profit_points: float = Field(default=0.0)
+    stop_loss_points: float = Field(default=0.0)
     qty_type: str = Field(default="fixed")
     qty_value: float = Field(default=1.0)
     max_trades_per_day: int = Field(default=1, description="Informational only — enforced in signal code")
@@ -500,6 +502,8 @@ async def run(req: BacktestRequest):
             end_date=req.end_date,
             take_profit_pct=req.take_profit_pct,
             stop_loss_pct=req.stop_loss_pct,
+            take_profit_points=req.take_profit_points,
+            stop_loss_points=req.stop_loss_points,
             qty_type=req.qty_type,
             qty_value=req.qty_value,
         )
