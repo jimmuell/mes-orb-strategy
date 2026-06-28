@@ -95,6 +95,33 @@ points** (1 pt = 1.0 price unit = $5); tick and per-contract dollar display are 
 
 ---
 
+## ADR-024 — Adverse slippage model (constant ticks on every fill)
+
+**Status:** Accepted.
+
+**Context:** `slippage_ticks: int = 0` had lived on `BacktestConfig` since the start but was a
+dead field (zero usages), and was not even exposed on `BacktestRequest`. Backtests filled at the
+exact bar Open/Close, overstating edge — real futures fills cross the spread and slip, especially
+on stop exits.
+
+**Decision:** One helper, `_apply_slippage(price, side, config)`, applied at the moment each
+`fill_price` is assigned. `side="buy"` (long entry / short cover) adds `slippage_ticks * MES_TICK_SIZE`;
+`side="sell"` (long exit / short entry) subtracts it. TP/SL fills inherit the position's exit side
+(long→sell, short→buy). `MES_TICK_SIZE = 0.25` is a new module constant pinned in lockstep with
+`_ENGINE_INSTRUMENT.tick_size` (same discipline as `MES_POINT_VALUE` ↔ `point_value`). `slippage_ticks`
+is exposed on `BacktestRequest` and passed into `BacktestConfig` in `server.py`, and echoed in `kpis`
+as `received_slippage_ticks`.
+
+**Consequence:** `slippage_ticks = 0` is byte-identical to the prior engine (`price ± 0.0 == price`),
+so determinism, the signal cache, and the ADR-023 suite are unaffected. The model is uniform —
+**every** order including TP limits slips adverse, matching TradingView's `slippage` property; a
+limit-order-exempt refinement is deferred to a future ADR. `__version__` bumped to `24.0.0`.
+
+**RULE:** slippage has one home — `_apply_slippage` at the fill-price assignment. Never scatter
+`± slip` arithmetic across the pnl/commission math; wrap `fill_price` once and let the block consume it.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
