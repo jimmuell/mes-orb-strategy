@@ -203,6 +203,7 @@ class BacktestRequest(BaseModel):
     stop_loss_points: float = Field(default=0.0)
     qty_type: str = Field(default="fixed")
     qty_value: float = Field(default=1.0)
+    slippage_ticks: int = Field(default=0, ge=0, description="Adverse ticks applied to every fill (0 = off). 1 tick = 0.25 pt on MES.")
     max_trades_per_day: int = Field(default=1, description="Informational only — enforced in signal code")
     run_validation: bool = Field(default=True, description="run edge-validation")
     validation_iterations: int = Field(
@@ -506,6 +507,7 @@ async def run(req: BacktestRequest):
             stop_loss_points=req.stop_loss_points,
             qty_type=req.qty_type,
             qty_value=req.qty_value,
+            slippage_ticks=req.slippage_ticks,
         )
 
         if req.direction == "long_only":

@@ -18,7 +18,7 @@ Usage:
     print_kpis(kpis)
 """
 
-__version__ = "22.0.0"
+__version__ = "24.0.0"
 
 import math
 import pandas as pd
@@ -34,6 +34,11 @@ from typing import Optional
 # dollars. Ratios (win rate, profit factor, payoff) are scale-invariant and
 # unchanged; only dollar fields and account-relative percentages change.
 MES_POINT_VALUE = 5.0  # $ per index point per contract (4 ticks * $1.25)
+# MES tick size in index points. Slippage and any tick<->point conversion use this.
+# MUST stay in lockstep with _ENGINE_INSTRUMENT.tick_size in api/server.py (same as
+# MES_POINT_VALUE must match _ENGINE_INSTRUMENT.point_value — ADR-018). If MES ever
+# reprices, change both together.
+MES_TICK_SIZE = 0.25  # 4 ticks = 1 point
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +447,23 @@ def ema_cross_signals(df: pd.DataFrame, fast_len: int = 9, slow_len: int = 21) -
 # TP/SL helper
 # ---------------------------------------------------------------------------
 
+def _apply_slippage(price: float, side: str, config: "BacktestConfig") -> float:
+    """Move a fill price adverse by config.slippage_ticks ticks.
+
+    side == "buy"  -> you are acquiring (long entry / short cover): pay MORE  -> price + slip
+    side == "sell" -> you are disposing (long exit / short entry):  get LESS  -> price - slip
+
+    slippage_ticks == 0 returns price unchanged (exactly), so the default path is
+    byte-identical to the pre-ADR-024 engine. TP/SL fills inherit the position's exit
+    side (long position -> "sell", short position -> "buy"). Matches TradingView's
+    `slippage` strategy property, which applies adverse ticks to every order.
+    """
+    if config.slippage_ticks == 0:
+        return price
+    slip = config.slippage_ticks * MES_TICK_SIZE
+    return price + slip if side == "buy" else price - slip
+
+
 def _check_tpsl_fill(
     bar_open: float,
     bar_high: float,
@@ -683,6 +705,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
         if pending_exit and position_qty > 0:
             fill_price = bar["Open"]
+            fill_price = _apply_slippage(fill_price, "sell", config)
             for pos in open_positions:
                 trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                 exit_commission = trade_value * commission_rate
@@ -706,6 +729,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
         if pending_entry:
             fill_price = bar["Open"]
+            fill_price = _apply_slippage(fill_price, "buy", config)
             if pending_entry_qty > 0:
                 # Signal-time sized: entry_qty column, cash, or partial pct_equity
                 qty = pending_entry_qty
@@ -748,6 +772,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 tp_offset=bar_tp_off, sl_offset=bar_sl_off,
             )
             if fill_price is not None:
+                fill_price = _apply_slippage(fill_price, "sell", config)
                 tpsl_filled = True
                 # Count the fill event once (not per closed sub-position)
                 if fill_type == "sl":
@@ -849,6 +874,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
             # --- Exit at Close ---
             if pending_exit and position_qty > 0:
                 fill_price = bar["Close"]
+                fill_price = _apply_slippage(fill_price, "sell", config)
                 for pos in open_positions:
                     trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                     exit_commission = trade_value * commission_rate
@@ -877,6 +903,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
             # --- Entry at Close ---
             if pending_entry and len(open_positions) < config.pyramiding:
                 fill_price = bar["Close"]
+                fill_price = _apply_slippage(fill_price, "buy", config)
                 if pending_entry_qty > 0:
                     qty = pending_entry_qty
                 else:
@@ -926,6 +953,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     kpis["received_stop_loss_pct"] = config.stop_loss_pct
     kpis["received_take_profit_pct"] = config.take_profit_pct
     kpis["received_stop_loss_points"] = config.stop_loss_points
+    kpis["received_slippage_ticks"] = config.slippage_ticks
     kpis["received_take_profit_points"] = config.take_profit_points
     kpis["sl_exit_count"] = sl_exits
     kpis["tp_exit_count"] = tp_exits
@@ -1078,6 +1106,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
         # --- Close existing positions first ---
         if pending_long_exit and position_side == "long" and position_qty > 0:
             fill_price = bar["Open"]
+            fill_price = _apply_slippage(fill_price, "sell", config)
             for pos in open_positions:
                 trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                 exit_commission = trade_value * commission_rate
@@ -1105,6 +1134,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
         if pending_short_exit and position_side == "short" and position_qty < 0:
             fill_price = bar["Open"]
+            fill_price = _apply_slippage(fill_price, "buy", config)
             for pos in open_positions:
                 abs_qty = pos.entry_qty
                 trade_value = abs_qty * fill_price * MES_POINT_VALUE
@@ -1145,6 +1175,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
         # reversal closes everything (including the add) and opens new.
         if pending_long_entry and position_side == "short" and position_qty < 0:
             fill_price = bar["Open"]
+            fill_price = _apply_slippage(fill_price, "buy", config)
             for pos in open_positions:
                 abs_qty = pos.entry_qty
                 trade_value = abs_qty * fill_price * MES_POINT_VALUE
@@ -1170,6 +1201,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
         n_open = len(open_positions)
         if pending_long_entry and (position_qty == 0 or (position_side == "long" and n_open < config.pyramiding)):
             fill_price = bar["Open"]
+            fill_price = _apply_slippage(fill_price, "buy", config)
             if pending_entry_qty > 0:
                 qty = pending_entry_qty
             else:
@@ -1193,6 +1225,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
         if pending_short_entry and position_side == "long" and position_qty > 0:
             fill_price = bar["Open"]
+            fill_price = _apply_slippage(fill_price, "sell", config)
             for pos in open_positions:
                 trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                 exit_commission = trade_value * commission_rate
@@ -1217,6 +1250,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
         n_open = len(open_positions)
         if pending_short_entry and (position_qty == 0 or (position_side == "short" and n_open < config.pyramiding)):
             fill_price = bar["Open"]
+            fill_price = _apply_slippage(fill_price, "sell", config)
             if pending_entry_qty > 0:
                 abs_qty = pending_entry_qty
             else:
@@ -1253,6 +1287,9 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 tp_offset=bar_tp_off, sl_offset=bar_sl_off,
             )
             if fill_price is not None:
+                fill_price = _apply_slippage(
+                    fill_price, "sell" if position_side == "long" else "buy", config
+                )
                 tpsl_filled = True
                 # Count the fill event once (not per closed sub-position)
                 if fill_type == "sl":
@@ -1413,6 +1450,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             # --- Long exit at Close ---
             if pending_long_exit and position_side == "long" and position_qty > 0:
                 fill_price = bar["Close"]
+                fill_price = _apply_slippage(fill_price, "sell", config)
                 for pos in open_positions:
                     trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                     exit_commission = trade_value * commission_rate
@@ -1440,6 +1478,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             # --- Short exit at Close ---
             if pending_short_exit and position_side == "short" and position_qty < 0:
                 fill_price = bar["Close"]
+                fill_price = _apply_slippage(fill_price, "buy", config)
                 for pos in open_positions:
                     abs_qty = pos.entry_qty
                     trade_value = abs_qty * fill_price * MES_POINT_VALUE
@@ -1468,6 +1507,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             # --- Implicit reversal at Close (same logic as Open fills) ---
             if pending_long_entry and position_side == "short" and position_qty < 0:
                 fill_price = bar["Close"]
+                fill_price = _apply_slippage(fill_price, "buy", config)
                 for pos in open_positions:
                     abs_qty = pos.entry_qty
                     trade_value = abs_qty * fill_price * MES_POINT_VALUE
@@ -1494,6 +1534,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             n_open_close = len(open_positions)
             if pending_long_entry and (position_qty == 0 or (position_side == "long" and n_open_close < config.pyramiding)):
                 fill_price = bar["Close"]
+                fill_price = _apply_slippage(fill_price, "buy", config)
                 if pending_entry_qty > 0:
                     qty = pending_entry_qty
                 else:
@@ -1517,6 +1558,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             # --- Implicit reversal before short entry at Close ---
             if pending_short_entry and position_side == "long" and position_qty > 0:
                 fill_price = bar["Close"]
+                fill_price = _apply_slippage(fill_price, "sell", config)
                 for pos in open_positions:
                     trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
                     exit_commission = trade_value * commission_rate
@@ -1541,6 +1583,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             # --- Short entry at Close ---
             if pending_short_entry and (position_qty == 0 or (position_side == "short" and len(open_positions) < config.pyramiding)):
                 fill_price = bar["Close"]
+                fill_price = _apply_slippage(fill_price, "sell", config)
                 if pending_entry_qty > 0:
                     abs_qty = pending_entry_qty
                 else:
@@ -1591,6 +1634,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
     kpis["received_stop_loss_pct"] = config.stop_loss_pct
     kpis["received_take_profit_pct"] = config.take_profit_pct
     kpis["received_stop_loss_points"] = config.stop_loss_points
+    kpis["received_slippage_ticks"] = config.slippage_ticks
     kpis["received_take_profit_points"] = config.take_profit_points
     kpis["sl_exit_count"] = sl_exits
     kpis["tp_exit_count"] = tp_exits
