@@ -122,6 +122,20 @@ limit-order-exempt refinement is deferred to a future ADR. `__version__` bumped 
 
 ---
 
+## ADR-025 — Protective stop/target is live from the entry bar
+
+**Status:** Accepted.
+
+**Context:** The point/percent stop & target (`stop_loss_points`/`take_profit_points`/`*_pct`) were only evaluated on bars **after** entry (`i > entry_bar_idx`) in both `run_backtest` and `run_backtest_long_short`. A resting protective stop should be live the instant the position exists — including the entry bar — matching TradingView's broker emulator. As written, large same-bar adverse moves and short-hold strategies bypassed the stop entirely, so a configured stop did not cap losses.
+
+**Decision:** Treat a configured stop/target as a resting protective order that is live from the moment of entry. Change the TP/SL gate in **both** run functions from `i > entry_bar_idx` to `i >= entry_bar_idx`, so the existing intrabar `_check_tpsl_fill` runs on the entry bar too (the entry has already filled earlier in the same iteration; `entry_bar_idx` and the position's entry price are set). `_check_tpsl_fill` is **not** modified — on the entry bar its gap-at-open branch is inert (for a long, `tp_level = entry+off > open` and `sl_level = entry−off < open`, where `open == entry_price`), so it correctly falls through to intrabar hit detection on the bar's High/Low. The math keeps one home (ADR-023 RULE).
+
+**Consequence / precedence:** The protective stop/target now fires on any open bar, entry bar included, the moment the bar's range reaches the level; a gap beyond the level still fills at Open (unchanged gap-through). On a bar where a pending signal exit is scheduled, the realistic market-on-open timing is preserved (that fill is the first event of the bar and is never worse than the stop — if the open gapped past the stop, the stop also fills at Open via gap-through; otherwise the open fill is nearer entry than the stop). Net effect: a hard stop reliably caps loss without ever forcing a worse fill than a pending market exit — the faithful implementation of "hard stop wins." When no stop/target is configured (`stop_loss_points`/`take_profit_points`/`*_pct` all 0), `tp_sl_active` is False and the block never runs, so this is **byte-identical** to the prior engine — the signal cache, determinism, and the ADR-023/024 suites are unaffected. Runs that **do** set a stop/target change (intended). `__version__` → `25.0.0`.
+
+**RULE:** the protective stop/target is live from the entry bar. Never reintroduce an entry-bar skip, and never add a parallel level-calc path — the math stays in `_check_tpsl_fill`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
