@@ -18,7 +18,7 @@ Usage:
     print_kpis(kpis)
 """
 
-__version__ = "24.0.0"
+__version__ = "25.0.0"
 
 import math
 import pandas as pd
@@ -663,7 +663,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     pending_entry = False
     pending_entry_qty = 0.0            # qty from entry_qty column or qty_type sizing
     pending_exit = False
-    entry_bar_idx = -1  # bar index where position was entered; TP/SL skipped on this bar
+    entry_bar_idx = -1  # bar index where position was entered; TP/SL is live from this bar (ADR-025)
 
     equity_curve: list[dict] = []
     commission_rate = config.commission_pct / 100.0
@@ -758,7 +758,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
         #      Uses first position's entry price for level check (correct for
         #      pyramiding=1; for pyramiding>1 the first position is representative).
         tpsl_filled = False
-        if tp_sl_active and bar_in_range and position_qty > 0 and i > entry_bar_idx:
+        if tp_sl_active and bar_in_range and position_qty > 0 and i >= entry_bar_idx:
             tpsl_entry_price = open_positions[0].entry_price
             bar_tp = bar["tp_price"] if has_tp_col else 0.0
             bar_sl = bar["sl_price"] if has_sl_col else 0.0
@@ -1073,7 +1073,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
     pending_short_entry = False
     pending_short_exit = False
     pending_entry_qty = 0.0  # qty from qty_type sizing (signal time)
-    entry_bar_idx = -1  # bar index where position was entered; TP/SL skipped on this bar
+    entry_bar_idx = -1  # bar index where position was entered; TP/SL is live from this bar (ADR-025)
 
     equity_curve: list[dict] = []
     commission_rate = config.commission_pct / 100.0
@@ -1274,7 +1274,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
 
         # 1.5) TP/SL intrabar fill — fills at exact TP/SL price on this bar
         tpsl_filled = False
-        if tp_sl_active and bar_in_range and position_qty != 0 and i > entry_bar_idx:
+        if tp_sl_active and bar_in_range and position_qty != 0 and i >= entry_bar_idx:
             bar_tp = bar["tp_price"] if has_tp_col else 0.0
             bar_sl = bar["sl_price"] if has_sl_col else 0.0
             bar_tp_off = bar["tp_offset"] if has_tp_off else config.take_profit_points
