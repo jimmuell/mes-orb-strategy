@@ -51,6 +51,7 @@ from backtester import validate, summarize, ValidationConfig
 from backtester.ingest.models import Trade as BtTrade
 from backtester.ingest.firstrate import BarSet
 from backtester.instruments import Instrument
+from backtester.montecarlo.bootstrap import run_bootstrap
 
 _ET = ZoneInfo("America/New_York")
 
@@ -770,6 +771,70 @@ def _serialize_run(df_signaled: pd.DataFrame, direction: str, config: BacktestCo
     return result, closed
 
 
+# --- Significance judgment on the teaching delta (ADR-027) -------------------
+# Reuse the EXACT machinery behind the single-run "Edge vs Luck" / expectancy CI:
+# the percentile bootstrap (run_bootstrap), with the same iterations / seed / CI
+# level the validation uses (ValidationConfig defaults) so results are
+# deterministic and reproducible. We bootstrap the per-trade PAIRED delta
+# (primary − variant over the same signal) and read net_profit_ci — the CI on the
+# TOTAL delta, matching the reported delta_net (a total $). No new statistic.
+_VC = ValidationConfig()
+_BOOTSTRAP_ITERS = _VC.mc_iterations          # 10_000
+_BOOTSTRAP_SEED = _VC.seed                    # 42
+_BOOTSTRAP_CI_LEVEL = _VC.bootstrap_ci_level  # 0.95
+# Same "low-sample" minimum the validation uses to flag runs as having too few
+# trades (its temporal-stability checks are skipped below n_windows). Reused here
+# rather than inventing a new threshold.
+_MIN_TRADES_FOR_VALIDATION = _VC.n_windows    # 5
+# run_bootstrap only reads Trade.pnl; the other fields are inert placeholders.
+_DUMMY_DT = _to_et(pd.Timestamp("2000-01-01"))
+
+
+def _paired_deltas(primary_closed: list, variant_closed: list) -> list:
+    """Per-trade paired difference (primary.pnl − variant.pnl) over the SAME
+    signal, matched by (entry_date, direction). In the aligned case (the stop
+    changes only the exit, e.g. ORB) every entry matches 1:1 and the deltas sum
+    to delta_net; trades present in only one run are left unmatched."""
+    from collections import defaultdict
+    vmap = defaultdict(list)
+    for t in variant_closed:
+        vmap[(t['entry_date'], t['direction'])].append(t['pnl'])
+    deltas = []
+    for t in primary_closed:
+        key = (t['entry_date'], t['direction'])
+        if vmap[key]:
+            deltas.append(float(t['pnl']) - float(vmap[key].pop(0)))
+    return deltas
+
+
+def _delta_significance(deltas: list) -> dict:
+    """Bootstrap a 95% CI on the TOTAL paired delta via run_bootstrap (same code
+    path as the single-run net/expectancy CI), and classify vs zero.
+
+    saved = CI entirely > 0; cost = CI entirely < 0; inconclusive = CI straddles 0.
+    """
+    if not deltas:
+        return {"delta_ci_low": 0.0, "delta_ci_high": 0.0,
+                "significance": "inconclusive", "n_resamples": 0}
+    synthetic = [
+        BtTrade(trade_id=i + 1, direction="long",
+                entry_time=_DUMMY_DT, entry_price=0.0,
+                exit_time=_DUMMY_DT, exit_price=0.0, qty=1, pnl=float(d))
+        for i, d in enumerate(deltas)
+    ]
+    res = run_bootstrap(synthetic, n_iterations=_BOOTSTRAP_ITERS,
+                        seed=_BOOTSTRAP_SEED, ci_level=_BOOTSTRAP_CI_LEVEL)
+    ci_low, ci_high = res.net_profit_ci
+    if ci_low > 0:
+        significance = "saved"
+    elif ci_high < 0:
+        significance = "cost"
+    else:
+        significance = "inconclusive"
+    return {"delta_ci_low": ci_low, "delta_ci_high": ci_high,
+            "significance": significance, "n_resamples": res.n_iterations}
+
+
 @app.post("/run/compare", response_model=CompareResponse,
           dependencies=[Depends(verify_api_key)])
 async def run_compare(req: BacktestRequest):
@@ -844,6 +909,12 @@ async def run_compare(req: BacktestRequest):
         variant_worst = min((t['pnl'] for t in variant_closed if t['pnl'] is not None),
                             default=0.0)
 
+        # 5) Significance judgment on the delta (ADR-027): is it distinguishable
+        #    from noise? Bootstrap CI on the paired per-trade delta. `direction`
+        #    stays the raw sign; `significance` is the judged call.
+        sig = _delta_significance(_paired_deltas(primary_closed, variant_closed))
+        sufficient_data = len(primary_closed) >= _MIN_TRADES_FOR_VALIDATION
+
         teaching = [{
             "dimension": "stop",
             "delta_net": delta_net,
@@ -851,6 +922,11 @@ async def run_compare(req: BacktestRequest):
             "primary_worst_loss": primary_worst,
             "variant_worst_loss": variant_worst,
             "trade_count": len(primary_closed),
+            "delta_ci_low": sig["delta_ci_low"],
+            "delta_ci_high": sig["delta_ci_high"],
+            "significance": sig["significance"],
+            "n_resamples": sig["n_resamples"],
+            "sufficient_data": sufficient_data,
         }]
         variants = [{
             "dimension": "stop",

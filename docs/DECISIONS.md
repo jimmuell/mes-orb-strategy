@@ -145,6 +145,17 @@ is byte-identical; `__version__` → `25.1.0`.
 
 ---
 
+## ADR-027 — Significance judgment on `/run/compare` teaching deltas (CI on the delta)
+
+Recorded in full in [`ADR-027_compare_significance.md`](ADR-027_compare_significance.md).
+Judges whether each teaching delta is distinguishable from noise via a 95% percentile-
+bootstrap CI on the paired per-trade delta — the **same** `run_bootstrap` machinery as the
+single-run "Edge vs Luck" CI (seed 42, 10k iters). Adds `delta_ci_low`/`delta_ci_high`/
+`significance` (saved/cost/inconclusive)/`n_resamples`/`sufficient_data` to each teaching
+entry. Additive; `__version__` → `25.2.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
