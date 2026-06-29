@@ -957,6 +957,9 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     kpis["received_take_profit_points"] = config.take_profit_points
     kpis["sl_exit_count"] = sl_exits
     kpis["tp_exit_count"] = tp_exits
+    # Surface the per-bar equity series the engine already builds (additive — the
+    # KPI/drawdown math above is unchanged). Server serializes/downsamples it.
+    kpis["equity_curve"] = equity_curve
     return kpis
 
 
@@ -1638,6 +1641,9 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
     kpis["received_take_profit_points"] = config.take_profit_points
     kpis["sl_exit_count"] = sl_exits
     kpis["tp_exit_count"] = tp_exits
+    # Surface the per-bar equity series the engine already builds (additive — the
+    # KPI/drawdown math above is unchanged). Server serializes/downsamples it.
+    kpis["equity_curve"] = equity_curve
     return kpis
 
 

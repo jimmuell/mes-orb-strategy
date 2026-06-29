@@ -388,6 +388,38 @@ def _sanitize_kpis(kpis: dict) -> dict:
     return out
 
 
+# Upper bound on equity-curve points returned for plotting. The engine emits one
+# point per in-range bar (up to ~1.3M for 18yr), which is too large to ship/store;
+# downsample to a plottable series. This affects the PLOT ONLY — every KPI
+# (net_profit, drawdown, etc.) is computed in the engine from the full series.
+MAX_EQUITY_POINTS = 2000
+
+
+def _serialize_equity_curve(raw: list) -> list:
+    """Engine equity series -> ordered, downsampled plot points.
+
+    Each point is ``{"timestamp": <iso str>, "equity": <float>}``. If the series
+    exceeds MAX_EQUITY_POINTS it is evenly strided, always keeping the final point
+    so the curve's last value matches ``final_equity``. Additive: no KPI changes.
+    """
+    n = len(raw)
+    if n == 0:
+        return []
+    if n <= MAX_EQUITY_POINTS:
+        idxs = range(n)
+    else:
+        # Evenly spaced indices spanning [0, n-1] inclusive — always keeps the
+        # first and last point, never more than MAX_EQUITY_POINTS points.
+        idxs = sorted({
+            round(i * (n - 1) / (MAX_EQUITY_POINTS - 1))
+            for i in range(MAX_EQUITY_POINTS)
+        })
+    return [
+        {"timestamp": str(raw[i]["date"]), "equity": float(raw[i]["equity"])}
+        for i in idxs
+    ]
+
+
 @app.get("/health")
 async def health():
     """Health check — returns engine version and data info."""
@@ -524,6 +556,9 @@ async def run(req: BacktestRequest):
             )
 
         trades_raw = kpis.pop('trades', [])
+        # Pop the equity series out of kpis so it's serialized once into the
+        # top-level equity_curve field (and not duplicated/raw inside kpis).
+        equity_curve_json = _serialize_equity_curve(kpis.pop('equity_curve', []))
         trades_json = []
         for t in trades_raw:
             trades_json.append({
@@ -611,7 +646,7 @@ async def run(req: BacktestRequest):
             execution_time_ms=execution_ms,
             kpis=kpis,
             trades=trades_json[:500],  # Cap at 500 trades for response size
-            equity_curve=None,         # TODO: add equity curve sampling
+            equity_curve=equity_curve_json,  # downsampled [{timestamp, equity}] points
             validation=validation,
             validation_error=validation_error,
         )
