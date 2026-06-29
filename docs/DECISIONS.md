@@ -136,7 +136,7 @@ limit-order-exempt refinement is deferred to a future ADR. `__version__` bumped 
 
 ---
 
-## ADR-026 — Teachable comparison: `POST /backtest/compare` (stop dimension)
+## ADR-026 — Teachable comparison: `POST /run/compare` (stop dimension)
 
 Recorded in full in [`ADR-026_teachable_comparison.md`](ADR-026_teachable_comparison.md).
 Runs the user's config and a stop-neutralized variant against the same signal in one

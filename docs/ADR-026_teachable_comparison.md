@@ -1,4 +1,4 @@
-# ADR-026 — Teachable comparison: `POST /backtest/compare` (stop dimension)
+# ADR-026 — Teachable comparison: `POST /run/compare` (stop dimension)
 
 **Status:** Accepted.
 
@@ -9,7 +9,7 @@ explain what a given setting did. This ADR builds the **first dimension only —
 ("neutralized" = stop turned off). Further dimensions (target, slippage, size, …) follow
 the same pattern in later ADRs.
 
-**Decision:** Add `POST /backtest/compare` in `api/server.py`, reusing the existing run
+**Decision:** Add `POST /run/compare` in `api/server.py`, reusing the existing run
 logic in `api/engine/engine.py`. The endpoint:
 
 1. Generates the trade signal **once** for the given strategy + data range

@@ -1,4 +1,4 @@
-"""ADR-026 — /backtest/compare (stop dimension) deterministic tests.
+"""ADR-026 — /run/compare (stop dimension) deterministic tests.
 
 The acceptance anchor (primary worst single-trade loss == -10.00 = 2pt x $5)
 requires a CLEAN intrabar stop fill with no gap-through. Real ES data has
@@ -19,7 +19,7 @@ import pandas as pd
 import pytest
 
 import server
-from server import backtest_compare, BacktestRequest
+from server import run_compare, BacktestRequest
 from engine.engine import __version__ as ENGINE_VERSION
 
 # --- golden constants (locked from the first deterministic run) ---
@@ -68,7 +68,7 @@ def _run_compare(monkeypatch):
         start_date="2023-01-01",
         end_date="2023-12-31",
     )
-    return asyncio.run(backtest_compare(req))
+    return asyncio.run(run_compare(req))
 
 
 def test_version_bumped():
@@ -129,3 +129,18 @@ def test_same_signal_and_trade_count(monkeypatch):
     variant_n = len(resp.variants[0]["result"]["trades"])
     assert primary_n == variant_n == 1
     assert t["trade_count"] == primary_n
+
+
+def test_equity_curve_present_on_both_results(monkeypatch):
+    """Both primary and variant results carry a populated equity_curve in the same
+    shape /run returns: ordered [{timestamp, equity}], last point == final_equity."""
+    resp = _run_compare(monkeypatch)
+
+    for result in (resp.primary, resp.variants[0]["result"]):
+        ec = result["equity_curve"]
+        assert isinstance(ec, list) and len(ec) > 0          # populated
+        assert set(ec[0].keys()) == {"timestamp", "equity"}  # documented shape
+        ts = [p["timestamp"] for p in ec]
+        assert ts == sorted(ts)                              # ordered
+        # last point's equity matches that result's final_equity
+        assert abs(ec[-1]["equity"] - result["kpis"]["final_equity"]) < TOL

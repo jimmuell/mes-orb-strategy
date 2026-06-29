@@ -664,7 +664,7 @@ async def run(req: BacktestRequest):
 
 
 # ---------------------------------------------------------------------------
-# Teachable comparison — POST /backtest/compare (ADR-026, stop dimension)
+# Teachable comparison — POST /run/compare (ADR-026, stop dimension)
 # ---------------------------------------------------------------------------
 # Runs the user's authoritative config AND a stop-neutralized variant against the
 # SAME generated signal, in one logical run, and reports exact dollar deltas.
@@ -739,6 +739,9 @@ def _serialize_run(df_signaled: pd.DataFrame, direction: str, config: BacktestCo
         raise RuntimeError(kpis["error"])
 
     trades_raw = kpis.pop('trades', [])
+    # Same handling as /run: pop the equity series out of kpis and serialize it
+    # (downsampled [{timestamp, equity}]) so each compare result carries a curve.
+    equity_curve_json = _serialize_equity_curve(kpis.pop('equity_curve', []))
     trades_json = []
     for t in trades_raw:
         trades_json.append({
@@ -761,15 +764,15 @@ def _serialize_run(df_signaled: pd.DataFrame, direction: str, config: BacktestCo
         "engine_version": ENGINE_VERSION,
         "kpis": kpis,
         "trades": trades_json[:500],
-        "equity_curve": None,
+        "equity_curve": equity_curve_json,
     }
     closed = [t for t in trades_json if t['exit_date'] is not None]
     return result, closed
 
 
-@app.post("/backtest/compare", response_model=CompareResponse,
+@app.post("/run/compare", response_model=CompareResponse,
           dependencies=[Depends(verify_api_key)])
-async def backtest_compare(req: BacktestRequest):
+async def run_compare(req: BacktestRequest):
     """TEACH-COMPARE (ADR-026): run the user's config and a stop-neutralized variant
     against the SAME signal in one logical run; report exact teaching deltas."""
     start_time = time.time()
