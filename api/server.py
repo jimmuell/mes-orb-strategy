@@ -19,6 +19,8 @@ hardened sandbox.
 
 import ast
 import builtins
+import dataclasses
+import hashlib
 import math
 import os
 import signal as _signal
@@ -657,6 +659,221 @@ async def run(req: BacktestRequest):
             status="error",
             engine_version=ENGINE_VERSION,
             execution_time_ms=execution_ms,
+            error=f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()[-500:]}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Teachable comparison — POST /run/compare (ADR-026, stop dimension)
+# ---------------------------------------------------------------------------
+# Runs the user's authoritative config AND a stop-neutralized variant against the
+# SAME generated signal, in one logical run, and reports exact dollar deltas.
+# Purely additive: the /run single-run path above is left byte-identical.
+
+
+class CompareResponse(BaseModel):
+    status: str  # "success" or "error"
+    engine_version: str
+    execution_time_ms: int
+    primary: Optional[dict] = None
+    variants: Optional[list] = None
+    teaching: Optional[list] = None
+    same_signal: Optional[bool] = None
+    error: Optional[str] = None
+
+
+def _signal_hash(df: pd.DataFrame, cols) -> str:
+    """Deterministic hash of the signal columns, to prove the signal series is
+    identical across the primary and variant applications (same_signal)."""
+    sub = df[list(cols)]
+    digest = pd.util.hash_pandas_object(sub, index=True).values.tobytes()
+    return hashlib.sha256(digest).hexdigest()
+
+
+def _exec_signal_into_df(signal_code: str) -> pd.DataFrame:
+    """Generate the trade signal ONCE: run signal_code against the data and return
+    the df with its signal columns. Mirrors /run's sandbox + SIGALRM timeout (the
+    /run handler itself is untouched)."""
+    df = get_data()
+    sandbox_globals = {
+        '__builtins__': SAFE_BUILTINS,
+        'pd': pd, 'np': np, 'df': df,
+        'calc_ema': calc_ema, 'calc_sma': calc_sma, 'calc_smma': calc_smma,
+        'calc_rsi': calc_rsi, 'calc_atr': calc_atr, 'calc_macd': calc_macd,
+        'calc_obv': calc_obv, 'calc_wma': calc_wma, 'calc_hma': calc_hma,
+        'detect_crossover': detect_crossover, 'detect_crossunder': detect_crossunder,
+        'calc_highest': calc_highest, 'calc_lowest': calc_lowest,
+        'calc_donchian': calc_donchian, 'calc_ichimoku': calc_ichimoku,
+        'get_source': get_source,
+    }
+    timeout_armed = False
+    old_handler = None
+    if _HAS_SIGALRM:
+        try:
+            old_handler = _signal.signal(_signal.SIGALRM, _alarm_handler)
+            _signal.alarm(EXEC_TIMEOUT_SECONDS)
+            timeout_armed = True
+        except ValueError:
+            timeout_armed = False
+    try:
+        _run_user_code(signal_code, sandbox_globals)
+    finally:
+        if timeout_armed:
+            _signal.alarm(0)
+            _signal.signal(_signal.SIGALRM, old_handler)
+    return sandbox_globals['df']
+
+
+def _serialize_run(df_signaled: pd.DataFrame, direction: str, config: BacktestConfig):
+    """Run one config against the already-signaled df (the engine copies df
+    internally, so df_signaled is not mutated). Returns (result_dict, closed_trades).
+
+    Raises RuntimeError on an engine-level error dict so the caller surfaces it.
+    """
+    if direction == "long_only":
+        kpis = run_backtest(df_signaled, config)
+    else:
+        kpis = run_backtest_long_short(df_signaled, config)
+
+    if "error" in kpis and len(kpis) == 1:
+        raise RuntimeError(kpis["error"])
+
+    trades_raw = kpis.pop('trades', [])
+    # Same handling as /run: pop the equity series out of kpis and serialize it
+    # (downsampled [{timestamp, equity}]) so each compare result carries a curve.
+    equity_curve_json = _serialize_equity_curve(kpis.pop('equity_curve', []))
+    trades_json = []
+    for t in trades_raw:
+        trades_json.append({
+            'entry_date': str(t.entry_date),
+            'entry_price': t.entry_price,
+            'exit_date': str(t.exit_date) if t.exit_date else None,
+            'exit_price': t.exit_price,
+            'direction': t.direction,
+            'qty': t.entry_qty,
+            'pnl': t.pnl,
+            'pnl_pct': t.pnl_pct,
+        })
+
+    for key in ('first_order_date', 'last_order_date'):
+        if key in kpis and kpis[key] is not None:
+            kpis[key] = str(kpis[key])
+    kpis = _sanitize_kpis(kpis)
+
+    result = {
+        "engine_version": ENGINE_VERSION,
+        "kpis": kpis,
+        "trades": trades_json[:500],
+        "equity_curve": equity_curve_json,
+    }
+    closed = [t for t in trades_json if t['exit_date'] is not None]
+    return result, closed
+
+
+@app.post("/run/compare", response_model=CompareResponse,
+          dependencies=[Depends(verify_api_key)])
+async def run_compare(req: BacktestRequest):
+    """TEACH-COMPARE (ADR-026): run the user's config and a stop-neutralized variant
+    against the SAME signal in one logical run; report exact teaching deltas."""
+    start_time = time.time()
+
+    validation_error = validate_signal_code(req.signal_code)
+    if validation_error:
+        return CompareResponse(
+            status="error", engine_version=ENGINE_VERSION,
+            execution_time_ms=0, error=validation_error,
+        )
+
+    try:
+        # 1) Generate the signal ONCE and reuse it for both applications.
+        df = _exec_signal_into_df(req.signal_code)
+
+        if req.direction == "long_only":
+            required = ('long_entry', 'long_exit')
+        else:
+            required = ('long_entry', 'long_exit', 'short_entry', 'short_exit')
+        missing = set(required) - set(df.columns)
+        if missing:
+            return CompareResponse(
+                status="error", engine_version=ENGINE_VERSION,
+                execution_time_ms=int((time.time() - start_time) * 1000),
+                error=f"Signal code did not create required columns: {missing}",
+            )
+
+        sig_cols = sorted(required)
+        h_before = _signal_hash(df, sig_cols)
+
+        # 2) Primary = the user's full config (authoritative).
+        primary_config = BacktestConfig(
+            initial_capital=req.initial_capital,
+            commission_pct=req.commission_pct,
+            start_date=req.start_date,
+            end_date=req.end_date,
+            take_profit_pct=req.take_profit_pct,
+            stop_loss_pct=req.stop_loss_pct,
+            take_profit_points=req.take_profit_points,
+            stop_loss_points=req.stop_loss_points,
+            qty_type=req.qty_type,
+            qty_value=req.qty_value,
+            slippage_ticks=req.slippage_ticks,
+        )
+        # 3) Variant = SAME config with only the stop neutralized.
+        variant_config = dataclasses.replace(
+            primary_config, stop_loss_points=0.0, stop_loss_pct=0.0,
+        )
+
+        primary_result, primary_closed = _serialize_run(df, req.direction, primary_config)
+        h_mid = _signal_hash(df, sig_cols)   # engine copies df, so the signal must be untouched
+        variant_result, variant_closed = _serialize_run(df, req.direction, variant_config)
+        h_after = _signal_hash(df, sig_cols)
+        same_signal = (h_before == h_mid == h_after)
+
+        # 4) Teaching deltas — deterministic arithmetic, from the stop's POV.
+        primary_net = primary_result["kpis"].get("net_profit") or 0.0
+        variant_net = variant_result["kpis"].get("net_profit") or 0.0
+        delta_net = primary_net - variant_net
+        if delta_net > 0:
+            direction = "saved"
+        elif delta_net < 0:
+            direction = "cost"
+        else:
+            direction = "neutral"
+
+        primary_worst = min((t['pnl'] for t in primary_closed if t['pnl'] is not None),
+                            default=0.0)
+        variant_worst = min((t['pnl'] for t in variant_closed if t['pnl'] is not None),
+                            default=0.0)
+
+        teaching = [{
+            "dimension": "stop",
+            "delta_net": delta_net,
+            "direction": direction,
+            "primary_worst_loss": primary_worst,
+            "variant_worst_loss": variant_worst,
+            "trade_count": len(primary_closed),
+        }]
+        variants = [{
+            "dimension": "stop",
+            "label": "no stop",
+            "neutralized": {"stop_loss_points": 0},
+            "result": variant_result,
+        }]
+
+        return CompareResponse(
+            status="success",
+            engine_version=ENGINE_VERSION,
+            execution_time_ms=int((time.time() - start_time) * 1000),
+            primary=primary_result,
+            variants=variants,
+            teaching=teaching,
+            same_signal=same_signal,
+        )
+
+    except Exception as e:
+        return CompareResponse(
+            status="error",
+            engine_version=ENGINE_VERSION,
+            execution_time_ms=int((time.time() - start_time) * 1000),
             error=f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()[-500:]}",
         )
 
