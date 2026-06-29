@@ -136,6 +136,15 @@ limit-order-exempt refinement is deferred to a future ADR. `__version__` bumped 
 
 ---
 
+## ADR-026 — Teachable comparison: `POST /backtest/compare` (stop dimension)
+
+Recorded in full in [`ADR-026_teachable_comparison.md`](ADR-026_teachable_comparison.md).
+Runs the user's config and a stop-neutralized variant against the same signal in one
+logical run and reports exact dollar deltas (`teaching`/`same_signal`). Additive — `/run`
+is byte-identical; `__version__` → `25.1.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
