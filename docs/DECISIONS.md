@@ -180,6 +180,34 @@ Additive; `__version__` → `25.4.0`.
 
 ---
 
+## ADR-030 — Flat per-round-trip commission
+
+**Status:** Accepted (v25.5.0)
+
+**Context:** Commission was percent-of-notional per side (`commission_rate`).
+On MES that is ~$25/side and silently destroys results. Three AMP daily
+statements (21-APR / 11-JUN / 12-JUN 2026; 106 / 25 / 2 round-trips) show the
+true all-in cost is a flat **$1.24 per round-trip** — exchange + clearing +
+NFA + CQG routing + commission — identical across all three days. A
+"Liquidation Fee" ($2.50/event) appears only when AMP force-flattens a
+position; it is situational, not a per-trade cost, and is excluded. The $45/mo
+data fee is fixed overhead and excluded from per-trade math.
+
+**Decision:** Add `commission_mode` ("percent" | "flat_per_rt") and
+`commission_per_rt` (default 1.24). All commission math routes through one
+helper, `_commission_for_side(trade_value, config)`. Flat mode charges
+`commission_per_rt / 2` on each side (half-split): entry + exit = one
+round-trip; an open trade is charged exactly half, keeping accounting
+symmetric. Percent mode is the default and is byte-identical to prior
+behavior. `commission_per_rt = 0.0` yields a commission-neutralized run,
+enabling a future "what did commission cost me" teaching dimension.
+
+**Consequence:** `commission_mode="percent"` is byte-identical → signal cache,
+determinism, and the ADR-023/024/025 suites are unaffected. Flat is additive
+and opt-in. Helper has one home; no bare `* commission_rate` survives outside it.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument

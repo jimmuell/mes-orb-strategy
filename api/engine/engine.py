@@ -18,7 +18,7 @@ Usage:
     print_kpis(kpis)
 """
 
-__version__ = "25.4.0"
+__version__ = "25.5.0"
 
 import math
 import pandas as pd
@@ -49,7 +49,9 @@ MES_TICK_SIZE = 0.25  # 4 ticks = 1 point
 class BacktestConfig:
     """Backtest settings matching TradingView's strategy() properties."""
     initial_capital: float = 1000.0
-    commission_pct: float = 0.1       # e.g. 0.1 = 0.1%
+    commission_pct: float = 0.1       # e.g. 0.1 = 0.1% (used when commission_mode == "percent")
+    commission_mode: str = "percent"  # "percent" | "flat_per_rt"
+    commission_per_rt: float = 1.24   # $ per round-trip, all-in (used when commission_mode == "flat_per_rt")
     slippage_ticks: int = 0
     qty_type: str = "percent_of_equity"
     qty_value: float = 100.0          # 100 = 100% of equity
@@ -464,6 +466,23 @@ def _apply_slippage(price: float, side: str, config: "BacktestConfig") -> float:
     return price + slip if side == "buy" else price - slip
 
 
+def _commission_for_side(trade_value: float, config: "BacktestConfig") -> float:
+    """Dollar commission charged on ONE side (entry OR exit) — the single home for
+    all commission math (ADR-030).
+
+    percent mode  -> existing behavior: trade_value * (commission_pct / 100), i.e.
+                     the same value the prior `trade_value * commission_rate` produced,
+                     so commission_mode == "percent" (the default) is byte-identical.
+    flat_per_rt   -> half a round-trip: commission_per_rt / 2.0 (notional-independent).
+                     The half-split is intentional: entry side + exit side = exactly
+                     one round-trip, and an OPEN trade (entry only) is charged exactly
+                     half, keeping the per-side accounting symmetric.
+    """
+    if config.commission_mode == "flat_per_rt":
+        return config.commission_per_rt / 2.0
+    return trade_value * (config.commission_pct / 100.0)
+
+
 def _check_tpsl_fill(
     bar_open: float,
     bar_high: float,
@@ -708,7 +727,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
             fill_price = _apply_slippage(fill_price, "sell", config)
             for pos in open_positions:
                 trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
-                exit_commission = trade_value * commission_rate
+                exit_commission = _commission_for_side(trade_value, config)
                 gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
 
@@ -738,7 +757,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 # notional keeps this path self-normalizing (identical to pre-MES).
                 qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
             trade_value = qty * fill_price * MES_POINT_VALUE
-            entry_commission = trade_value * commission_rate
+            entry_commission = _commission_for_side(trade_value, config)
 
             position_qty += qty
             cash -= (trade_value + entry_commission)
@@ -798,7 +817,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 # Close ALL open positions at TP/SL price
                 for pos in open_positions:
                     tv = pos.entry_qty * fill_price * MES_POINT_VALUE
-                    ec = tv * commission_rate
+                    ec = _commission_for_side(tv, config)
                     gpnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                     npnl = gpnl - pos.entry_commission - ec
 
@@ -877,7 +896,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 fill_price = _apply_slippage(fill_price, "sell", config)
                 for pos in open_positions:
                     trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
-                    exit_commission = trade_value * commission_rate
+                    exit_commission = _commission_for_side(trade_value, config)
                     gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
 
@@ -910,7 +929,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
                     # 100% equity, self-normalizing across point value
                     qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
                 trade_value = qty * fill_price * MES_POINT_VALUE
-                entry_commission = trade_value * commission_rate
+                entry_commission = _commission_for_side(trade_value, config)
 
                 position_qty += qty
                 cash -= (trade_value + entry_commission)
@@ -1112,7 +1131,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             fill_price = _apply_slippage(fill_price, "sell", config)
             for pos in open_positions:
                 trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
-                exit_commission = trade_value * commission_rate
+                exit_commission = _commission_for_side(trade_value, config)
                 gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
                 cash += trade_value - exit_commission
@@ -1141,7 +1160,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             for pos in open_positions:
                 abs_qty = pos.entry_qty
                 trade_value = abs_qty * fill_price * MES_POINT_VALUE
-                exit_commission = trade_value * commission_rate
+                exit_commission = _commission_for_side(trade_value, config)
                 gross_pnl = abs_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
                 cash = cash + gross_pnl - exit_commission
@@ -1182,7 +1201,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             for pos in open_positions:
                 abs_qty = pos.entry_qty
                 trade_value = abs_qty * fill_price * MES_POINT_VALUE
-                exit_commission = trade_value * commission_rate
+                exit_commission = _commission_for_side(trade_value, config)
                 gross_pnl = abs_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
                 cash = cash + gross_pnl - exit_commission
@@ -1210,7 +1229,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             else:
                 qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
             trade_value = qty * fill_price * MES_POINT_VALUE
-            entry_commission = trade_value * commission_rate
+            entry_commission = _commission_for_side(trade_value, config)
             position_qty += qty
             position_side = "long"
             cash -= (trade_value + entry_commission)
@@ -1231,7 +1250,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             fill_price = _apply_slippage(fill_price, "sell", config)
             for pos in open_positions:
                 trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
-                exit_commission = trade_value * commission_rate
+                exit_commission = _commission_for_side(trade_value, config)
                 gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                 net_pnl = gross_pnl - pos.entry_commission - exit_commission
                 cash += trade_value - exit_commission
@@ -1259,7 +1278,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
             else:
                 abs_qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
             trade_value = abs_qty * fill_price * MES_POINT_VALUE
-            entry_commission = trade_value * commission_rate
+            entry_commission = _commission_for_side(trade_value, config)
             position_qty -= abs_qty  # more negative = larger short
             position_side = "short"
             cash -= entry_commission
@@ -1313,7 +1332,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                     # Settle each long sub-position at TP/SL price
                     for pos in open_positions:
                         trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
-                        exit_commission = trade_value * commission_rate
+                        exit_commission = _commission_for_side(trade_value, config)
                         gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                         net_pnl = gross_pnl - pos.entry_commission - exit_commission
                         cash += trade_value - exit_commission
@@ -1342,7 +1361,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                     for pos in open_positions:
                         p_qty = pos.entry_qty
                         trade_value = p_qty * fill_price * MES_POINT_VALUE
-                        exit_commission = trade_value * commission_rate
+                        exit_commission = _commission_for_side(trade_value, config)
                         gross_pnl = p_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                         net_pnl = gross_pnl - pos.entry_commission - exit_commission
                         cash = cash + gross_pnl - exit_commission
@@ -1456,7 +1475,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 fill_price = _apply_slippage(fill_price, "sell", config)
                 for pos in open_positions:
                     trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
-                    exit_commission = trade_value * commission_rate
+                    exit_commission = _commission_for_side(trade_value, config)
                     gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
                     cash += trade_value - exit_commission
@@ -1485,7 +1504,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 for pos in open_positions:
                     abs_qty = pos.entry_qty
                     trade_value = abs_qty * fill_price * MES_POINT_VALUE
-                    exit_commission = trade_value * commission_rate
+                    exit_commission = _commission_for_side(trade_value, config)
                     gross_pnl = abs_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
                     cash = cash + gross_pnl - exit_commission
@@ -1514,7 +1533,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 for pos in open_positions:
                     abs_qty = pos.entry_qty
                     trade_value = abs_qty * fill_price * MES_POINT_VALUE
-                    exit_commission = trade_value * commission_rate
+                    exit_commission = _commission_for_side(trade_value, config)
                     gross_pnl = abs_qty * (pos.entry_price - fill_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
                     cash = cash + gross_pnl - exit_commission
@@ -1543,7 +1562,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 else:
                     qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
                 trade_value = qty * fill_price * MES_POINT_VALUE
-                entry_commission = trade_value * commission_rate
+                entry_commission = _commission_for_side(trade_value, config)
                 position_qty += qty
                 position_side = "long"
                 cash -= (trade_value + entry_commission)
@@ -1564,7 +1583,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 fill_price = _apply_slippage(fill_price, "sell", config)
                 for pos in open_positions:
                     trade_value = pos.entry_qty * fill_price * MES_POINT_VALUE
-                    exit_commission = trade_value * commission_rate
+                    exit_commission = _commission_for_side(trade_value, config)
                     gross_pnl = pos.entry_qty * (fill_price - pos.entry_price) * MES_POINT_VALUE
                     net_pnl = gross_pnl - pos.entry_commission - exit_commission
                     cash += trade_value - exit_commission
@@ -1592,7 +1611,7 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
                 else:
                     abs_qty = (equity / (1 + commission_rate)) / (fill_price * MES_POINT_VALUE)
                 trade_value = abs_qty * fill_price * MES_POINT_VALUE
-                entry_commission = trade_value * commission_rate
+                entry_commission = _commission_for_side(trade_value, config)
                 position_qty -= abs_qty
                 position_side = "short"
                 cash -= entry_commission

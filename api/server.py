@@ -198,6 +198,8 @@ class BacktestRequest(BaseModel):
     direction: str = Field(default="long_short", description="'long_only' or 'long_short'")
     initial_capital: float = Field(default=10000.0)
     commission_pct: float = Field(default=0.1)
+    commission_mode: str = Field(default="percent", description="'percent' | 'flat_per_rt'")
+    commission_per_rt: float = Field(default=1.24, description="$ per round-trip, all-in (flat_per_rt mode)")
     start_date: str = Field(default="2008-01-01")
     end_date: str = Field(default="2026-12-31")
     take_profit_pct: float = Field(default=0.0)
@@ -534,6 +536,8 @@ async def run(req: BacktestRequest):
         config = BacktestConfig(
             initial_capital=req.initial_capital,
             commission_pct=req.commission_pct,
+            commission_mode=req.commission_mode,
+            commission_per_rt=req.commission_per_rt,
             start_date=req.start_date,
             end_date=req.end_date,
             take_profit_pct=req.take_profit_pct,
@@ -938,6 +942,8 @@ async def run_compare(req: BacktestRequest):
         primary_config = BacktestConfig(
             initial_capital=req.initial_capital,
             commission_pct=req.commission_pct,
+            commission_mode=req.commission_mode,
+            commission_per_rt=req.commission_per_rt,
             start_date=req.start_date,
             end_date=req.end_date,
             take_profit_pct=req.take_profit_pct,
