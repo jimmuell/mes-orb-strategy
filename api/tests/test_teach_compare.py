@@ -72,7 +72,7 @@ def _run_compare(monkeypatch):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.3.0"
+    assert ENGINE_VERSION == "25.4.0"
 
 
 def test_compare_shape_and_anchors(monkeypatch):
@@ -81,8 +81,9 @@ def test_compare_shape_and_anchors(monkeypatch):
 
     # shape
     assert resp.primary is not None
-    assert isinstance(resp.variants, list) and len(resp.variants) == 1
-    assert isinstance(resp.teaching, list) and len(resp.teaching) == 1
+    # stop is the FIRST teaching/variant block (ADR-029 appends take_profit second).
+    assert isinstance(resp.variants, list) and resp.variants[0]["dimension"] == "stop"
+    assert isinstance(resp.teaching, list) and resp.teaching[0]["dimension"] == "stop"
     v = resp.variants[0]
     assert v["dimension"] == "stop" and v["label"] == "no stop"
     assert v["neutralized"] == {"stop_loss_points": 0}

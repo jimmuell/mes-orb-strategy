@@ -952,12 +952,20 @@ async def run_compare(req: BacktestRequest):
         variant_config = dataclasses.replace(
             primary_config, stop_loss_points=0.0, stop_loss_pct=0.0,
         )
+        # 3b) Take-profit dimension (ADR-029): SAME config with only the take-profit
+        #     neutralized (trades run to their natural signal exit / stop instead of
+        #     capping at TP). Mirrors the stop variant; everything else held constant.
+        tp_variant_config = dataclasses.replace(
+            primary_config, take_profit_points=0.0, take_profit_pct=0.0,
+        )
 
         primary_result, primary_closed = _serialize_run(df, req.direction, primary_config)
         h_mid = _signal_hash(df, sig_cols)   # engine copies df, so the signal must be untouched
         variant_result, variant_closed = _serialize_run(df, req.direction, variant_config)
         h_after = _signal_hash(df, sig_cols)
-        same_signal = (h_before == h_mid == h_after)
+        tp_variant_result, tp_variant_closed = _serialize_run(df, req.direction, tp_variant_config)
+        h_after_tp = _signal_hash(df, sig_cols)   # signal must survive all three runs
+        same_signal = (h_before == h_mid == h_after == h_after_tp)
 
         # 4) Teaching deltas — deterministic arithmetic, from the stop's POV.
         primary_net = primary_result["kpis"].get("net_profit") or 0.0
@@ -1000,6 +1008,48 @@ async def run_compare(req: BacktestRequest):
             "neutralized": {"stop_loss_points": 0},
             "result": variant_result,
         }]
+
+        # 5b) Take-profit dimension (ADR-029) — mirror the stop block, appended
+        #     SECOND (stop stays first/unchanged). delta_net = primary − tp_variant:
+        #     >0 = TP "saved" (locked in gains that would've been given back);
+        #     <0 = TP "cost" (capped a winner that would've run). Significance reuses
+        #     the same paired-delta bootstrap. Supporting stat is the WINNER side
+        #     (max pnl) instead of the stop's worst-loss (min pnl).
+        tp_variant_net = tp_variant_result["kpis"].get("net_profit") or 0.0
+        tp_delta_net = primary_net - tp_variant_net
+        if tp_delta_net > 0:
+            tp_direction = "saved"
+        elif tp_delta_net < 0:
+            tp_direction = "cost"
+        else:
+            tp_direction = "neutral"
+
+        primary_best = max((t['pnl'] for t in primary_closed if t['pnl'] is not None),
+                           default=0.0)
+        tp_variant_best = max((t['pnl'] for t in tp_variant_closed if t['pnl'] is not None),
+                              default=0.0)
+
+        tp_sig = _delta_significance(_paired_deltas(primary_closed, tp_variant_closed))
+
+        teaching.append({
+            "dimension": "take_profit",
+            "delta_net": tp_delta_net,
+            "direction": tp_direction,
+            "primary_best_win": primary_best,
+            "variant_best_win": tp_variant_best,
+            "trade_count": len(primary_closed),
+            "delta_ci_low": tp_sig["delta_ci_low"],
+            "delta_ci_high": tp_sig["delta_ci_high"],
+            "significance": tp_sig["significance"],
+            "n_resamples": tp_sig["n_resamples"],
+            "sufficient_data": sufficient_data,
+        })
+        variants.append({
+            "dimension": "take_profit",
+            "label": "no take-profit",
+            "neutralized": {"take_profit_points": 0},
+            "result": tp_variant_result,
+        })
 
         # 6) Standard Edge-vs-Luck validation for the PRIMARY (user's) config only
         #    (ADR-028), gated on run_validation exactly like /run. Variant is not
