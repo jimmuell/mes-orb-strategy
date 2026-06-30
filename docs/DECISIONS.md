@@ -167,6 +167,19 @@ not validated. Additive (teaching/significance unchanged); `__version__` → `25
 
 ---
 
+## ADR-029 — Take-profit dimension on TEACH-COMPARE (mirror the stop instance)
+
+Recorded in full in [`ADR-029_compare_take_profit.md`](ADR-029_compare_take_profit.md).
+`teaching` is a list of per-dimension blocks; this appends a SECOND block — `take_profit` —
+after the unchanged `stop` block. Mirrors the stop instance: a take-profit-neutralized variant
+(`take_profit_points=0`, `take_profit_pct=0`), a third `_serialize_run` on the same signal df
+(`same_signal` now spans all three runs), the reused paired-delta significance, and a WINNER
+stat (`primary_best_win`/`variant_best_win` = `max(pnl)`) instead of the stop's worst-loss.
+Validation stays primary-only. Downstream: `context.teaching` consumers must iterate the list.
+Additive; `__version__` → `25.4.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
