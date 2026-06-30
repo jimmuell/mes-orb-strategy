@@ -681,6 +681,11 @@ class CompareResponse(BaseModel):
     teaching: Optional[list] = None
     same_signal: Optional[bool] = None
     error: Optional[str] = None
+    # Standard Edge-vs-Luck validation for the PRIMARY (user's) config — same
+    # shape/field names as BacktestResponse so the app reads `response.validation`
+    # identically on both endpoints (ADR-028). The variant is not validated.
+    validation: Optional[dict] = None
+    validation_error: Optional[str] = None
 
 
 def _signal_hash(df: pd.DataFrame, cols) -> str:
@@ -835,6 +840,67 @@ def _delta_significance(deltas: list) -> dict:
             "significance": significance, "n_resamples": res.n_iterations}
 
 
+def _validate_primary(closed_trades: list, df: pd.DataFrame,
+                      validation_iterations: int):
+    """Edge-vs-Luck validation for the PRIMARY result of /run/compare (ADR-028).
+
+    Same machinery and serialized shape as the /run handler — reuses validate /
+    summarize / _df_to_barset / _ENGINE_INSTRUMENT. `closed_trades` are the primary
+    result's serialized trade dicts (already exit-filtered by _serialize_run).
+    Returns (validation_dict_or_None, validation_error_or_None). The variant is
+    intentionally NOT validated (neutralized hypothetical; would double MC cost).
+    """
+    bt_trades = []
+    for i, t in enumerate(closed_trades, start=1):
+        if t.get('exit_date') is None or t.get('exit_price') is None:
+            continue
+        bt_trades.append(BtTrade(
+            trade_id=i, direction=t['direction'],
+            entry_time=_to_et(t['entry_date']), entry_price=float(t['entry_price']),
+            exit_time=_to_et(t['exit_date']), exit_price=float(t['exit_price']),
+            qty=int(round(t['qty'])), pnl=float(t['pnl']),
+        ))
+
+    if len(bt_trades) < 2:
+        return None, None
+
+    try:
+        cfg = ValidationConfig(
+            mc_iterations=validation_iterations,
+            random_entry_iterations=validation_iterations,
+            instrument=_ENGINE_INSTRUMENT,
+        )
+        result = validate(bt_trades, bars=_df_to_barset(df), config=cfg)
+        v = summarize(result)
+        validation = {
+            "overall": v.overall,
+            "summary": v.summary,
+            "findings": [
+                {"key": f.key, "title": f.title, "status": f.status,
+                 "headline": f.headline, "detail": f.detail, "stat": f.stat}
+                for f in v.findings
+            ],
+            "skipped": result.skipped,
+            "regimes": {
+                scheme: {
+                    "trade_counts": rb.trade_counts,
+                    "per_regime": {
+                        label: {"n_trades": m.total_trades,
+                                "expectancy": _f(m.expectancy),
+                                "win_rate": _f(m.win_rate),
+                                "net_profit": _f(m.net_profit)}
+                        for label, m in rb.per_regime.items()
+                    },
+                }
+                for scheme, rb in result.regimes.items()
+            },
+        }
+        return validation, None
+    except Exception as e:
+        # Additive — must never break the compare run. Surface, don't swallow.
+        return None, f"{type(e).__name__}: {e}"
+
+
 @app.post("/run/compare", response_model=CompareResponse,
           dependencies=[Depends(verify_api_key)])
 async def run_compare(req: BacktestRequest):
@@ -935,6 +1001,14 @@ async def run_compare(req: BacktestRequest):
             "result": variant_result,
         }]
 
+        # 6) Standard Edge-vs-Luck validation for the PRIMARY (user's) config only
+        #    (ADR-028), gated on run_validation exactly like /run. Variant is not
+        #    validated. Same field names as /run so the app reads it identically.
+        validation, validation_error = None, None
+        if req.run_validation:
+            validation, validation_error = _validate_primary(
+                primary_closed, df, req.validation_iterations)
+
         return CompareResponse(
             status="success",
             engine_version=ENGINE_VERSION,
@@ -943,6 +1017,8 @@ async def run_compare(req: BacktestRequest):
             variants=variants,
             teaching=teaching,
             same_signal=same_signal,
+            validation=validation,
+            validation_error=validation_error,
         )
 
     except Exception as e:

@@ -156,6 +156,17 @@ entry. Additive; `__version__` → `25.2.0`.
 
 ---
 
+## ADR-028 — `/run/compare` returns the standard Edge-vs-Luck validation (primary result)
+
+Recorded in full in [`ADR-028_compare_validation.md`](ADR-028_compare_validation.md).
+`/run/compare` previously omitted the standard `validate()`/`summarize()` verdict, so the app
+showed "No validation verdict" for stop runs. Now computes it for the **primary** (user's)
+config only — reusing `/run`'s exact machinery — and returns top-level `validation` /
+`validation_error` (same field names as `BacktestResponse`). Gated on `run_validation`; variant
+not validated. Additive (teaching/significance unchanged); `__version__` → `25.3.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
