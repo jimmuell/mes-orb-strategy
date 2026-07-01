@@ -990,6 +990,10 @@ async def run_compare(req: BacktestRequest):
         commission_variant_config = dataclasses.replace(
             primary_config, commission_per_rt=0.0, commission_pct=0.0,
         )
+        # 3d) Slippage dimension (ADR-033): SAME config with only slippage neutralized — zero the
+        #     adverse ticks applied to every fill. Every trade is modified (fills move), so the
+        #     paired-delta bootstrap applies exactly like commission/stop/TP.
+        slippage_variant_config = dataclasses.replace(primary_config, slippage_ticks=0)
 
         primary_result, primary_closed = _serialize_run(df, req.direction, primary_config)
         h_mid = _signal_hash(df, sig_cols)   # engine copies df, so the signal must be untouched
@@ -1014,9 +1018,12 @@ async def run_compare(req: BacktestRequest):
         else:
             direction_variant_result, direction_variant_closed = _serialize_run(
                 df, direction_variant_dir, primary_config)
-        h_after_direction = _signal_hash(df, sig_cols)   # signal must survive all five runs
+        h_after_direction = _signal_hash(df, sig_cols)
+        slippage_variant_result, slippage_variant_closed = _serialize_run(
+            df, req.direction, slippage_variant_config)
+        h_after_slippage = _signal_hash(df, sig_cols)   # signal must survive all six runs
         same_signal = (h_before == h_mid == h_after == h_after_tp
-                       == h_after_commission == h_after_direction)
+                       == h_after_commission == h_after_direction == h_after_slippage)
 
         # 4) Teaching deltas — deterministic arithmetic, from the stop's POV.
         primary_net = primary_result["kpis"].get("net_profit") or 0.0
@@ -1205,6 +1212,47 @@ async def run_compare(req: BacktestRequest):
             "label": direction_variant_dir.replace("_", " "),   # "long only" / "long short"
             "neutralized": {"direction": direction_variant_dir},
             "result": direction_variant_result,
+        })
+
+        # 5e) Slippage dimension (ADR-033) — execution-cost mirror of commission. delta_net =
+        #     primary − slippage-free variant. Removing adverse slippage can only help or leave
+        #     net unchanged, so delta_net <= 0 → "cost" (or "neutral" when slippage_ticks == 0).
+        slippage_variant_net = slippage_variant_result["kpis"].get("net_profit") or 0.0
+        slippage_delta_net = primary_net - slippage_variant_net
+        if slippage_delta_net > 0:
+            slippage_direction = "saved"     # not expected; kept for symmetry with the other blocks
+        elif slippage_delta_net < 0:
+            slippage_direction = "cost"
+        else:
+            slippage_direction = "neutral"
+
+        total_slippage = slippage_variant_net - primary_net   # $ removed by slippage, >= 0
+        slippage_flips = slippage_variant_net > 0.0 and primary_net <= 0.0
+
+        slippage_sig = _delta_significance(
+            _paired_deltas(primary_closed, slippage_variant_closed))
+
+        teaching.append({
+            "dimension": "slippage",
+            "delta_net": slippage_delta_net,
+            "direction": slippage_direction,
+            "total_slippage": total_slippage,
+            "slippage_ticks": req.slippage_ticks,          # for the "no slippage set" nudge / display
+            "flips_profitability": slippage_flips,
+            "primary_net": primary_net,
+            "variant_net": slippage_variant_net,
+            "trade_count": len(primary_closed),
+            "delta_ci_low": slippage_sig["delta_ci_low"],
+            "delta_ci_high": slippage_sig["delta_ci_high"],
+            "significance": slippage_sig["significance"],
+            "n_resamples": slippage_sig["n_resamples"],
+            "sufficient_data": sufficient_data,            # reuse the shared total-trades sufficiency
+        })
+        variants.append({
+            "dimension": "slippage",
+            "label": "no slippage",
+            "neutralized": {"slippage_ticks": 0},
+            "result": slippage_variant_result,
         })
 
         # 6) Standard Edge-vs-Luck validation for the PRIMARY (user's) config only

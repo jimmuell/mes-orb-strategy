@@ -59,14 +59,15 @@ def _compare(monkeypatch, direction, longs, shorts):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.7.0"
+    assert ENGINE_VERSION == "25.8.0"
 
 
 def test_four_teaching_blocks_in_order(monkeypatch):
     resp = _compare(monkeypatch, "long_short", 3, 6)
-    assert [b["dimension"] for b in resp.teaching] == ["stop", "take_profit", "commission", "direction"]
-    assert [v["dimension"] for v in resp.variants] == ["stop", "take_profit", "commission", "direction"]
-    assert resp.same_signal is True   # signal survived all FIVE runs
+    # stop..direction in order (ADR-033 appends slippage fifth).
+    assert [b["dimension"] for b in resp.teaching][:4] == ["stop", "take_profit", "commission", "direction"]
+    assert [v["dimension"] for v in resp.variants][:4] == ["stop", "take_profit", "commission", "direction"]
+    assert resp.same_signal is True   # signal survived all runs
 
 
 def test_long_short_primary_delta_is_the_shorts(monkeypatch):
