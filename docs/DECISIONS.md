@@ -65,6 +65,36 @@ there is no memory rlimit.
 
 ---
 
+## ADR-022 — Engine date bounds normalize to the bar-index timezone (not hardcoded UTC)
+
+**Status:** Accepted.
+
+**Context:** `run_backtest` and `run_backtest_long_short` (in `api/engine/engine.py`) built
+`start`/`end` from the config date strings as tz-naive `pd.Timestamp`s, then compared them against
+the bar index — which is tz-aware UTC in production (bars arrive from the API). The `data_first >
+start` guard and the per-bar `start <= bar_date <= end` range check therefore mixed tz-aware and
+tz-naive timestamps, raising `TypeError: Cannot compare tz-naive and tz-aware timestamps`, and the
+run died before producing KPIs (the true source of the persistent "null verdict").
+
+**Decision:** Immediately after `start`/`end` are constructed, normalize them to **the bar index's
+own timezone** — `tz_localize` when the bound is naive, `tz_convert` when aware, and strip to naive
+when the index itself is naive. Applied in **both** functions, ahead of every comparison site. The
+bars are never altered (the validation layer relies on their tz info).
+
+**Consequence:** Fixes the production aware-UTC crash AND preserves the local/bundled CSV path,
+whose index is tz-naive — hardcoding UTC would have crashed that path in reverse. Verified locally
+across tz-aware-UTC, tz-naive, and ET-aware indices (PR #8, commit `732989b`).
+
+The frozen second copy `backtest/engine/engine.py` carries the same latent bug (no normalization;
+comparison sites present) — reported, intentionally left unfixed; consolidate deliberately.
+
+**Code anchors (function names are the durable anchor; line numbers drift):** in
+`api/engine/engine.py`, `run_backtest` and `run_backtest_long_short`; the `data_first > start`
+guard and the per-bar `start <= bar_date <= end` check in each; normalization applied just above
+each block.
+
+---
+
 ## ADR-023 — Constant point-denominated stops & targets (alongside % stops)
 
 **Status:** Accepted.
