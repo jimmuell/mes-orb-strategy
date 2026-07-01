@@ -1085,19 +1085,21 @@ async def run_compare(req: BacktestRequest):
 
         # Total fees removed from P&L (a positive $ figure) and the profitability flip.
         total_commission = commission_variant_net - primary_net   # == -commission_delta_net, >= 0
-        flips_profitability = (commission_variant_net > 0.0 and primary_net <= 0.0)
+        # bool(): the comparison of numpy.float64 nets yields numpy.bool_, which
+        # Pydantic cannot serialize (ADR-031 hotfix) — coerce to a native Python bool.
+        flips_profitability = bool(commission_variant_net > 0.0 and primary_net <= 0.0)
 
         commission_sig = _delta_significance(
             _paired_deltas(primary_closed, commission_variant_closed))
 
         teaching.append({
             "dimension": "commission",
-            "delta_net": commission_delta_net,
+            "delta_net": float(commission_delta_net),
             "direction": commission_direction,
-            "total_commission": total_commission,
+            "total_commission": float(total_commission),
             "flips_profitability": flips_profitability,
-            "primary_net": primary_net,
-            "variant_net": commission_variant_net,
+            "primary_net": float(primary_net),
+            "variant_net": float(commission_variant_net),
             "trade_count": len(primary_closed),
             "delta_ci_low": commission_sig["delta_ci_low"],
             "delta_ci_high": commission_sig["delta_ci_high"],
