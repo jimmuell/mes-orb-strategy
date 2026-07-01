@@ -208,6 +208,20 @@ and opt-in. Helper has one home; no bare `* commission_rate` survives outside it
 
 ---
 
+## ADR-031 — Commission dimension on TEACH-COMPARE (mirror stop / take-profit)
+
+Recorded in full in [`ADR-031_compare_commission.md`](ADR-031_compare_commission.md).
+Appends a THIRD `teaching` block — `commission` — after the unchanged `stop` and
+`take_profit` blocks. Mirrors the prior instances: a commission-neutralized variant
+(`commission_per_rt=0`, `commission_pct=0`), a fourth `_serialize_run` on the same signal df
+(`same_signal` now spans all four runs), the reused paired-delta significance, and the
+distinctive stats `total_commission` (= `variant_net − primary_net`, the fees removed from P&L)
+and `flips_profitability`. In flat mode the fee doesn't change which trades happen, so the delta
+is the exact total commission and the bootstrap trivially reports "cost" — the correct, honest
+result. Additive; `__version__` → `25.6.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument

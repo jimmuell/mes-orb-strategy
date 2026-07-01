@@ -65,14 +65,15 @@ def _compare(monkeypatch, n_cycles=6):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.5.0"
+    assert ENGINE_VERSION == "25.6.0"
 
 
 def test_two_teaching_blocks_in_order(monkeypatch):
     resp = _compare(monkeypatch)
-    assert [b["dimension"] for b in resp.teaching] == ["stop", "take_profit"]
-    assert [v["dimension"] for v in resp.variants] == ["stop", "take_profit"]
-    assert resp.same_signal is True   # signal survived all THREE runs
+    # stop first, take_profit second (ADR-031 appends commission third).
+    assert [b["dimension"] for b in resp.teaching][:2] == ["stop", "take_profit"]
+    assert [v["dimension"] for v in resp.variants][:2] == ["stop", "take_profit"]
+    assert resp.same_signal is True   # signal survived all runs
 
 
 def test_stop_block_unchanged_shape(monkeypatch):

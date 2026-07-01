@@ -964,14 +964,26 @@ async def run_compare(req: BacktestRequest):
         tp_variant_config = dataclasses.replace(
             primary_config, take_profit_points=0.0, take_profit_pct=0.0,
         )
+        # 3c) Commission dimension (ADR-031): SAME config with only commission
+        #     neutralized — zero BOTH the flat per-RT fee and the percent rate so the
+        #     variant is fee-free regardless of commission_mode. In flat mode this
+        #     yields identical trades (fee is a fixed subtraction, sizing buffer is
+        #     already 0); in percent mode the sizing buffer relaxes, handled naturally
+        #     by the same paired-delta bootstrap.
+        commission_variant_config = dataclasses.replace(
+            primary_config, commission_per_rt=0.0, commission_pct=0.0,
+        )
 
         primary_result, primary_closed = _serialize_run(df, req.direction, primary_config)
         h_mid = _signal_hash(df, sig_cols)   # engine copies df, so the signal must be untouched
         variant_result, variant_closed = _serialize_run(df, req.direction, variant_config)
         h_after = _signal_hash(df, sig_cols)
         tp_variant_result, tp_variant_closed = _serialize_run(df, req.direction, tp_variant_config)
-        h_after_tp = _signal_hash(df, sig_cols)   # signal must survive all three runs
-        same_signal = (h_before == h_mid == h_after == h_after_tp)
+        h_after_tp = _signal_hash(df, sig_cols)
+        commission_variant_result, commission_variant_closed = _serialize_run(
+            df, req.direction, commission_variant_config)
+        h_after_commission = _signal_hash(df, sig_cols)   # signal must survive all four runs
+        same_signal = (h_before == h_mid == h_after == h_after_tp == h_after_commission)
 
         # 4) Teaching deltas — deterministic arithmetic, from the stop's POV.
         primary_net = primary_result["kpis"].get("net_profit") or 0.0
@@ -1055,6 +1067,49 @@ async def run_compare(req: BacktestRequest):
             "label": "no take-profit",
             "neutralized": {"take_profit_points": 0},
             "result": tp_variant_result,
+        })
+
+        # 5c) Commission dimension (ADR-031) — mirror stop/take-profit, appended THIRD.
+        #     delta_net = primary − commission_variant. The variant is fee-free, so its
+        #     net is always >= primary net → delta_net <= 0 → direction is "cost"
+        #     (or "neutral" at zero commission). The distinctive supporting stat is the
+        #     teaching payoff: did the fees flip a profitable setup into a losing one?
+        commission_variant_net = commission_variant_result["kpis"].get("net_profit") or 0.0
+        commission_delta_net = primary_net - commission_variant_net
+        if commission_delta_net > 0:
+            commission_direction = "saved"     # not expected for commission, kept for symmetry
+        elif commission_delta_net < 0:
+            commission_direction = "cost"
+        else:
+            commission_direction = "neutral"
+
+        # Total fees removed from P&L (a positive $ figure) and the profitability flip.
+        total_commission = commission_variant_net - primary_net   # == -commission_delta_net, >= 0
+        flips_profitability = (commission_variant_net > 0.0 and primary_net <= 0.0)
+
+        commission_sig = _delta_significance(
+            _paired_deltas(primary_closed, commission_variant_closed))
+
+        teaching.append({
+            "dimension": "commission",
+            "delta_net": commission_delta_net,
+            "direction": commission_direction,
+            "total_commission": total_commission,
+            "flips_profitability": flips_profitability,
+            "primary_net": primary_net,
+            "variant_net": commission_variant_net,
+            "trade_count": len(primary_closed),
+            "delta_ci_low": commission_sig["delta_ci_low"],
+            "delta_ci_high": commission_sig["delta_ci_high"],
+            "significance": commission_sig["significance"],
+            "n_resamples": commission_sig["n_resamples"],
+            "sufficient_data": sufficient_data,
+        })
+        variants.append({
+            "dimension": "commission",
+            "label": "no commission",
+            "neutralized": {"commission_per_rt": 0, "commission_pct": 0},
+            "result": commission_variant_result,
         })
 
         # 6) Standard Edge-vs-Luck validation for the PRIMARY (user's) config only
