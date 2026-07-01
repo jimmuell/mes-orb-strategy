@@ -62,13 +62,14 @@ def _compare(monkeypatch, per_rt=PER_RT, n_cycles=N_CYCLES):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.6.2"
+    assert ENGINE_VERSION == "25.7.0"
 
 
 def test_three_teaching_blocks_in_order(monkeypatch):
     resp = _compare(monkeypatch)
-    assert [b["dimension"] for b in resp.teaching] == ["stop", "take_profit", "commission"]
-    assert [v["dimension"] for v in resp.variants] == ["stop", "take_profit", "commission"]
+    # stop, take_profit, commission in order (ADR-032 appends direction fourth).
+    assert [b["dimension"] for b in resp.teaching][:3] == ["stop", "take_profit", "commission"]
+    assert [v["dimension"] for v in resp.variants][:3] == ["stop", "take_profit", "commission"]
 
 
 def test_stop_and_tp_blocks_unchanged_positions(monkeypatch):

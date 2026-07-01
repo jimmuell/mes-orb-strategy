@@ -999,8 +999,24 @@ async def run_compare(req: BacktestRequest):
         h_after_tp = _signal_hash(df, sig_cols)
         commission_variant_result, commission_variant_closed = _serialize_run(
             df, req.direction, commission_variant_config)
-        h_after_commission = _signal_hash(df, sig_cols)   # signal must survive all four runs
-        same_signal = (h_before == h_mid == h_after == h_after_tp == h_after_commission)
+        h_after_commission = _signal_hash(df, sig_cols)
+        # Direction variant (ADR-032): toggle the traded side. long_short <-> long_only.
+        # Unlike the other variants, the CONFIG is unchanged (primary_config); only the
+        # direction PARAM is toggled.
+        direction_variant_dir = "long_only" if req.direction == "long_short" else "long_short"
+        # The long_short variant needs the short signal columns. A long_only request whose
+        # signal never emitted them has no shorts to add, so the variant is identical to the
+        # primary (delta 0 / neutral). Guard rather than let a missing-column ValueError take
+        # down the whole compare response (ADR-031 lesson: one dimension must not 500 all cards).
+        if (direction_variant_dir == "long_short"
+                and not {"short_entry", "short_exit"} <= set(df.columns)):
+            direction_variant_result, direction_variant_closed = primary_result, primary_closed
+        else:
+            direction_variant_result, direction_variant_closed = _serialize_run(
+                df, direction_variant_dir, primary_config)
+        h_after_direction = _signal_hash(df, sig_cols)   # signal must survive all five runs
+        same_signal = (h_before == h_mid == h_after == h_after_tp
+                       == h_after_commission == h_after_direction)
 
         # 4) Teaching deltas — deterministic arithmetic, from the stop's POV.
         primary_net = primary_result["kpis"].get("net_profit") or 0.0
@@ -1129,6 +1145,66 @@ async def run_compare(req: BacktestRequest):
             "label": "no commission",
             "neutralized": {"commission_per_rt": 0, "commission_pct": 0},
             "result": commission_variant_result,
+        })
+
+        # 5d) Direction dimension (ADR-032) — long_short vs long_only. The long trades are
+        #     identical in both runs; the delta is ENTIRELY the short trades. delta_net =
+        #     your choice − the alternative, so the saved/cost sign reads naturally for BOTH:
+        #       - primary long_short: delta_net = shorts' net contribution (shorts made/lost you $)
+        #       - primary long_only:  delta_net = -(shorts' would-be contribution) (adding shorts
+        #         would have helped -> "cost" you by not doing it; would have hurt -> "saved")
+        direction_variant_net = direction_variant_result["kpis"].get("net_profit") or 0.0
+        direction_delta_net = primary_net - direction_variant_net
+        if direction_delta_net > 0:
+            dir_direction = "saved"
+        elif direction_delta_net < 0:
+            dir_direction = "cost"
+        else:
+            dir_direction = "neutral"
+
+        # The shorts ARE the delta. Pull them from whichever run holds them, signed so they sum
+        # to direction_delta_net, then bootstrap the CI over them directly — NOT _paired_deltas,
+        # which drops unmatched trades (i.e. the shorts, the whole effect) and would falsely
+        # report "inconclusive".
+        if req.direction == "long_short":
+            short_pnls = [float(t["pnl"]) for t in primary_closed if t["direction"] == "short"]
+            short_deltas = short_pnls
+        else:
+            short_pnls = [float(t["pnl"]) for t in direction_variant_closed if t["direction"] == "short"]
+            short_deltas = [-p for p in short_pnls]
+        short_count = len(short_pnls)
+        short_net = sum(short_pnls)                                   # shorts' own net, as traded
+        # Did the direction choice flip a profitable run into a loss (or vice versa)?
+        flips_profitability = (primary_net > 0.0) != (direction_variant_net > 0.0)
+
+        direction_sig = _delta_significance(short_deltas)
+        # Sufficiency is about the SHORTS (the delta's sample), not the whole run — reuse the
+        # same min-trades threshold the other blocks use.
+        direction_sufficient = short_count >= _MIN_TRADES_FOR_VALIDATION
+
+        teaching.append({
+            "dimension": "direction",
+            "delta_net": direction_delta_net,
+            "direction": dir_direction,
+            "primary_direction": req.direction,
+            "variant_direction": direction_variant_dir,
+            "short_trade_count": short_count,
+            "short_net": short_net,
+            "flips_profitability": flips_profitability,
+            "primary_net": primary_net,
+            "variant_net": direction_variant_net,
+            "trade_count": len(primary_closed),
+            "delta_ci_low": direction_sig["delta_ci_low"],
+            "delta_ci_high": direction_sig["delta_ci_high"],
+            "significance": direction_sig["significance"],
+            "n_resamples": direction_sig["n_resamples"],
+            "sufficient_data": direction_sufficient,
+        })
+        variants.append({
+            "dimension": "direction",
+            "label": direction_variant_dir.replace("_", " "),   # "long only" / "long short"
+            "neutralized": {"direction": direction_variant_dir},
+            "result": direction_variant_result,
         })
 
         # 6) Standard Edge-vs-Luck validation for the PRIMARY (user's) config only
