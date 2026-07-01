@@ -9,6 +9,7 @@ neutralized (fee-free) variant nets exactly N * commission_per_rt more.
 """
 import asyncio
 
+import numpy as np
 import pandas as pd
 
 import server
@@ -61,7 +62,7 @@ def _compare(monkeypatch, per_rt=PER_RT, n_cycles=N_CYCLES):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.6.1"
+    assert ENGINE_VERSION == "25.6.2"
 
 
 def test_three_teaching_blocks_in_order(monkeypatch):
@@ -108,6 +109,33 @@ def test_zero_commission_is_neutral(monkeypatch):
     c = _compare(monkeypatch, per_rt=0.0).teaching[2]
     assert c["direction"] == "neutral"
     assert abs(c["total_commission"]) < TOL
+
+
+def test_numpy_types_serialize_at_response_boundary(monkeypatch):
+    """ADR-031 hardening regression: the integer-priced fixture yields numpy.int64
+    trade prices, numpy.bool_ flips_profitability, and numpy.float64 nets in the
+    pre-coercion payload — the class of value that 500'd /run/compare. _to_native
+    must coerce them so the FULL response serializes (model_dump_json is what the
+    HTTP layer calls — the unit tests that read attributes directly missed this).
+    Fails if the _to_native coercion pass is bypassed."""
+    resp = _compare(monkeypatch)   # integer OHLC fixture -> numpy-typed values
+
+    # (1) full JSON serialization must not raise (the actual production failure mode)
+    resp.model_dump_json()
+
+    # (2) representative coerced fields are native Python types, not numpy scalars
+    c = resp.teaching[2]
+    assert type(c["flips_profitability"]) is bool
+    assert type(c["total_commission"]) is float
+    assert type(c["trade_count"]) is int
+    price = resp.variants[2]["result"]["trades"][0]["entry_price"]
+    assert type(price) is int                      # numpy.int64 -> native int (integer fixture)
+    for v in (c["flips_profitability"], c["total_commission"], price):
+        assert not isinstance(v, np.generic)
+
+    # (3) coercion changed TYPE not VALUE (flip stays a real bool, price stays 100)
+    assert c["flips_profitability"] is False
+    assert price == 100
 
 
 def test_flip_branch_native_bool_and_response_serializes(monkeypatch):

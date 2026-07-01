@@ -393,6 +393,23 @@ def _sanitize_kpis(kpis: dict) -> dict:
     return out
 
 
+def _to_native(obj):
+    """Recursively convert numpy scalars/containers to native Python types so the
+    /run/compare response is always JSON-serializable, regardless of which field
+    produced them (ADR-031 hardening). numpy.bool_/int64/float64/str_ -> native.
+
+    Coercion only changes TYPES, never VALUES (np.generic.item() returns the exact
+    Python-equivalent value). One chokepoint retires the per-field-cast whack-a-mole
+    that caused the /run/compare 500 (a numpy.bool_ flips_profitability)."""
+    if isinstance(obj, dict):
+        return {k: _to_native(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_native(v) for v in obj]
+    if isinstance(obj, np.generic):   # np.bool_, np.int64, np.float64, np.str_, ...
+        return obj.item()
+    return obj
+
+
 # Upper bound on equity-curve points returned for plotting. The engine emits one
 # point per in-range bar (up to ~1.3M for 18yr), which is too large to ship/store;
 # downsample to a plottable series. This affects the PLOT ONLY — every KPI
@@ -1084,22 +1101,22 @@ async def run_compare(req: BacktestRequest):
             commission_direction = "neutral"
 
         # Total fees removed from P&L (a positive $ figure) and the profitability flip.
+        # Per-field numpy->native casts are no longer needed here: _to_native() coerces
+        # the whole response at the return chokepoint (ADR-031 serialize hardening).
         total_commission = commission_variant_net - primary_net   # == -commission_delta_net, >= 0
-        # bool(): the comparison of numpy.float64 nets yields numpy.bool_, which
-        # Pydantic cannot serialize (ADR-031 hotfix) — coerce to a native Python bool.
-        flips_profitability = bool(commission_variant_net > 0.0 and primary_net <= 0.0)
+        flips_profitability = commission_variant_net > 0.0 and primary_net <= 0.0
 
         commission_sig = _delta_significance(
             _paired_deltas(primary_closed, commission_variant_closed))
 
         teaching.append({
             "dimension": "commission",
-            "delta_net": float(commission_delta_net),
+            "delta_net": commission_delta_net,
             "direction": commission_direction,
-            "total_commission": float(total_commission),
+            "total_commission": total_commission,
             "flips_profitability": flips_profitability,
-            "primary_net": float(primary_net),
-            "variant_net": float(commission_variant_net),
+            "primary_net": primary_net,
+            "variant_net": commission_variant_net,
             "trade_count": len(primary_closed),
             "delta_ci_low": commission_sig["delta_ci_low"],
             "delta_ci_high": commission_sig["delta_ci_high"],
@@ -1122,15 +1139,17 @@ async def run_compare(req: BacktestRequest):
             validation, validation_error = _validate_primary(
                 primary_closed, df, req.validation_iterations)
 
+        # Single numpy->native coercion pass over every structure carrying engine
+        # values, so no field can reintroduce the numpy-serialization 500 (ADR-031).
         return CompareResponse(
             status="success",
             engine_version=ENGINE_VERSION,
             execution_time_ms=int((time.time() - start_time) * 1000),
-            primary=primary_result,
-            variants=variants,
-            teaching=teaching,
-            same_signal=same_signal,
-            validation=validation,
+            primary=_to_native(primary_result),
+            variants=_to_native(variants),
+            teaching=_to_native(teaching),
+            same_signal=bool(same_signal),
+            validation=_to_native(validation),
             validation_error=validation_error,
         )
 
