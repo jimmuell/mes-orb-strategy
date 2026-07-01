@@ -252,6 +252,21 @@ result. Additive; `__version__` → `25.6.0`.
 
 ---
 
+## ADR-032 — Direction dimension on TEACH-COMPARE ("what your short trades did")
+
+Recorded in full in [`ADR-032_compare_direction.md`](ADR-032_compare_direction.md).
+Appends a FOURTH `teaching` block — `direction` — after stop / take_profit / commission. Unlike
+the others, the neutralizer toggles the run's **direction param** (`long_short ↔ long_only`), not
+the config; a fifth `_serialize_run` on the same signal df (`same_signal` spans all five runs).
+Toggling adds/removes the SHORT trades while longs stay identical, so `_paired_deltas` (which drops
+unmatched trades) is **not** used — the delta IS the shorts, bootstrapped directly via
+`_delta_significance`. Stats: `short_trade_count`, `short_net`, `flips_profitability`, signed so
+`delta_net` reads naturally for both primary directions. The `long_short` variant is guarded
+against missing `short_entry`/`short_exit` columns (falls back to primary → neutral) so a missing
+column can't 500 all cards (ADR-031 lesson). Additive; `__version__` → `25.7.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
