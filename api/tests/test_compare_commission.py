@@ -61,7 +61,7 @@ def _compare(monkeypatch, per_rt=PER_RT, n_cycles=N_CYCLES):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.6.0"
+    assert ENGINE_VERSION == "25.6.1"
 
 
 def test_three_teaching_blocks_in_order(monkeypatch):
@@ -108,3 +108,43 @@ def test_zero_commission_is_neutral(monkeypatch):
     c = _compare(monkeypatch, per_rt=0.0).teaching[2]
     assert c["direction"] == "neutral"
     assert abs(c["total_commission"]) < TOL
+
+
+def test_flip_branch_native_bool_and_response_serializes(monkeypatch):
+    # ADR-031 regression. FLOAT prices (like real market data) so trade prices
+    # serialize as numpy.float64 (a float subclass, OK); the only pre-fix
+    # un-serializable value is then the flip flag itself (numpy.bool_ -> 500).
+    # High commission: the fee-free variant is profitable but the primary (with
+    # fees) is a loss, so the flip branch runs on real numpy engine nets.
+    rows = []
+    for _ in range(N_CYCLES):
+        rows += [
+            (99.0, 100.0, 99.0, 100.0, True,  False),
+            (100.0, 101.0, 99.0, 100.0, False, False),
+            (100.0, 101.0, 99.0, 100.0, False, True),
+            (101.0, 102.0, 100.0, 101.0, False, False),
+        ]
+    idx = pd.date_range("2023-01-02", periods=len(rows), freq="D")
+    df = pd.DataFrame({
+        "Open":  [r[0] for r in rows], "High": [r[1] for r in rows],
+        "Low":   [r[2] for r in rows], "Close": [r[3] for r in rows],
+        "long_entry": [r[4] for r in rows], "long_exit": [r[5] for r in rows],
+    }, index=idx)
+    monkeypatch.setattr(server, "get_data", lambda: df.copy())
+    req = BacktestRequest(
+        signal_code="pass", direction="long_only", run_validation=False,
+        commission_mode="flat_per_rt", commission_per_rt=10.0,
+        qty_type="fixed", qty_value=1.0,
+        start_date="2023-01-01", end_date="2024-12-31",
+    )
+    resp = asyncio.run(run_compare(req))
+    assert resp.status == "success", resp.error
+
+    c = resp.teaching[2]
+    assert c["dimension"] == "commission"
+    assert c["flips_profitability"], "fixture must hit the flip branch"
+    # Native Python bool, NOT numpy.bool_ (this fails on the pre-ADR-031 engine).
+    assert type(c["flips_profitability"]) is bool
+    # The assertion the old tests never made: the entire response serializes under
+    # real engine types (would raise PydanticSerializationError on numpy.bool_).
+    resp.model_dump_json()
