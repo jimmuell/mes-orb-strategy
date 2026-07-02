@@ -16,6 +16,10 @@ worker. The planned follow-up is true isolation (subprocess/container with
 CPU+memory rlimits) — see TODO near the exec call. Do not treat this as a
 hardened sandbox.
 """
+from __future__ import annotations  # defer annotation eval (PEP 563): _map_compare_columns
+# forward-references CompareResponse (defined later). Without this, Python 3.12 (Railway's
+# pin) evaluates the annotation at def-time and raises NameError at import -> uvicorn can't
+# load server:app -> healthcheck fails. Local Python 3.14 masks it via PEP 649 lazy eval.
 
 import ast
 import asyncio
