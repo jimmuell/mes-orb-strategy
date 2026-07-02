@@ -18,6 +18,7 @@ hardened sandbox.
 """
 
 import ast
+import asyncio
 import builtins
 import dataclasses
 import hashlib
@@ -28,8 +29,9 @@ import time
 import traceback
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from engine import (
@@ -39,6 +41,7 @@ from engine import (
     calc_highest, calc_lowest, calc_donchian, calc_ichimoku, get_source,
 )
 from engine.engine import __version__ as ENGINE_VERSION
+from supabase_writer import get_supabase_writer
 
 import pandas as pd
 import numpy as np
@@ -239,6 +242,13 @@ class BacktestResponse(BaseModel):
     error: Optional[str] = None
     validation: Optional[dict] = None
     validation_error: Optional[str] = None
+    signal_hash: Optional[str] = None  # deterministic hash of the signal columns
+
+
+class AsyncBacktestRequest(BacktestRequest):
+    """Same body as /run plus the caller-created backtest_runs row id (ADR-037).
+    The engine drives that Supabase row to completion in the background."""
+    run_id: str = Field(..., description="UUID of the caller-created backtest_runs row")
 
 
 SAFE_BUILTINS = {
@@ -485,8 +495,20 @@ async def ping():
 
 @app.post("/run", response_model=BacktestResponse, dependencies=[Depends(verify_api_key)])
 async def run(req: BacktestRequest):
-    """Run a backtest with AI-generated signal code."""
+    """Run a backtest with AI-generated signal code (synchronous)."""
+    return _execute_run_sync(req)
+
+
+def _execute_run_sync(req: BacktestRequest, on_progress=None) -> BacktestResponse:
+    """Core /run pipeline (ADR-037): shared by the synchronous /run endpoint and the
+    async background job. `on_progress(pct)` (optional) fires at phase boundaries so the
+    async path can drive a progress bar; the sync path passes None (no-op), so its
+    behavior is byte-identical to before. No engine logic is duplicated."""
     start_time = time.time()
+
+    def _progress(pct):
+        if on_progress is not None:
+            on_progress(pct)
 
     validation_error = validate_signal_code(req.signal_code)
     if validation_error:
@@ -563,6 +585,11 @@ async def run(req: BacktestRequest):
                 error=f"Signal code did not create required columns: {missing}",
             )
 
+        sig_cols = [c for c in ('long_entry', 'long_exit', 'short_entry', 'short_exit')
+                    if c in df.columns]
+        signal_hash = _signal_hash(df, sig_cols) if sig_cols else None
+        _progress(20)  # signal columns ready
+
         config = BacktestConfig(
             initial_capital=req.initial_capital,
             commission_pct=req.commission_pct,
@@ -592,6 +619,7 @@ async def run(req: BacktestRequest):
                 error=kpis["error"],
             )
 
+        _progress(60)  # backtest complete
         trades_raw = kpis.pop('trades', [])
         # Pop the equity series out of kpis so it's serialized once into the
         # top-level equity_curve field (and not duplicated/raw inside kpis).
@@ -675,6 +703,7 @@ async def run(req: BacktestRequest):
                     # Surface the failure (don't swallow) so a real bug stays visible.
                     validation_error = f"{type(e).__name__}: {e}"
 
+        _progress(90)  # validation done; finalizing
         execution_ms = int((time.time() - start_time) * 1000)
 
         return BacktestResponse(
@@ -686,6 +715,7 @@ async def run(req: BacktestRequest):
             equity_curve=equity_curve_json,  # downsampled [{timestamp, equity}] points
             validation=validation,
             validation_error=validation_error,
+            signal_hash=signal_hash,
         )
 
     except Exception as e:
@@ -696,6 +726,121 @@ async def run(req: BacktestRequest):
             execution_time_ms=execution_ms,
             error=f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()[-500:]}",
         )
+
+
+# --- Async execution (ADR-037) -----------------------------------------------
+#
+# /run/async accepts a run_id (a caller-created backtest_runs row), returns 202
+# immediately, and drives that Supabase row to completion in a background task —
+# no request clock, so full-history runs (~tens of seconds) don't hit Railway's
+# ~60s proxy limit. The heavy compute runs in a worker thread (asyncio.to_thread)
+# so the event loop stays responsive; the SIGALRM signal timeout simply no-ops off
+# the main thread (already handled), which is fine — the run has no deadline here.
+
+def _short_reason(msg: Optional[str]) -> str:
+    """First line of an error, trimmed — a user-friendly reason for error_message."""
+    if not msg:
+        return "Backtest failed"
+    return str(msg).strip().splitlines()[0][:300]
+
+
+def _map_compare_columns(resp: CompareResponse) -> dict:
+    """Map a successful COMPARE response onto backtest_runs columns (ADR-037 revision).
+
+    An async run IS a compare run, so the UI keeps its six teaching cards:
+    - results_detail carries the compare result VERBATIM, incl. `_teaching` (the six
+      blocks) — NOT rebuilt from parts, so async rows match a synchronous compare run.
+    - summary columns come from the PRIMARY (user's) run's KPIs (compute_kpis names).
+    """
+    primary = resp.primary or {}
+    k = primary.get("kpis") or {}
+    results_detail = {
+        "primary": resp.primary,
+        "variants": resp.variants,
+        "_teaching": resp.teaching,        # the six blocks, verbatim from the pipeline
+        "same_signal": resp.same_signal,
+        "validation": resp.validation,
+        "validation_error": resp.validation_error,
+        "engine_version": resp.engine_version,
+        "execution_time_ms": resp.execution_time_ms,
+        "signal_hash": resp.signal_hash,
+    }
+    fields = {
+        "status": "complete",
+        "progress": 100,
+        "net_pnl": k.get("net_profit"),
+        "total_trades": k.get("total_trades"),
+        "wins": k.get("num_winning"),
+        "losses": k.get("num_losing"),
+        "win_rate": k.get("win_rate"),
+        "profit_factor": k.get("profit_factor"),
+        "max_drawdown": k.get("max_drawdown"),
+        "avg_winner": k.get("avg_winning"),
+        "avg_loser": k.get("avg_losing"),
+        "results_detail": results_detail,
+        "equity_curve": primary.get("equity_curve"),  # primary run's curve
+        "engine_version": resp.engine_version,
+        "execution_time_ms": resp.execution_time_ms,
+        "signal_hash": resp.signal_hash,
+        "validation": resp.validation,
+    }
+    if resp.validation_error is not None:
+        fields["validation_error"] = resp.validation_error
+    return fields
+
+
+async def _run_async_job(req: AsyncBacktestRequest, writer) -> None:
+    """Background task: run the backtest and drive the backtest_runs row to a terminal
+    state. On ANY failure the row is set to 'failed' with a reason — never left running."""
+    run_id = req.run_id
+
+    def on_progress(pct):
+        # progress is best-effort; a failed progress ping must not abort the job
+        try:
+            writer.update_run(run_id, {"status": "running", "progress": pct})
+        except Exception:
+            pass
+
+    try:
+        on_progress(10)  # job picked up
+        # AsyncBacktestRequest IS a BacktestRequest (subclass) — the compare core reads
+        # only base fields. Run the COMPARE pipeline (same as /run/compare) off the
+        # event loop, so an async run keeps the six teaching cards.
+        resp = await asyncio.to_thread(_execute_compare_sync, req, on_progress)
+        if resp.status == "success":
+            writer.update_run(run_id, _map_compare_columns(resp))
+        else:
+            writer.update_run(run_id, {
+                "status": "failed",
+                "progress": 100,
+                "error_message": _short_reason(resp.error),
+                "engine_version": resp.engine_version,
+                "execution_time_ms": resp.execution_time_ms,
+            })
+    except Exception as e:
+        # last-resort guard: the row must reach a terminal state
+        try:
+            writer.update_run(run_id, {
+                "status": "failed",
+                "progress": 100,
+                "error_message": _short_reason(f"{type(e).__name__}: {e}"),
+            })
+        except Exception:
+            pass
+
+
+@app.post("/run/async", status_code=202, dependencies=[Depends(verify_api_key)])
+async def run_async(req: AsyncBacktestRequest, background_tasks: BackgroundTasks):
+    """Accept a backtest job, return 202 immediately, run it in the background and write
+    progress + result to the backtest_runs row (ADR-037). The sync /run is unchanged."""
+    writer = get_supabase_writer()
+    if writer is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY",
+        )
+    background_tasks.add_task(_run_async_job, req, writer)
+    return JSONResponse(status_code=202, content={"run_id": req.run_id, "status": "accepted"})
 
 
 # ---------------------------------------------------------------------------
@@ -720,6 +865,7 @@ class CompareResponse(BaseModel):
     # identically on both endpoints (ADR-028). The variant is not validated.
     validation: Optional[dict] = None
     validation_error: Optional[str] = None
+    signal_hash: Optional[str] = None  # deterministic hash of the signal columns
 
 
 def _signal_hash(df: pd.DataFrame, cols) -> str:
@@ -940,7 +1086,19 @@ def _validate_primary(closed_trades: list, df: pd.DataFrame,
 async def run_compare(req: BacktestRequest):
     """TEACH-COMPARE (ADR-026): run the user's config and a stop-neutralized variant
     against the SAME signal in one logical run; report exact teaching deltas."""
+    return _execute_compare_sync(req)
+
+
+def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResponse:
+    """Core /run/compare pipeline (ADR-037 revision): shared by the synchronous
+    /run/compare endpoint and the async background job. `on_progress(pct)` (optional)
+    fires at phase boundaries; the sync path passes None (no-op), so its behavior is
+    byte-identical. No compare/teaching logic is duplicated."""
     start_time = time.time()
+
+    def _progress(pct):
+        if on_progress is not None:
+            on_progress(pct)
 
     validation_error = validate_signal_code(req.signal_code)
     if validation_error:
@@ -967,6 +1125,7 @@ async def run_compare(req: BacktestRequest):
 
         sig_cols = sorted(required)
         h_before = _signal_hash(df, sig_cols)
+        _progress(20)  # signal columns ready
 
         # 2) Primary = the user's full config (authoritative).
         primary_config = BacktestConfig(
@@ -1013,6 +1172,7 @@ async def run_compare(req: BacktestRequest):
         size_variant_config = dataclasses.replace(primary_config, qty_type="fixed", qty_value=1.0)
 
         primary_result, primary_closed = _serialize_run(df, req.direction, primary_config)
+        _progress(50)  # primary (user's) run done
         h_mid = _signal_hash(df, sig_cols)   # engine copies df, so the signal must be untouched
         variant_result, variant_closed = _serialize_run(df, req.direction, variant_config)
         h_after = _signal_hash(df, sig_cols)
@@ -1318,6 +1478,8 @@ async def run_compare(req: BacktestRequest):
             "result": size_variant_result,
         })
 
+        _progress(80)  # all variants + teaching blocks built
+
         # 6) Standard Edge-vs-Luck validation for the PRIMARY (user's) config only
         #    (ADR-028), gated on run_validation exactly like /run. Variant is not
         #    validated. Same field names as /run so the app reads it identically.
@@ -1325,6 +1487,8 @@ async def run_compare(req: BacktestRequest):
         if req.run_validation:
             validation, validation_error = _validate_primary(
                 primary_closed, df, req.validation_iterations)
+
+        _progress(95)  # validation done; finalizing
 
         # Single numpy->native coercion pass over every structure carrying engine
         # values, so no field can reintroduce the numpy-serialization 500 (ADR-031).
@@ -1338,6 +1502,7 @@ async def run_compare(req: BacktestRequest):
             same_signal=bool(same_signal),
             validation=_to_native(validation),
             validation_error=validation_error,
+            signal_hash=h_before,
         )
 
     except Exception as e:
