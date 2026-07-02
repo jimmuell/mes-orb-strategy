@@ -745,26 +745,27 @@ def _short_reason(msg: Optional[str]) -> str:
 
 
 def _map_compare_columns(resp: CompareResponse) -> dict:
-    """Map a successful COMPARE response onto backtest_runs columns (ADR-037 revision).
+    """Map a successful COMPARE response onto backtest_runs columns (ADR-038).
 
-    An async run IS a compare run, so the UI keeps its six teaching cards:
-    - results_detail carries the compare result VERBATIM, incl. `_teaching` (the six
-      blocks) — NOT rebuilt from parts, so async rows match a synchronous compare run.
-    - summary columns come from the PRIMARY (user's) run's KPIs (compute_kpis names).
+    An async run must be byte-identical to a synchronous compare run as the edge
+    function writes it, so the app renders it the same way:
+    - results_detail = the PRIMARY run's KPIs flattened at top level, plus `_teaching`
+      (the six blocks, verbatim) and `_same_signal` — the exact keys the app reads
+      (BacktestTeachPanel/BacktestCoachPanel read detail._same_signal and detail._teaching;
+      BacktestExplainPanel reads flattened KPI fields like sl_exit_count/gross_profit).
+    - summary columns come from the PRIMARY run's KPIs; max_drawdown holds the PERCENT
+      (max_drawdown_pct), matching the app's column semantics.
     """
     primary = resp.primary or {}
     k = primary.get("kpis") or {}
-    results_detail = {
-        "primary": resp.primary,
-        "variants": resp.variants,
-        "_teaching": resp.teaching,        # the six blocks, verbatim from the pipeline
-        "same_signal": resp.same_signal,
-        "validation": resp.validation,
-        "validation_error": resp.validation_error,
-        "engine_version": resp.engine_version,
-        "execution_time_ms": resp.execution_time_ms,
-        "signal_hash": resp.signal_hash,
-    }
+
+    # Flatten the primary KPIs at top level (Explain panel reads these), then attach the
+    # teaching blocks and the same-signal flag under the exact keys the app reads.
+    results_detail = dict(k)
+    results_detail["_teaching"] = resp.teaching           # six blocks, verbatim
+    if resp.same_signal is not None:
+        results_detail["_same_signal"] = resp.same_signal  # app reads detail._same_signal
+
     fields = {
         "status": "complete",
         "progress": 100,
@@ -774,11 +775,11 @@ def _map_compare_columns(resp: CompareResponse) -> dict:
         "losses": k.get("num_losing"),
         "win_rate": k.get("win_rate"),
         "profit_factor": k.get("profit_factor"),
-        "max_drawdown": k.get("max_drawdown"),
+        "max_drawdown": k.get("max_drawdown_pct"),   # PERCENT — matches the app's column
         "avg_winner": k.get("avg_winning"),
         "avg_loser": k.get("avg_losing"),
         "results_detail": results_detail,
-        "equity_curve": primary.get("equity_curve"),  # primary run's curve
+        "equity_curve": primary.get("equity_curve"),
         "engine_version": resp.engine_version,
         "execution_time_ms": resp.execution_time_ms,
         "signal_hash": resp.signal_hash,

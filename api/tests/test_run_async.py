@@ -85,7 +85,7 @@ def test_async_success_writes_complete_and_mapped_fields(patched_data):
 
 
 def test_async_keeps_six_teaching_cards(patched_data):
-    # the whole point of the revision: an async run is a COMPARE run, so
+    # the whole point of ADR-037: an async run is a COMPARE run, so
     # results_detail._teaching carries the six blocks in order (not dropped).
     w = FakeWriter()
     asyncio.run(_run_async_job(_req(), w))
@@ -93,10 +93,52 @@ def test_async_keeps_six_teaching_cards(patched_data):
     assert "_teaching" in detail, "async run must keep the teaching cards"
     dims = [b["dimension"] for b in detail["_teaching"]]
     assert dims == TEACHING_DIMS
-    # verbatim from the compare pipeline: primary/variants/same_signal also present
-    assert "primary" in detail and "variants" in detail
-    assert [v["dimension"] for v in detail["variants"]] == TEACHING_DIMS
-    assert detail["same_signal"] is True
+    # same-signal flag under the app's key (ADR-038: leading underscore)
+    assert isinstance(detail["_same_signal"], bool)
+
+
+def _mixed_df():
+    # one winner then one LOSER (entry ~100, exit ~90) so max_drawdown (dollars) and
+    # max_drawdown_pct (percent) are both non-zero AND different — locks the DD unit.
+    rows = [
+        (99, 100, 99, 100, True, False),     # signal entry
+        (100, 100, 99, 100, False, False),   # entry fills @100
+        (100, 101, 99, 100, False, True),    # signal exit
+        (101, 102, 100, 101, False, False),  # exit fills @101 -> +1 winner
+        (101, 102, 101, 101, True, False),   # signal entry
+        (100, 100, 99, 100, False, False),   # entry fills @100
+        (95, 95, 90, 92, False, True),       # signal exit (dropped)
+        (90, 90, 89, 90, False, False),      # exit fills @90 -> big loss, drawdown
+        (90, 91, 90, 90, False, False),      # tail
+    ]
+    idx = pd.date_range("2023-01-02", periods=len(rows), freq="D")
+    return pd.DataFrame({
+        "Open": [r[0] for r in rows], "High": [r[1] for r in rows],
+        "Low": [r[2] for r in rows], "Close": [r[3] for r in rows],
+        "long_entry": [r[4] for r in rows], "long_exit": [r[5] for r in rows],
+    }, index=idx)
+
+
+def test_async_write_matches_sync_shape(monkeypatch):
+    # ADR-038: an async row must be byte-identical to what the sync edge function writes.
+    monkeypatch.setattr(server, "get_data", lambda: _mixed_df().copy())
+    w = FakeWriter()
+    asyncio.run(_run_async_job(_req(), w))
+    detail = w.row["results_detail"]
+
+    # _teaching: six blocks in order (the app reads detail._teaching)
+    assert [b["dimension"] for b in detail["_teaching"]] == TEACHING_DIMS
+    # _same_signal present as a bool (leading underscore — the key the app reads)
+    assert isinstance(detail["_same_signal"], bool)
+    # flattened primary KPIs at top level — Explain-panel fields survive
+    assert "net_profit" in detail
+    assert "sl_exit_count" in detail
+    assert "gross_profit" in detail and "avg_win_loss_ratio" in detail
+    # max_drawdown column holds the PERCENT (not the dollar value)
+    assert w.row["max_drawdown"] == detail["max_drawdown_pct"]
+    # fixture has a real drawdown, so percent != dollars — lock the unit
+    assert detail["max_drawdown_pct"] != detail["max_drawdown"]
+    assert w.row["max_drawdown"] != detail["max_drawdown"]
 
 
 def test_mapping_uses_primary_run_kpi_field_names(patched_data):
