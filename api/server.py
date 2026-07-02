@@ -142,9 +142,22 @@ _df_cache: Optional[pd.DataFrame] = None
 def load_firstrate_data(filepath: str) -> pd.DataFrame:
     """Load a FirstRateData (or header-prefixed) OHLCV file by absolute path.
 
-    The bundled ES file has no header; columns are:
+    Supports Parquet (ADR-035: the full 18-yr history ships as a compact, pre-parsed
+    Parquet so the deployed engine loads it lean) or CSV. Either path returns the SAME
+    shape: a DatetimeIndex + Open/High/Low/Close/Volume columns.
+
+    The bundled CSV has no header; columns are:
     timestamp, Open, High, Low, Close, Volume.
     """
+    # Parquet branch — must come first (the file is binary; the CSV path below opens
+    # it as text). The Parquet is written with the DatetimeIndex + OHLCV columns already
+    # in place, so it returns the identical frame shape to the CSV branch.
+    if filepath.endswith((".parquet", ".pq")):
+        df = pd.read_parquet(filepath, engine="pyarrow")
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.DatetimeIndex(df.index)
+        return df
+
     with open(filepath, "r") as f:
         first = f.readline().strip()
     has_header = first.startswith("timestamp") or first.startswith("date")
