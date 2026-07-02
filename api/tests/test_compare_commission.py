@@ -62,7 +62,7 @@ def _compare(monkeypatch, per_rt=PER_RT, n_cycles=N_CYCLES):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.10.0"
+    assert ENGINE_VERSION == "25.11.0"
 
 
 def test_three_teaching_blocks_in_order(monkeypatch):

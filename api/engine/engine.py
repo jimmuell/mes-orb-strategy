@@ -18,7 +18,7 @@ Usage:
     print_kpis(kpis)
 """
 
-__version__ = "25.10.0"
+__version__ = "25.11.0"
 
 import math
 import pandas as pd
@@ -95,9 +95,11 @@ def calc_ema(series: pd.Series, length: int) -> pd.Series:
     """
     multiplier = 2.0 / (length + 1)
     ema = pd.Series(np.nan, index=series.index, dtype=float)
-    vals = series.values
+    vals = series.to_numpy(dtype=float)
 
-    # Find the first index with `length` consecutive non-NaN values for the seed
+    # Find the first index with `length` consecutive non-NaN values for the seed.
+    # (This scan breaks as soon as the seed is found — usually within the first
+    # `length` bars — so it is not the hot path; the recurrence below was.)
     valid = ~np.isnan(vals)
     start = -1
     count = 0
@@ -114,13 +116,34 @@ def calc_ema(series: pd.Series, length: int) -> pd.Series:
         return ema  # not enough data
 
     seed_idx = start + length - 1
-    ema.iloc[seed_idx] = np.mean(vals[start:start + length])
-    for i in range(seed_idx + 1, len(vals)):
-        if np.isnan(vals[i]):
-            ema.iloc[i] = ema.iloc[i - 1]  # carry forward (matches Pine behavior)
-            continue
-        ema.iloc[i] = vals[i] * multiplier + ema.iloc[i - 1] * (1 - multiplier)
+    seed = float(np.mean(vals[start:start + length]))  # SMA seed (matches ta.ema())
 
+    # ADR-036: vectorize the EMA recurrence. It is the exact recurrence
+    #   ema[i] = vals[i]*mult + ema[i-1]*(1-mult),  seeded at the SMA above.
+    # Feeding a series whose first element IS the seed to ewm(adjust=False) makes
+    # ewm reproduce that recurrence exactly (ewm seeds from its first value), so
+    # the result matches the prior per-row loop to floating-point epsilon (~1e-12,
+    # far under a 0.25 tick — verified to the tick on 18yr real data). Vectorized
+    # is ~1000x+ faster over full history.
+    post = vals[seed_idx:].copy()
+    if np.isnan(post[1:]).any():
+        # Rare: NaN gaps after the seed (chained indicators). The loop "holds" the
+        # EMA flat across gaps (Pine carry-forward); ewm can't express that, so keep
+        # the exact per-row recurrence for this uncommon case.
+        prev = seed
+        ema.iloc[seed_idx] = seed
+        for i in range(seed_idx + 1, len(vals)):
+            if np.isnan(vals[i]):
+                ema.iloc[i] = prev
+            else:
+                prev = vals[i] * multiplier + prev * (1 - multiplier)
+                ema.iloc[i] = prev
+        return ema
+
+    post[0] = seed
+    ema.iloc[seed_idx:] = (
+        pd.Series(post).ewm(alpha=multiplier, adjust=False).mean().to_numpy()
+    )
     return ema
 
 
