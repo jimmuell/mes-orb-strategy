@@ -330,15 +330,19 @@ Recorded in full in [`ADR-037_async_execution.md`](ADR-037_async_execution.md). 
 `POST /run/async` (same body as `/run` + `run_id`): validates + returns **202** immediately, runs the
 backtest in an in-process FastAPI background task (`asyncio.to_thread`, no request clock — dodges
 Railway's ~60s proxy limit), and drives the caller-created `backtest_runs` Supabase row to a terminal
-state. `/run`'s body was extracted into `_execute_run_sync(req, on_progress)` (byte-identical sync
-behavior, no engine logic duplicated); `/run` is a thin wrapper. Progress fires at phase boundaries
-(10/20/60/90/100), best-effort. **Never stuck at running:** success → mapped result + `complete`; any
-error → `failed` + short `error_message`, with a last-resort guard. `api/supabase_writer.py` PATCHes
-by id via PostgREST (`requests`, no new dep); auth via NEW env vars `SUPABASE_URL` +
-`SUPABASE_SERVICE_ROLE_KEY` (503 if unset); injectable → unit-tested with a fake writer (no live
-Supabase). Result→column mapping (`net_pnl`←`net_profit`, `wins`←`num_winning`, etc.) lives in one
-place, `_map_success_columns`; `signal_hash` now also returned by `/run` (additive optional field).
-New `test_run_async.py`. `__version__` → `25.12.0`.
+state. The async job runs the **COMPARE** pipeline (same as `/run/compare`), so an async run keeps the
+six teaching cards. Both `/run` and `/run/compare` bodies were extracted into sync cores
+(`_execute_run_sync` / `_execute_compare_sync`, byte-identical behavior, no logic duplicated); the
+endpoints are thin wrappers. Progress fires at compare phase boundaries (10/20/50/80/95/100),
+best-effort. **Never stuck at running:** success → mapped result + `complete`; any error → `failed` +
+short `error_message`, with a last-resort guard. `results_detail` stores the compare result VERBATIM
+incl. `_teaching` (six blocks) — not rebuilt from parts. Summary columns come from the PRIMARY (user's)
+run's KPIs (`net_pnl`←`net_profit`, `wins`←`num_winning`, etc.); mapping lives in one place,
+`_map_compare_columns`. `api/supabase_writer.py` PATCHes by id via PostgREST (`requests`, no new dep);
+auth via NEW env vars `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (503 if unset); injectable →
+unit-tested with a fake writer (no live Supabase). `signal_hash` now on both `BacktestResponse` and
+`CompareResponse` (additive). New `test_run_async.py` (asserts `_teaching` 6 dims). `__version__` →
+`25.12.0`.
 
 ---
 

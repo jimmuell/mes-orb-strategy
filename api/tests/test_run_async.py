@@ -14,9 +14,11 @@ import pandas as pd
 import pytest
 
 import server
-from server import (AsyncBacktestRequest, _run_async_job, _map_success_columns,
-                    _execute_run_sync, BacktestRequest, run_async)
+from server import (AsyncBacktestRequest, _run_async_job, _map_compare_columns,
+                    _execute_compare_sync, BacktestRequest, run_async)
 from engine.engine import __version__ as ENGINE_VERSION
+
+TEACHING_DIMS = ["stop", "take_profit", "commission", "direction", "slippage", "position_size"]
 
 
 class FakeWriter:
@@ -80,17 +82,35 @@ def test_async_success_writes_complete_and_mapped_fields(patched_data):
     assert w.row["engine_version"] == ENGINE_VERSION
     assert w.row["signal_hash"] and isinstance(w.row["signal_hash"], str)
     assert isinstance(w.row["results_detail"], dict)
-    assert "kpis" in w.row["results_detail"]
 
 
-def test_mapping_uses_engine_kpi_field_names(patched_data):
-    resp = _execute_run_sync(BacktestRequest(**_req().model_dump(exclude={"run_id"})))
-    fields = _map_success_columns(resp)
-    assert fields["net_pnl"] == resp.kpis["net_profit"]
-    assert fields["wins"] == resp.kpis["num_winning"]
-    assert fields["losses"] == resp.kpis["num_losing"]
-    assert fields["avg_winner"] == resp.kpis["avg_winning"]
-    assert fields["avg_loser"] == resp.kpis["avg_losing"]
+def test_async_keeps_six_teaching_cards(patched_data):
+    # the whole point of the revision: an async run is a COMPARE run, so
+    # results_detail._teaching carries the six blocks in order (not dropped).
+    w = FakeWriter()
+    asyncio.run(_run_async_job(_req(), w))
+    detail = w.row["results_detail"]
+    assert "_teaching" in detail, "async run must keep the teaching cards"
+    dims = [b["dimension"] for b in detail["_teaching"]]
+    assert dims == TEACHING_DIMS
+    # verbatim from the compare pipeline: primary/variants/same_signal also present
+    assert "primary" in detail and "variants" in detail
+    assert [v["dimension"] for v in detail["variants"]] == TEACHING_DIMS
+    assert detail["same_signal"] is True
+
+
+def test_mapping_uses_primary_run_kpi_field_names(patched_data):
+    # summary columns come from the PRIMARY (user's) run's KPIs (compute_kpis names)
+    resp = _execute_compare_sync(BacktestRequest(**_req().model_dump(exclude={"run_id"})))
+    k = resp.primary["kpis"]
+    fields = _map_compare_columns(resp)
+    assert fields["net_pnl"] == k["net_profit"]
+    assert fields["wins"] == k["num_winning"]
+    assert fields["losses"] == k["num_losing"]
+    assert fields["avg_winner"] == k["avg_winning"]
+    assert fields["avg_loser"] == k["avg_losing"]
+    assert fields["equity_curve"] == resp.primary["equity_curve"]
+    assert fields["results_detail"]["_teaching"] == resp.teaching
     assert fields["status"] == "complete" and fields["progress"] == 100
 
 

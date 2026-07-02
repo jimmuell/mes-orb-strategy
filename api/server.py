@@ -744,14 +744,21 @@ def _short_reason(msg: Optional[str]) -> str:
     return str(msg).strip().splitlines()[0][:300]
 
 
-def _map_success_columns(resp: BacktestResponse) -> dict:
-    """Map a successful BacktestResponse onto backtest_runs columns — mirrors what the
-    run-history UI reads. KPI source keys are the engine's compute_kpis names."""
-    k = resp.kpis or {}
+def _map_compare_columns(resp: CompareResponse) -> dict:
+    """Map a successful COMPARE response onto backtest_runs columns (ADR-037 revision).
+
+    An async run IS a compare run, so the UI keeps its six teaching cards:
+    - results_detail carries the compare result VERBATIM, incl. `_teaching` (the six
+      blocks) — NOT rebuilt from parts, so async rows match a synchronous compare run.
+    - summary columns come from the PRIMARY (user's) run's KPIs (compute_kpis names).
+    """
+    primary = resp.primary or {}
+    k = primary.get("kpis") or {}
     results_detail = {
-        "kpis": resp.kpis,
-        "trades": resp.trades,
-        "equity_curve": resp.equity_curve,
+        "primary": resp.primary,
+        "variants": resp.variants,
+        "_teaching": resp.teaching,        # the six blocks, verbatim from the pipeline
+        "same_signal": resp.same_signal,
         "validation": resp.validation,
         "validation_error": resp.validation_error,
         "engine_version": resp.engine_version,
@@ -771,7 +778,7 @@ def _map_success_columns(resp: BacktestResponse) -> dict:
         "avg_winner": k.get("avg_winning"),
         "avg_loser": k.get("avg_losing"),
         "results_detail": results_detail,
-        "equity_curve": resp.equity_curve,
+        "equity_curve": primary.get("equity_curve"),  # primary run's curve
         "engine_version": resp.engine_version,
         "execution_time_ms": resp.execution_time_ms,
         "signal_hash": resp.signal_hash,
@@ -796,11 +803,12 @@ async def _run_async_job(req: AsyncBacktestRequest, writer) -> None:
 
     try:
         on_progress(10)  # job picked up
-        # AsyncBacktestRequest IS a BacktestRequest (subclass) — the core reads only
-        # base fields; run the blocking pipeline off the event loop.
-        resp = await asyncio.to_thread(_execute_run_sync, req, on_progress)
+        # AsyncBacktestRequest IS a BacktestRequest (subclass) — the compare core reads
+        # only base fields. Run the COMPARE pipeline (same as /run/compare) off the
+        # event loop, so an async run keeps the six teaching cards.
+        resp = await asyncio.to_thread(_execute_compare_sync, req, on_progress)
         if resp.status == "success":
-            writer.update_run(run_id, _map_success_columns(resp))
+            writer.update_run(run_id, _map_compare_columns(resp))
         else:
             writer.update_run(run_id, {
                 "status": "failed",
@@ -857,6 +865,7 @@ class CompareResponse(BaseModel):
     # identically on both endpoints (ADR-028). The variant is not validated.
     validation: Optional[dict] = None
     validation_error: Optional[str] = None
+    signal_hash: Optional[str] = None  # deterministic hash of the signal columns
 
 
 def _signal_hash(df: pd.DataFrame, cols) -> str:
@@ -1077,7 +1086,19 @@ def _validate_primary(closed_trades: list, df: pd.DataFrame,
 async def run_compare(req: BacktestRequest):
     """TEACH-COMPARE (ADR-026): run the user's config and a stop-neutralized variant
     against the SAME signal in one logical run; report exact teaching deltas."""
+    return _execute_compare_sync(req)
+
+
+def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResponse:
+    """Core /run/compare pipeline (ADR-037 revision): shared by the synchronous
+    /run/compare endpoint and the async background job. `on_progress(pct)` (optional)
+    fires at phase boundaries; the sync path passes None (no-op), so its behavior is
+    byte-identical. No compare/teaching logic is duplicated."""
     start_time = time.time()
+
+    def _progress(pct):
+        if on_progress is not None:
+            on_progress(pct)
 
     validation_error = validate_signal_code(req.signal_code)
     if validation_error:
@@ -1104,6 +1125,7 @@ async def run_compare(req: BacktestRequest):
 
         sig_cols = sorted(required)
         h_before = _signal_hash(df, sig_cols)
+        _progress(20)  # signal columns ready
 
         # 2) Primary = the user's full config (authoritative).
         primary_config = BacktestConfig(
@@ -1150,6 +1172,7 @@ async def run_compare(req: BacktestRequest):
         size_variant_config = dataclasses.replace(primary_config, qty_type="fixed", qty_value=1.0)
 
         primary_result, primary_closed = _serialize_run(df, req.direction, primary_config)
+        _progress(50)  # primary (user's) run done
         h_mid = _signal_hash(df, sig_cols)   # engine copies df, so the signal must be untouched
         variant_result, variant_closed = _serialize_run(df, req.direction, variant_config)
         h_after = _signal_hash(df, sig_cols)
@@ -1455,6 +1478,8 @@ async def run_compare(req: BacktestRequest):
             "result": size_variant_result,
         })
 
+        _progress(80)  # all variants + teaching blocks built
+
         # 6) Standard Edge-vs-Luck validation for the PRIMARY (user's) config only
         #    (ADR-028), gated on run_validation exactly like /run. Variant is not
         #    validated. Same field names as /run so the app reads it identically.
@@ -1462,6 +1487,8 @@ async def run_compare(req: BacktestRequest):
         if req.run_validation:
             validation, validation_error = _validate_primary(
                 primary_closed, df, req.validation_iterations)
+
+        _progress(95)  # validation done; finalizing
 
         # Single numpy->native coercion pass over every structure carrying engine
         # values, so no field can reintroduce the numpy-serialization 500 (ADR-031).
@@ -1475,6 +1502,7 @@ async def run_compare(req: BacktestRequest):
             same_signal=bool(same_signal),
             validation=_to_native(validation),
             validation_error=validation_error,
+            signal_hash=h_before,
         )
 
     except Exception as e:
