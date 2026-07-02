@@ -294,6 +294,20 @@ compounding-aware comparison for %/cash sizing. Additive; `__version__` → `25.
 
 ---
 
+## ADR-035 — Ship full 18-year history to the live engine via Parquet
+
+Recorded in full in [`ADR-035_full_history_parquet.md`](ADR-035_full_history_parquet.md).
+Converts the full 18-yr ES 5-min CSV (68 MB, 1,289,036 rows) to a compact Parquet
+(`api/data/ES_full_5min_continuous_UNadjusted.parquet`, **18.97 MB**, float32 OHLC / int32 Volume,
+round-trip **exact to the tick**), committed into the deploy as a regular blob. `load_firstrate_data`
+gains a `.parquet` branch (`pyarrow`, added to runtime reqs); CSV branch unchanged; **`DATA_PATH`
+default stays the 6-month CSV** (fail-safe) — prod overrides it via a Railway env var post-merge.
+`scripts/csv_to_parquet.py` committed for reproducibility. Measured: DataFrame ~34 MB, process peak
+RSS ~266 MB; Run-014 ORB reproduces **exactly 91 trades** on 18 yr. Flagged gates beyond memory: the
+10s signal-exec timeout and ~tens-of-seconds backtest wall time. Additive; `__version__` → `25.10.0`.
+
+---
+
 ## ADR-036 — Vectorize `calc_ema` (remove the 10s signal-exec cap)
 
 Recorded in full in [`ADR-036_vectorize_ema.md`](ADR-036_vectorize_ema.md). `calc_ema`'s per-row
