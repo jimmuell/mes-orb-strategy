@@ -71,7 +71,7 @@ def _teaching(monkeypatch, kinds):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.12.0"
+    assert ENGINE_VERSION == "25.13.0"
 
 
 def test_golden_ci_reproducible_and_inconclusive(monkeypatch):
