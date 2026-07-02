@@ -294,6 +294,22 @@ compounding-aware comparison for %/cash sizing. Additive; `__version__` → `25.
 
 ---
 
+## ADR-036 — Vectorize `calc_ema` (remove the 10s signal-exec cap)
+
+Recorded in full in [`ADR-036_vectorize_ema.md`](ADR-036_vectorize_ema.md). `calc_ema`'s per-row
+Python loop was slow enough over full history to trip the 10s `SIGNAL_EXEC_TIMEOUT` (capping live
+backtests at ~5–6 yr). Vectorized the recurrence via `ewm(alpha=2/(length+1), adjust=False).mean()`,
+**preserving exact semantics**: the SMA seed (feed a post-seed series whose first element IS the SMA
+seed, so `ewm` reproduces the recurrence) and NaN carry-forward (exact per-row loop kept for the rare
+NaN-gap case). **Speed change, not a results change** — verified: values match the reference loop to
+~1e-12 (tick-identical) on 18 yr, and a before/after EMA-crossover backtest on 5-yr and 10-yr ranges
+produced **byte-identical trade lists** (count/entries/exits/net). 18-yr signal step 30.67s → 0.034s
+(~894×). Signature unchanged (all callers get it transparently). Follow-ups (each needs its own
+trade-identity proof): `calc_smma` (same SMA-seed EMA pattern), `calc_obv` (cumsum), `calc_wma`
+(rolling apply). New `test_calc_ema.py`. `__version__` → `25.11.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
