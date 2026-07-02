@@ -267,6 +267,19 @@ column can't 500 all cards (ADR-031 lesson). Additive; `__version__` → `25.7.0
 
 ---
 
+## ADR-033 — Slippage dimension on TEACH-COMPARE ("what slippage cost you")
+
+Recorded in full in [`ADR-033_compare_slippage.md`](ADR-033_compare_slippage.md).
+Appends a FIFTH `teaching` block — `slippage` — after stop / take_profit / commission / direction.
+Clean mirror of the commission dimension: `slippage_ticks` modifies every fill, so the standard
+`_paired_deltas` + `_delta_significance` apply directly (no special handling — that was only for
+direction). Neutralizer zeroes `slippage_ticks`; a sixth `_serialize_run` on the same signal df
+(`same_signal` spans all six runs). `delta_net = primary − variant ≤ 0` → "cost" (or "neutral" at
+0 ticks); `total_slippage = variant_net − primary_net` (`delta_net == −total_slippage`), plus
+`slippage_ticks`/`flips_profitability`. Additive; `__version__` → `25.8.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
