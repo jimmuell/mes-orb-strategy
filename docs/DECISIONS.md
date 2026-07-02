@@ -324,6 +324,24 @@ trade-identity proof): `calc_smma` (same SMA-seed EMA pattern), `calc_obv` (cums
 
 ---
 
+## ADR-037 — Async backtest execution (background job → Supabase)
+
+Recorded in full in [`ADR-037_async_execution.md`](ADR-037_async_execution.md). Adds
+`POST /run/async` (same body as `/run` + `run_id`): validates + returns **202** immediately, runs the
+backtest in an in-process FastAPI background task (`asyncio.to_thread`, no request clock — dodges
+Railway's ~60s proxy limit), and drives the caller-created `backtest_runs` Supabase row to a terminal
+state. `/run`'s body was extracted into `_execute_run_sync(req, on_progress)` (byte-identical sync
+behavior, no engine logic duplicated); `/run` is a thin wrapper. Progress fires at phase boundaries
+(10/20/60/90/100), best-effort. **Never stuck at running:** success → mapped result + `complete`; any
+error → `failed` + short `error_message`, with a last-resort guard. `api/supabase_writer.py` PATCHes
+by id via PostgREST (`requests`, no new dep); auth via NEW env vars `SUPABASE_URL` +
+`SUPABASE_SERVICE_ROLE_KEY` (503 if unset); injectable → unit-tested with a fake writer (no live
+Supabase). Result→column mapping (`net_pnl`←`net_profit`, `wins`←`num_winning`, etc.) lives in one
+place, `_map_success_columns`; `signal_hash` now also returned by `/run` (additive optional field).
+New `test_run_async.py`. `__version__` → `25.12.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
