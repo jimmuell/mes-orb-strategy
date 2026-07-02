@@ -994,6 +994,10 @@ async def run_compare(req: BacktestRequest):
         #     adverse ticks applied to every fill. Every trade is modified (fills move), so the
         #     paired-delta bootstrap applies exactly like commission/stop/TP.
         slippage_variant_config = dataclasses.replace(primary_config, slippage_ticks=0)
+        # 3e) Position-size dimension (ADR-034): neutralize to ONE fixed contract. Not a clean
+        #     mirror — size has no "zero" and for fixed sizing it just MULTIPLIES every result
+        #     (and the drawdown). The card teaches risk amplification, not edge; no bootstrap.
+        size_variant_config = dataclasses.replace(primary_config, qty_type="fixed", qty_value=1.0)
 
         primary_result, primary_closed = _serialize_run(df, req.direction, primary_config)
         h_mid = _signal_hash(df, sig_cols)   # engine copies df, so the signal must be untouched
@@ -1021,9 +1025,12 @@ async def run_compare(req: BacktestRequest):
         h_after_direction = _signal_hash(df, sig_cols)
         slippage_variant_result, slippage_variant_closed = _serialize_run(
             df, req.direction, slippage_variant_config)
-        h_after_slippage = _signal_hash(df, sig_cols)   # signal must survive all six runs
-        same_signal = (h_before == h_mid == h_after == h_after_tp
-                       == h_after_commission == h_after_direction == h_after_slippage)
+        h_after_slippage = _signal_hash(df, sig_cols)
+        size_variant_result, size_variant_closed = _serialize_run(
+            df, req.direction, size_variant_config)
+        h_after_position = _signal_hash(df, sig_cols)   # signal must survive all seven runs
+        same_signal = (h_before == h_mid == h_after == h_after_tp == h_after_commission
+                       == h_after_direction == h_after_slippage == h_after_position)
 
         # 4) Teaching deltas — deterministic arithmetic, from the stop's POV.
         primary_net = primary_result["kpis"].get("net_profit") or 0.0
@@ -1253,6 +1260,49 @@ async def run_compare(req: BacktestRequest):
             "label": "no slippage",
             "neutralized": {"slippage_ticks": 0},
             "result": slippage_variant_result,
+        })
+
+        # 5f) Position-size dimension (ADR-034) — the 6th/final, and NOT a clean mirror. Neutralize
+        #     to 1 fixed contract. For fixed sizing the effect is a pure deterministic multiplier
+        #     (size scales BOTH net AND drawdown, never the edge), so there is no "real vs luck"
+        #     test — significance is "deterministic", not bootstrapped. delta_net = primary − variant
+        #     (variant = 1-contract baseline). Neutral is decided by the sizing config, not the sign.
+        size_variant_net = size_variant_result["kpis"].get("net_profit") or 0.0
+        size_delta_net = primary_net - size_variant_net
+
+        if req.qty_type == "fixed" and req.qty_value == 1.0:
+            size_direction = "neutral"          # the run already IS the 1-contract baseline
+        elif req.qty_type != "fixed":
+            size_direction = "neutral"          # v1: %/cash sizing vs 1 fixed contract is misleading
+        elif size_delta_net > 0:
+            size_direction = "saved"
+        elif size_delta_net < 0:
+            size_direction = "cost"
+        else:
+            size_direction = "neutral"
+
+        _size_is_fixed = req.qty_type == "fixed"
+        teaching.append({
+            "dimension": "position_size",
+            "delta_net": size_delta_net,
+            "direction": size_direction,
+            "contracts": req.qty_value if _size_is_fixed else None,
+            "qty_type": req.qty_type,
+            "size_multiple": req.qty_value if _size_is_fixed else None,   # user size / 1 contract
+            "primary_net": primary_net,
+            "variant_net": size_variant_net,                              # 1-contract baseline
+            "primary_max_dd": primary_result["kpis"].get("max_drawdown"),
+            "variant_max_dd": size_variant_result["kpis"].get("max_drawdown"),
+            "flips_profitability": False,        # pure scaling never flips the sign for fixed sizing
+            "trade_count": len(primary_closed),
+            "significance": "deterministic",     # no bootstrap — the effect is a multiplier
+            "sufficient_data": sufficient_data,
+        })
+        variants.append({
+            "dimension": "position_size",
+            "label": "1 contract",
+            "neutralized": {"qty_type": "fixed", "qty_value": 1.0},
+            "result": size_variant_result,
         })
 
         # 6) Standard Edge-vs-Luck validation for the PRIMARY (user's) config only

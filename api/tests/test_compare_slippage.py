@@ -60,15 +60,16 @@ def _compare(monkeypatch, ticks=TICKS, n_cycles=N_CYCLES):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.8.0"
+    assert ENGINE_VERSION == "25.9.0"
 
 
 def test_five_teaching_blocks_in_order(monkeypatch):
     resp = _compare(monkeypatch)
+    # stop..slippage in order (ADR-034 appends position_size sixth).
     order = ["stop", "take_profit", "commission", "direction", "slippage"]
-    assert [b["dimension"] for b in resp.teaching] == order
-    assert [v["dimension"] for v in resp.variants] == order
-    assert resp.same_signal is True   # signal survived all SIX runs
+    assert [b["dimension"] for b in resp.teaching][:5] == order
+    assert [v["dimension"] for v in resp.variants][:5] == order
+    assert resp.same_signal is True   # signal survived all runs
 
 
 def test_slippage_block_cost_and_delta(monkeypatch):

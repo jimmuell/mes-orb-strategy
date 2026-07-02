@@ -280,6 +280,20 @@ direction). Neutralizer zeroes `slippage_ticks`; a sixth `_serialize_run` on the
 
 ---
 
+## ADR-034 — Position-size dimension on TEACH-COMPARE ("what your size did")
+
+Recorded in full in [`ADR-034_compare_position_size.md`](ADR-034_compare_position_size.md).
+Appends the SIXTH & final `teaching` block — `position_size` — after slippage. Deliberately NOT a
+clean mirror: size has no "zero" and for fixed sizing it's a pure deterministic multiplier.
+Neutralizer forces 1 fixed contract; a seventh `_serialize_run` on the same signal df (`same_signal`
+spans all seven runs). `delta_net = primary − 1-contract variant`; direction is decided by the sizing
+config (fixed 1 → neutral; non-fixed → neutral in v1), NOT the sign. **No bootstrap** —
+`significance: "deterministic"`. Surfaces `primary_max_dd`/`variant_max_dd` to teach risk
+amplification (size scales net AND drawdown), plus `contracts`/`size_multiple`. Follow-up: a
+compounding-aware comparison for %/cash sizing. Additive; `__version__` → `25.9.0`.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
