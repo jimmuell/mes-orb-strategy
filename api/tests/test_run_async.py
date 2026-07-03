@@ -59,7 +59,8 @@ def patched_data(monkeypatch):
 def _req(**kw):
     base = dict(signal_code="pass", direction="long_only", run_validation=False,
                 start_date="2023-01-01", end_date="2024-12-31", run_id="row-123",
-                callback_url="https://example.test/cb", callback_secret="test")
+                callback_url="https://test.supabase.co/functions/v1/backtest-callback",
+                callback_secret="test")
     base.update(kw)
     return AsyncBacktestRequest(**base)
 
@@ -214,3 +215,25 @@ def test_endpoint_400_when_callback_missing(patched_data):
     with pytest.raises(server.HTTPException) as ei:
         asyncio.run(run_async(_req(callback_url="", callback_secret=""), BG()))
     assert ei.value.status_code == 400
+
+
+def test_run_async_rejects_ssrf_callback_url(monkeypatch, patched_data):
+    # SSRF guard: metadata / private / external / userinfo-bypass hosts -> 400, no POST.
+    fake = FakeWriter()
+    monkeypatch.setattr(server, "get_callback_writer", lambda *a, **k: fake)
+
+    class BG:
+        def add_task(self, *a, **k):
+            raise AssertionError("must not schedule work for a disallowed callback_url")
+
+    bad_urls = [
+        "http://169.254.169.254/",           # cloud metadata (also http, not https)
+        "https://evil.com/",                 # external host
+        "http://127.0.0.1/",                 # loopback
+        "https://ok.supabase.co@evil.com/",  # userinfo bypass — real host is evil.com
+    ]
+    for url in bad_urls:
+        with pytest.raises(server.HTTPException) as ei:
+            asyncio.run(run_async(_req(callback_url=url), BG()))
+        assert ei.value.status_code == 400, url
+    assert fake.calls == []   # no callback POST attempted for any rejected URL

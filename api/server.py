@@ -45,7 +45,7 @@ from engine import (
     calc_highest, calc_lowest, calc_donchian, calc_ichimoku, get_source,
 )
 from engine.engine import __version__ as ENGINE_VERSION
-from callback_writer import get_callback_writer
+from callback_writer import get_callback_writer, is_allowed_callback_url
 
 import pandas as pd
 import numpy as np
@@ -847,6 +847,10 @@ async def run_async(req: AsyncBacktestRequest, background_tasks: BackgroundTasks
             status_code=400,
             detail="callback_url and callback_secret are required",
         )
+    # SSRF guard (ADR-040): only POST to the allowed Supabase functions host. Rejected
+    # before any request is made / the background task is scheduled.
+    if not is_allowed_callback_url(req.callback_url):
+        raise HTTPException(status_code=400, detail="callback_url host not allowed")
     background_tasks.add_task(_run_async_job, req, writer)
     return JSONResponse(status_code=202, content={"run_id": req.run_id, "status": "accepted"})
 
