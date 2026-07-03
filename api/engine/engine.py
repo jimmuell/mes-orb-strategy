@@ -18,7 +18,7 @@ Usage:
     print_kpis(kpis)
 """
 
-__version__ = "25.15.0"
+__version__ = "25.16.0"
 
 import math
 import pandas as pd
@@ -159,16 +159,15 @@ def detect_crossunder(fast: pd.Series, slow: pd.Series) -> pd.Series:
 
 def calc_smma(series: pd.Series, length: int) -> pd.Series:
     """
-    Smoothed Moving Average matching TradingView's ``ta.rma()``.
-
-    Also known as RMA / Wilder's smoothing.
-    Formula: ``smma[i] = (smma[i-1] * (length - 1) + src[i]) / length``
-    Seed: SMA of the first *length* **valid** values.
+    Smoothed Moving Average matching TradingView's ``ta.rma()`` (RMA / Wilder's).
+    Formula: smma[i] = (smma[i-1]*(length-1) + src[i]) / length ; seed = SMA of first
+    `length` valid values. This recurrence == EMA with alpha = 1/length (adjust=False),
+    seeded at the SMA — so ewm reproduces it exactly (ADR-041, mirrors ADR-036's calc_ema).
     """
-    smma = pd.Series(np.nan, index=series.index)
-    vals = series.values
+    smma = pd.Series(np.nan, index=series.index, dtype=float)
+    vals = series.to_numpy(dtype=float)
 
-    # Find seed from first `length` consecutive non-NaN values
+    # Seed = first run of `length` consecutive non-NaN values (short scan, not the hot path).
     valid = ~np.isnan(vals)
     start = -1
     count = 0
@@ -180,34 +179,48 @@ def calc_smma(series: pd.Series, length: int) -> pd.Series:
                 break
         else:
             count = 0
-
     if start < 0:
-        return smma
+        return smma  # not enough data
 
     seed_idx = start + length - 1
-    smma.iloc[seed_idx] = np.mean(vals[start:start + length])
-    for i in range(seed_idx + 1, len(vals)):
-        if np.isnan(vals[i]):
-            smma.iloc[i] = smma.iloc[i - 1]  # carry forward (matches Pine behavior)
-            continue
-        smma.iloc[i] = (smma.iloc[i - 1] * (length - 1) + vals[i]) / length
+    seed = float(np.mean(vals[start:start + length]))
+    post = vals[seed_idx:].copy()
 
+    if np.isnan(post[1:]).any():
+        # Rare: NaN gaps after the seed (chained indicators). The loop holds SMMA flat across
+        # gaps (Pine carry-forward); ewm can't express that, so keep the exact recurrence here.
+        prev = seed
+        smma.iloc[seed_idx] = seed
+        for i in range(seed_idx + 1, len(vals)):
+            if np.isnan(vals[i]):
+                smma.iloc[i] = prev
+            else:
+                prev = (prev * (length - 1) + vals[i]) / length
+                smma.iloc[i] = prev
+        return smma
+
+    post[0] = seed
+    smma.iloc[seed_idx:] = (
+        pd.Series(post).ewm(alpha=1.0 / length, adjust=False).mean().to_numpy()
+    )
     return smma
 
 
 def calc_wma(series: pd.Series, length: int) -> pd.Series:
     """
-    Weighted Moving Average matching TradingView's ``ta.wma()``.
-
-    Weights increase linearly: ``[1, 2, 3, ..., length]``.
+    Weighted Moving Average matching TradingView's ``ta.wma()``; weights [1,2,...,length].
+    ADR-041: replace rolling().apply() (a Python call per window) with one vectorized
+    sliding-window dot product. NaN in any window propagates to NaN, matching the old
+    rolling(min_periods=length) exactly; the first length-1 rows stay NaN.
     """
-    weights = np.arange(1, length + 1, dtype=float)
-    weight_sum = weights.sum()
-
-    def _weighted_avg(window):
-        return np.dot(window, weights) / weight_sum
-
-    return series.rolling(window=length, min_periods=length).apply(_weighted_avg, raw=True)
+    vals = series.to_numpy(dtype=float)
+    n = len(vals)
+    out = np.full(n, np.nan)
+    if n >= length:
+        weights = np.arange(1, length + 1, dtype=float)
+        windows = np.lib.stride_tricks.sliding_window_view(vals, length)
+        out[length - 1:] = windows @ weights / weights.sum()
+    return pd.Series(out, index=series.index)
 
 
 def calc_hma(series: pd.Series, length: int) -> pd.Series:
@@ -363,23 +376,15 @@ def calc_donchian(
 
 def calc_obv(close: pd.Series, volume: pd.Series) -> pd.Series:
     """
-    On-Balance Volume matching TradingView's ``ta.obv``.
-
-    OBV accumulates volume: +volume when close > prev close,
-    −volume when close < prev close, unchanged otherwise.
+    On-Balance Volume matching TradingView's ``ta.obv``: +vol when close>prev, -vol when
+    close<prev, unchanged on ties. ADR-041: sign(diff)*vol then cumsum (obv[0]=0).
     """
-    close_v = close.values
-    vol_v = volume.values
-    n = len(close_v)
-    obv = np.zeros(n)
-    for i in range(1, n):
-        if close_v[i] > close_v[i - 1]:
-            obv[i] = obv[i - 1] + vol_v[i]
-        elif close_v[i] < close_v[i - 1]:
-            obv[i] = obv[i - 1] - vol_v[i]
-        else:
-            obv[i] = obv[i - 1]
-    return pd.Series(obv, index=close.index)
+    c = close.to_numpy(dtype=float)
+    v = volume.to_numpy(dtype=float)
+    diff = np.diff(c, prepend=c[0])  # diff[0] = 0
+    step = np.where(diff > 0, v, np.where(diff < 0, -v, 0.0))
+    step[0] = 0.0
+    return pd.Series(np.cumsum(step), index=close.index)
 
 
 def calc_ichimoku(
