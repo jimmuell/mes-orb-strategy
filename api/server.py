@@ -45,7 +45,7 @@ from engine import (
     calc_highest, calc_lowest, calc_donchian, calc_ichimoku, get_source,
 )
 from engine.engine import __version__ as ENGINE_VERSION
-from supabase_writer import get_supabase_writer
+from callback_writer import get_callback_writer, is_allowed_callback_url
 
 import pandas as pd
 import numpy as np
@@ -250,9 +250,12 @@ class BacktestResponse(BaseModel):
 
 
 class AsyncBacktestRequest(BacktestRequest):
-    """Same body as /run plus the caller-created backtest_runs row id (ADR-037).
-    The engine drives that Supabase row to completion in the background."""
+    """Same body as /run plus the caller-created backtest_runs row id (ADR-037) and the
+    callback transport (ADR-040): the engine POSTs progress/results to `callback_url`
+    (the backtest-callback edge function), authenticated with `callback_secret`."""
     run_id: str = Field(..., description="UUID of the caller-created backtest_runs row")
+    callback_url: str = Field(..., description="backtest-callback edge function URL")
+    callback_secret: str = Field(..., description="shared secret sent as X-Callback-Secret")
 
 
 SAFE_BUILTINS = {
@@ -838,12 +841,16 @@ async def _run_async_job(req: AsyncBacktestRequest, writer) -> None:
 async def run_async(req: AsyncBacktestRequest, background_tasks: BackgroundTasks):
     """Accept a backtest job, return 202 immediately, run it in the background and write
     progress + result to the backtest_runs row (ADR-037). The sync /run is unchanged."""
-    writer = get_supabase_writer()
+    writer = get_callback_writer(req.callback_url, req.callback_secret)
     if writer is None:
         raise HTTPException(
-            status_code=503,
-            detail="Supabase not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY",
+            status_code=400,
+            detail="callback_url and callback_secret are required",
         )
+    # SSRF guard (ADR-040): only POST to the allowed Supabase functions host. Rejected
+    # before any request is made / the background task is scheduled.
+    if not is_allowed_callback_url(req.callback_url):
+        raise HTTPException(status_code=400, detail="callback_url host not allowed")
     background_tasks.add_task(_run_async_job, req, writer)
     return JSONResponse(status_code=202, content={"run_id": req.run_id, "status": "accepted"})
 

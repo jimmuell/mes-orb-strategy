@@ -1,8 +1,8 @@
-"""ADR-037 — async backtest execution (/run/async + Supabase writer).
+"""ADR-037/040 — async backtest execution (/run/async + callback writer).
 
-Exercises the async flow with a FAKE writer — no live Supabase. Asserts:
+Exercises the async flow with a FAKE writer — no live callback. Asserts:
 - /run/async returns 202 quickly with {run_id} and does not block on the backtest;
-- 503 when Supabase env vars are unset;
+- 400 when callback_url/callback_secret are missing (ADR-040);
 - progress advances; success writes the mapped result + status='complete';
 - a forced error writes status='failed' + error_message (never stuck at 'running');
 - the exact result->column mapping matches the engine's KPI fields.
@@ -58,7 +58,9 @@ def patched_data(monkeypatch):
 
 def _req(**kw):
     base = dict(signal_code="pass", direction="long_only", run_validation=False,
-                start_date="2023-01-01", end_date="2024-12-31", run_id="row-123")
+                start_date="2023-01-01", end_date="2024-12-31", run_id="row-123",
+                callback_url="https://test.supabase.co/functions/v1/backtest-callback",
+                callback_secret="test")
     base.update(kw)
     return AsyncBacktestRequest(**base)
 
@@ -189,11 +191,11 @@ def test_progress_failure_does_not_abort_job(patched_data):
     assert w.row["progress"] == 100
 
 
-# --- endpoint: 202 fast + 503 when unconfigured ------------------------------
+# --- endpoint: 202 fast + 400 when callback missing --------------------------
 
 def test_endpoint_202_and_does_not_block(monkeypatch, patched_data):
     captured = {}
-    monkeypatch.setattr(server, "get_supabase_writer", lambda: FakeWriter())
+    monkeypatch.setattr(server, "get_callback_writer", lambda *a, **k: FakeWriter())
 
     class BG:
         def add_task(self, fn, *a, **k):
@@ -205,12 +207,33 @@ def test_endpoint_202_and_does_not_block(monkeypatch, patched_data):
     assert captured["task"][0] is _run_async_job     # the backtest was deferred
 
 
-def test_endpoint_503_when_supabase_unset(monkeypatch, patched_data):
-    monkeypatch.setattr(server, "get_supabase_writer", lambda: None)
+def test_endpoint_400_when_callback_missing(patched_data):
+    # empty callback_url/secret -> real get_callback_writer returns None -> 400
+    class BG:
+        def add_task(self, *a, **k):
+            raise AssertionError("must not queue work when callback missing")
+    with pytest.raises(server.HTTPException) as ei:
+        asyncio.run(run_async(_req(callback_url="", callback_secret=""), BG()))
+    assert ei.value.status_code == 400
+
+
+def test_run_async_rejects_ssrf_callback_url(monkeypatch, patched_data):
+    # SSRF guard: metadata / private / external / userinfo-bypass hosts -> 400, no POST.
+    fake = FakeWriter()
+    monkeypatch.setattr(server, "get_callback_writer", lambda *a, **k: fake)
 
     class BG:
         def add_task(self, *a, **k):
-            raise AssertionError("must not queue work when unconfigured")
-    with pytest.raises(server.HTTPException) as ei:
-        asyncio.run(run_async(_req(), BG()))
-    assert ei.value.status_code == 503
+            raise AssertionError("must not schedule work for a disallowed callback_url")
+
+    bad_urls = [
+        "http://169.254.169.254/",           # cloud metadata (also http, not https)
+        "https://evil.com/",                 # external host
+        "http://127.0.0.1/",                 # loopback
+        "https://ok.supabase.co@evil.com/",  # userinfo bypass — real host is evil.com
+    ]
+    for url in bad_urls:
+        with pytest.raises(server.HTTPException) as ei:
+            asyncio.run(run_async(_req(callback_url=url), BG()))
+        assert ei.value.status_code == 400, url
+    assert fake.calls == []   # no callback POST attempted for any rejected URL
