@@ -18,7 +18,7 @@ Usage:
     print_kpis(kpis)
 """
 
-__version__ = "25.16.0"
+__version__ = "25.17.0"
 
 import math
 import pandas as pd
@@ -39,6 +39,12 @@ MES_POINT_VALUE = 5.0  # $ per index point per contract (4 ticks * $1.25)
 # MES_POINT_VALUE must match _ENGINE_INSTRUMENT.point_value — ADR-018). If MES ever
 # reprices, change both together.
 MES_TICK_SIZE = 0.25  # 4 ticks = 1 point
+
+# Generation-quality (churn) heuristics (ADR-042). A signal that re-fires every bar and exits
+# almost immediately at the entry ("re-touch") is noise, not an edge — these flag it. Additive
+# only: they never affect P&L or trade generation. Tunable.
+CHURN_TPD_MAX = 4.0   # trades/day above this ...
+CHURN_HOLD_MAX = 1    # ... AND median holding <= this many bars => churn suspected
 
 
 # ---------------------------------------------------------------------------
@@ -624,6 +630,47 @@ def _check_tpsl_fill(
 # Core backtest engine
 # ---------------------------------------------------------------------------
 
+def _quality_metrics(trades, df: pd.DataFrame, config: BacktestConfig) -> dict:
+    """ADR-042: deterministic generation-quality (churn) guard.
+
+    Purely additive — reads the FINISHED trade list to describe HOW the signal traded.
+    Touches no P&L, KPI, or trade-generation logic, so trades stay byte-identical. Makes a
+    churning re-touch signal (fires every bar, exits at the entry) loud instead of silent.
+    """
+    n = len(trades)
+
+    # trades_per_day = total trades / distinct calendar days that had an entry (0 trades -> 0.0)
+    entry_days = {t.entry_date.date() for t in trades if t.entry_date is not None}
+    trades_per_day = (n / len(entry_days)) if entry_days else 0.0
+
+    # Single pass over closed trades: holding in BARS via the bar index (exact), and re-touch exits.
+    hold_bars = []
+    retouch = 0
+    for t in trades:
+        if t.exit_date is None or t.exit_price is None:
+            continue  # skip still-open trades
+        i0, i1 = df.index.get_indexer([t.entry_date, t.exit_date])
+        if i0 == -1 or i1 == -1:
+            continue  # dates not on the bar index (defensive; trade dates come from df.index)
+        held = int(i1 - i0)
+        hold_bars.append(held)
+        if held <= 1 and abs(t.exit_price - t.entry_price) <= MES_TICK_SIZE:
+            retouch += 1
+
+    median_holding_bars = float(np.median(hold_bars)) if hold_bars else 0.0
+    retouch_exit_share = (retouch / n) if n else 0.0
+    churn_suspected = bool(
+        trades_per_day > CHURN_TPD_MAX and median_holding_bars <= CHURN_HOLD_MAX
+    )
+
+    return {
+        "trades_per_day": trades_per_day,
+        "median_holding_bars": median_holding_bars,
+        "retouch_exit_share": retouch_exit_share,
+        "churn_suspected": churn_suspected,
+    }
+
+
 def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     """
     Run a long-only backtest matching TradingView behaviour.
@@ -1007,6 +1054,8 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> dict:
     # Surface the per-bar equity series the engine already builds (additive — the
     # KPI/drawdown math above is unchanged). Server serializes/downsamples it.
     kpis["equity_curve"] = equity_curve
+    # ADR-042: deterministic churn/quality guard (additive — no P&L or trade math touched).
+    kpis["quality"] = _quality_metrics(trades, df, config)
     return kpis
 
 
@@ -1691,6 +1740,8 @@ def run_backtest_long_short(df: pd.DataFrame, config: BacktestConfig) -> dict:
     # Surface the per-bar equity series the engine already builds (additive — the
     # KPI/drawdown math above is unchanged). Server serializes/downsamples it.
     kpis["equity_curve"] = equity_curve
+    # ADR-042: deterministic churn/quality guard (additive — no P&L or trade math touched).
+    kpis["quality"] = _quality_metrics(trades, df, config)
     return kpis
 
 

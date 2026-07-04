@@ -59,7 +59,7 @@ def _compare(monkeypatch, direction, longs, shorts):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.16.0"
+    assert ENGINE_VERSION == "25.17.0"
 
 
 def test_four_teaching_blocks_in_order(monkeypatch):

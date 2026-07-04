@@ -346,6 +346,32 @@ unit-tested with a fake writer (no live Supabase). `signal_hash` now on both `Ba
 
 ---
 
+## ADR-042 — Deterministic generation-quality (churn) guard on KPIs
+
+**Status:** Accepted (v25.17.0)
+
+**Context:** A signal that re-fires every bar and exits immediately at its entry ("re-touch"
+churn) can post plausible-looking KPIs while being pure noise — silent, not loud.
+
+**Decision:** Add `_quality_metrics(trades, df, config)` in `api/engine/engine.py` and attach its
+result as `kpis["quality"]` at the end of BOTH `run_backtest` and `run_backtest_long_short`. It
+reports `trades_per_day` (len(trades) / distinct entry-days; 0 trades → 0.0), `median_holding_bars`
+(exact, via `df.index.get_indexer` on entry/exit dates; open trades skipped), `retouch_exit_share`
+(held ≤ 1 bar AND |exit−entry| ≤ 0.25), and `churn_suspected` (`trades_per_day > CHURN_TPD_MAX`
+**and** `median_holding_bars <= CHURN_HOLD_MAX`). Module constants `CHURN_TPD_MAX = 4.0`,
+`CHURN_HOLD_MAX = 1` (heuristics, tunable). `kpis` already flows into `results_detail`, so no other
+plumbing is needed.
+
+**Consequence:** Purely additive and deterministic — it only READS the finished trade list, so P&L,
+every existing KPI field, trade generation, the signal cache, and determinism are unchanged; trades
+stay **byte-identical**. New `test_quality_metrics.py` (churn → flagged, sane → not, additive-shape,
+both engine paths, zero-trades). `__version__` → **25.17.0**.
+
+**RULE:** `quality` is a describe-only guard — never let it (or its thresholds) influence fills,
+sizing, KPIs, or which trades are generated.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
