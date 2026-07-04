@@ -372,6 +372,45 @@ sizing, KPIs, or which trades are generated.
 
 ---
 
+## ADR-043 — Slice the signaled df to the range before the engine bar-loop
+
+**Status:** Accepted (v25.18.0)
+
+**Context:** `run_backtest` / `run_backtest_long_short` iterate the FULL df in a Python bar-loop
+(~100-126 µs/bar). Nothing sliced to the selected date range, so every run ground all ~1.29M bars —
+and the compare pipeline runs the engine 7-8× (primary + variants), making even a 1-week backtest
+take minutes over the 18-year dataset.
+
+**Decision:** Slice the ALREADY-signaled df to the inclusive `[start_date, end_date]` window **once,
+before the engine runs** (`_slice_to_range` in `api/server.py`). In `_execute_run_sync` the slice
+happens after the signal columns exist, before `run_backtest`. In `_execute_compare_sync` it happens
+up front — before the same-signal hash chain — so the primary + all variants and every hash use the
+one sliced df (`same_signal` still holds). Bounds are normalized to the bar-index tz the same way the
+engine does (ADR-022); the mask mirrors the engine's inclusive `start <= bar_date <= end` gate. An
+empty window returns the full df unchanged (engine still yields its 0-trade result, no empty-index
+crash).
+
+**Correctness:** signals are generated on the FULL df first, so indicator **warmup** (e.g. a
+200-period SMA at `start_date`) is baked into the signal columns — slicing the signaled df does not
+strip it. The engine already trades only inside `[start,end]`, only appends equity / updates peak
+while in range, and never holds before start, so slicing is **result-preserving**: `net_profit`,
+`total_trades`, `max_drawdown`, `win_rate`, and the equity curve are byte-identical (verified in
+`test_date_range_slice.py`, full vs pre-sliced on a mid-range window).
+
+**Result:** runtime scales with the selected range. Measured for a 1-week window over the full
+1.29M-bar Parquet: **42.6s → 0.08s (~540×)** per engine run (identical KPIs), and ~7-8× that for the
+compare pipeline. Full-range runs remain proportional (no slice benefit, unchanged). `__version__` →
+**25.18.0**.
+
+**Follow-up (v25.18.1):** keep the RETURNED compare/async `signal_hash` **range-independent**. It is
+now computed on the FULL, pre-slice df (`response_signal_hash`, before `_slice_to_range`) and written
+to the row — matching the single-run path, so the app's compare/optimize "same-signal" grouping is
+consistent across date ranges (same strategy over two windows → same hash). The internal same-signal
+chain (`h_before … h_after_position`) still runs on the SLICED df — it proves the 7 runs share the
+signal they actually process, and is unchanged. `__version__` → **25.18.1**.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
