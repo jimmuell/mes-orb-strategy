@@ -1164,13 +1164,21 @@ def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResp
                 error=f"Signal code did not create required columns: {missing}",
             )
 
+        sig_cols = sorted(required)
+        # ADR-043 follow-up: the RETURNED signal_hash is computed on the FULL, PRE-SLICE df so
+        # it is range-INDEPENDENT — matching the single-run path, so the app's compare/optimize
+        # "same-signal" grouping is consistent across date ranges (the same strategy over two
+        # different windows gets the same hash).
+        response_signal_hash = _signal_hash(df, sig_cols)
+
         # ADR-043: slice the signaled df to the window ONCE, up front — so every run
         # (primary + all variants) and every same-signal hash below uses the SAME sliced df
         # (same_signal holds), and the engine loops only the selected range. Result-preserving:
         # warmup is already baked into the signal columns generated on the full df above.
         df = _slice_to_range(df, req.start_date, req.end_date)
 
-        sig_cols = sorted(required)
+        # Internal same-signal chain runs on the SLICED df — it proves the 7 runs share the
+        # signal they actually process; leave it as-is.
         h_before = _signal_hash(df, sig_cols)
         _progress(20)  # signal columns ready
 
@@ -1549,7 +1557,7 @@ def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResp
             same_signal=bool(same_signal),
             validation=_to_native(validation),
             validation_error=validation_error,
-            signal_hash=h_before,
+            signal_hash=response_signal_hash,  # full-df hash (range-independent) — ADR-043 follow-up
         )
 
     except Exception as e:

@@ -400,8 +400,14 @@ while in range, and never holds before start, so slicing is **result-preserving*
 **Result:** runtime scales with the selected range. Measured for a 1-week window over the full
 1.29M-bar Parquet: **42.6s → 0.08s (~540×)** per engine run (identical KPIs), and ~7-8× that for the
 compare pipeline. Full-range runs remain proportional (no slice benefit, unchanged). `__version__` →
-**25.18.0**. Note: the compare `signal_hash` now reflects the sliced signal columns (opaque identity;
-not in the byte-identical KPI set).
+**25.18.0**.
+
+**Follow-up (v25.18.1):** keep the RETURNED compare/async `signal_hash` **range-independent**. It is
+now computed on the FULL, pre-slice df (`response_signal_hash`, before `_slice_to_range`) and written
+to the row — matching the single-run path, so the app's compare/optimize "same-signal" grouping is
+consistent across date ranges (same strategy over two windows → same hash). The internal same-signal
+chain (`h_before … h_after_position`) still runs on the SLICED df — it proves the 7 runs share the
+signal they actually process, and is unchanged. `__version__` → **25.18.1**.
 
 ---
 

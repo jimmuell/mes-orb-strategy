@@ -5,11 +5,13 @@ range, and never holds a position before start. So running it on the FULL df (wi
 config.start/end) must produce identical KPIs to running it on the df PRE-SLICED to
 [start, end]. This is what lets us slice before the bar-loop for the speedup.
 """
+import asyncio
+
 import numpy as np
 import pandas as pd
 
 import server
-from server import _slice_to_range
+from server import _slice_to_range, run_compare, BacktestRequest
 from engine.engine import run_backtest, BacktestConfig
 
 
@@ -78,3 +80,26 @@ def test_slice_matches_engine_tz_handling_on_aware_index():
     sliced = _slice_to_range(full, START, END)
     assert 0 < len(sliced) < len(full)
     assert sliced.index.tz is not None
+
+
+def test_compare_signal_hash_is_range_independent(monkeypatch):
+    # ADR-043 follow-up: the RETURNED compare signal_hash is computed on the FULL pre-slice df,
+    # so the SAME strategy over two DIFFERENT date ranges yields the SAME hash (range-independent),
+    # keeping the app's compare/optimize same-signal grouping consistent. Same range -> unchanged.
+    df = _multi_year_df()
+    df["Volume"] = 100.0
+    monkeypatch.setattr(server, "get_data", lambda: df.copy())
+
+    def _hash(start, end):
+        req = BacktestRequest(signal_code="pass", direction="long_only", run_validation=False,
+                              start_date=start, end_date=end)
+        resp = asyncio.run(run_compare(req))
+        assert resp.status == "success", resp.error
+        return resp.signal_hash
+
+    h_a = _hash("2022-01-01", "2022-06-30")
+    h_b = _hash("2023-01-01", "2023-06-30")   # different window, same strategy/data
+    h_a2 = _hash("2022-01-01", "2022-06-30")  # same window again
+    assert h_a is not None
+    assert h_a == h_b     # range-independent
+    assert h_a == h_a2    # deterministic / unchanged for the same range
