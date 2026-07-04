@@ -18,7 +18,7 @@ Usage:
     print_kpis(kpis)
 """
 
-__version__ = "25.17.0"
+__version__ = "25.18.0"
 
 import math
 import pandas as pd

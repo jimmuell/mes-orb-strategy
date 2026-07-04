@@ -595,6 +595,9 @@ def _execute_run_sync(req: BacktestRequest, on_progress=None) -> BacktestRespons
         sig_cols = [c for c in ('long_entry', 'long_exit', 'short_entry', 'short_exit')
                     if c in df.columns]
         signal_hash = _signal_hash(df, sig_cols) if sig_cols else None
+        # ADR-043: slice the signaled df to the backtest window before the engine bar-loop,
+        # so runtime scales with the selected range (warmup is already in the signal columns).
+        df = _slice_to_range(df, req.start_date, req.end_date)
         _progress(20)  # signal columns ready
 
         config = BacktestConfig(
@@ -888,6 +891,32 @@ def _signal_hash(df: pd.DataFrame, cols) -> str:
     return hashlib.sha256(digest).hexdigest()
 
 
+def _slice_to_range(df: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:
+    """ADR-043: slice an ALREADY-signaled df to the inclusive [start, end] window so the
+    engine's Python bar-loop scales with the SELECTED range instead of grinding all ~1.29M
+    bars on every run (the compare pipeline runs the engine 7-8x per backtest).
+
+    Result-preserving: signals are generated on the FULL df first, so indicator warmup (e.g.
+    a 200-period SMA) is already baked into the signal columns. Bounds are normalized to the
+    bar-index tz the SAME way the engine does (ADR-022), and the mask mirrors the engine's
+    inclusive `start <= bar_date <= end` gate exactly — so the engine trades the identical
+    bars whether it receives the full or the sliced df. If the window selects no bars, the
+    full df is returned unchanged (the engine then produces its usual 0-trade result rather
+    than crashing on an empty index)."""
+    start = pd.Timestamp(start_date)
+    end = pd.Timestamp(end_date)
+    idx_tz = df.index.tz
+    if idx_tz is not None:
+        start = start.tz_localize(idx_tz) if start.tzinfo is None else start.tz_convert(idx_tz)
+        end = end.tz_localize(idx_tz) if end.tzinfo is None else end.tz_convert(idx_tz)
+    elif start.tzinfo is not None:
+        start = start.tz_localize(None)
+        end = end.tz_localize(None)
+    mask = (df.index >= start) & (df.index <= end)
+    sliced = df.loc[mask]
+    return sliced if len(sliced) else df
+
+
 def _exec_signal_into_df(signal_code: str) -> pd.DataFrame:
     """Generate the trade signal ONCE: run signal_code against the data and return
     the df with its signal columns. Mirrors /run's sandbox + SIGALRM timeout (the
@@ -1134,6 +1163,12 @@ def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResp
                 execution_time_ms=int((time.time() - start_time) * 1000),
                 error=f"Signal code did not create required columns: {missing}",
             )
+
+        # ADR-043: slice the signaled df to the window ONCE, up front — so every run
+        # (primary + all variants) and every same-signal hash below uses the SAME sliced df
+        # (same_signal holds), and the engine loops only the selected range. Result-preserving:
+        # warmup is already baked into the signal columns generated on the full df above.
+        df = _slice_to_range(df, req.start_date, req.end_date)
 
         sig_cols = sorted(required)
         h_before = _signal_hash(df, sig_cols)
