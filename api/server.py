@@ -24,7 +24,9 @@ from __future__ import annotations  # defer annotation eval (PEP 563): _map_comp
 import ast
 import asyncio
 import builtins
+import contextlib
 import dataclasses
+import gc
 import hashlib
 import math
 import os
@@ -504,7 +506,8 @@ async def ping():
 @app.post("/run", response_model=BacktestResponse, dependencies=[Depends(verify_api_key)])
 async def run(req: BacktestRequest):
     """Run a backtest with AI-generated signal code (synchronous)."""
-    return _execute_run_sync(req)
+    with _no_gc():   # ADR-046
+        return _execute_run_sync(req)
 
 
 def _execute_run_sync(req: BacktestRequest, on_progress=None) -> BacktestResponse:
@@ -751,6 +754,26 @@ def _execute_run_sync(req: BacktestRequest, on_progress=None) -> BacktestRespons
 _HEARTBEAT_SECONDS = float(os.environ.get("ASYNC_HEARTBEAT_SECONDS", "5"))
 
 
+@contextlib.contextmanager
+def _no_gc(enabled: bool = True):
+    """ADR-046: disable Python's cyclic GC for the duration of a backtest run.
+
+    On Railway's Python 3.12 the non-incremental generational GC does O(n^2) work when a
+    loop retains many container objects — our per-bar `equity_curve` dicts + Trade/Timestamp
+    objects (×7 runs in the compare pipeline). Disabling GC over the bounded run removes it;
+    it's result-preserving (GC only reclaims reference CYCLES, of which the run creates none —
+    everything is freed by refcount at return). Python 3.13+ (incremental GC) doesn't need
+    this, which is why the same code is linear locally and superlinear on Railway."""
+    was = gc.isenabled()
+    if enabled and was:
+        gc.disable()
+    try:
+        yield
+    finally:
+        if enabled and was:
+            gc.enable()
+
+
 def _map_compare_columns(resp: CompareResponse) -> dict:
     """Map a successful COMPARE response onto backtest_runs columns (ADR-038).
 
@@ -821,22 +844,23 @@ async def _run_async_job(req: AsyncBacktestRequest, writer) -> None:
         # AsyncBacktestRequest IS a BacktestRequest (subclass) — the compare core reads
         # only base fields. Run the COMPARE pipeline (same as /run/compare) off the event
         # loop so an async run keeps the six teaching cards; heartbeat while it runs.
-        compute = asyncio.create_task(
-            asyncio.to_thread(_execute_compare_sync, req, on_progress))
-        while True:
-            try:
-                resp = await asyncio.wait_for(asyncio.shield(compute),
-                                              timeout=_HEARTBEAT_SECONDS)
-                break
-            except asyncio.TimeoutError:
-                # still alive — touch the row (bumps updated_at) so the app watchdog can
-                # tell a slow run from a dead one and time out in minutes, not never.
+        with _no_gc():   # ADR-046 — gc off while the (possibly long) compute runs
+            compute = asyncio.create_task(
+                asyncio.to_thread(_execute_compare_sync, req, on_progress))
+            while True:
                 try:
-                    await asyncio.to_thread(
-                        writer.update_run, run_id,
-                        {"status": "running", "progress": state["pct"]})
-                except Exception:
-                    pass
+                    resp = await asyncio.wait_for(asyncio.shield(compute),
+                                                  timeout=_HEARTBEAT_SECONDS)
+                    break
+                except asyncio.TimeoutError:
+                    # still alive — touch the row (bumps updated_at) so the app watchdog can
+                    # tell a slow run from a dead one and time out in minutes, not never.
+                    try:
+                        await asyncio.to_thread(
+                            writer.update_run, run_id,
+                            {"status": "running", "progress": state["pct"]})
+                    except Exception:
+                        pass
 
         if resp.status == "success":
             writer.update_run(run_id, _map_compare_columns(resp))
@@ -890,11 +914,12 @@ def _cpu_probe_ms(iters: int = 5_000_000) -> float:
 
 
 @app.post("/profile", dependencies=[Depends(verify_api_key)])
-async def profile(req: BacktestRequest):
-    """ADR-045 diagnostic — runs the COMPARE pipeline (the app's real path) and returns a
-    per-stage wall-time breakdown, peak RSS, and a before/after CPU-throttle probe, so the
-    Railway superlinearity can be located with PRODUCTION numbers (local benchmarks did not
-    reproduce it). Additive/read-only: /run, /run/compare, /run/async are untouched.
+async def profile(req: BacktestRequest, disable_gc: bool = True):
+    """ADR-045/046 diagnostic — runs the COMPARE pipeline (the app's real path) and returns a
+    per-stage wall-time breakdown, peak RSS, a before/after CPU-throttle probe, and GC
+    collection counts, so the Railway superlinearity can be located/confirmed with PRODUCTION
+    numbers. `disable_gc` (query, default true) toggles ADR-046's GC-off fix for THIS call, so
+    /profile?disable_gc=false vs true A/Bs the fix on one deploy. Additive/read-only.
 
     Stage marks come from the existing `_progress` hooks (no engine changes):
       start→20 signal-gen (full df) + slice · 20→50 primary run · 50→80 six variants +
@@ -902,15 +927,19 @@ async def profile(req: BacktestRequest):
       very long ranges — use /run/async (heartbeat) for those."""
     import resource
     probe_before = _cpu_probe_ms()
+    gc.collect()
+    gc0 = [s["collections"] for s in gc.get_stats()]   # per-generation collection counts
     marks = {}
     t0 = time.perf_counter()
 
     def on_stage(pct):
         marks[pct] = time.perf_counter() - t0
 
-    resp = await asyncio.to_thread(_execute_compare_sync, req, on_stage)
+    with _no_gc(enabled=disable_gc):
+        resp = await asyncio.to_thread(_execute_compare_sync, req, on_stage)
     total_ms = round((time.perf_counter() - t0) * 1000, 1)
     probe_after = _cpu_probe_ms()
+    gc_collections = [a - b for a, b in zip([s["collections"] for s in gc.get_stats()], gc0)]
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     rss_mb = round(rss / (1024 * 1024 if sys.platform == "darwin" else 1024), 1)
 
@@ -937,6 +966,8 @@ async def profile(req: BacktestRequest):
         "cpu_probe_before_ms": probe_before,
         "cpu_probe_after_ms": probe_after,
         "cpu_throttle_ratio": round(probe_after / probe_before, 2) if probe_before else None,
+        "gc_disabled": disable_gc,
+        "gc_collections": gc_collections,   # [gen0, gen1, gen2] collections during the run
         "error": resp.error,
     }
 
@@ -1210,7 +1241,8 @@ def _validate_primary(closed_trades: list, df: pd.DataFrame,
 async def run_compare(req: BacktestRequest):
     """TEACH-COMPARE (ADR-026): run the user's config and a stop-neutralized variant
     against the SAME signal in one logical run; report exact teaching deltas."""
-    return _execute_compare_sync(req)
+    with _no_gc():   # ADR-046
+        return _execute_compare_sync(req)
 
 
 def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResponse:
