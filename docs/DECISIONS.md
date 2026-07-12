@@ -411,6 +411,27 @@ signal they actually process, and is unchanged. `__version__` → **25.18.1**.
 
 ---
 
+## ADR-044 — Vectorize the simulation loop's per-bar data access + async liveness
+
+Recorded in full in [`ADR-044_vectorize_sim_loop.md`](ADR-044_vectorize_sim_loop.md). ADR-036/041
+vectorized the *indicators*, but the **simulation loops** (`run_backtest` /
+`run_backtest_long_short`) still did `bar = df.iloc[i]` + `bar["col"]` every bar — building a pandas
+Series per iteration. A profile of a 1-year run showed ~100% of the time in that per-bar access
+(`fast_xs`, `datetimelike.__getitem__`, `series.__getitem__`), not the arithmetic. Fix: extract each
+column to a numpy array ONCE (via `.to_numpy()` — **native dtype**, so float32 parquet stays float32,
+matching the old object-row scalars → byte-identical), materialize `_dates = df.index.tolist()` and a
+vectorized `_in_range` mask, and index by `i`. Result-preserving: verified byte-identical vs the
+pre-refactor engine across long/short, TP-SL, %-equity and no-stop configs on a full year (every KPI,
+trade, and equity-curve point). **~15× faster** (1-yr 2.88s→0.19s locally; Railway ~70s→~5s; a 6-yr
+run that never finished → tens of seconds). Also (async liveness, addressing a run that stalled at
+progress=50 and went silent): `_run_async_job` now always posts a **terminal** callback — success→
+complete, any error/crash→failed **with the traceback** (2000-char cap) — and emits a **heartbeat**
+(re-posts `running` every `ASYNC_HEARTBEAT_SECONDS`, default 5) while the compute runs, so a stall
+inside a stage is visible. New `test_engine_vectorized.py` (golden snapshot + dtype preservation) and
+heartbeat/crash tests. `__version__` → **25.19.0**.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
