@@ -747,11 +747,7 @@ def _execute_run_sync(req: BacktestRequest, on_progress=None) -> BacktestRespons
 # so the event loop stays responsive; the SIGALRM signal timeout simply no-ops off
 # the main thread (already handled), which is fine — the run has no deadline here.
 
-def _short_reason(msg: Optional[str]) -> str:
-    """First line of an error, trimmed — a user-friendly reason for error_message."""
-    if not msg:
-        return "Backtest failed"
-    return str(msg).strip().splitlines()[0][:300]
+_HEARTBEAT_SECONDS = float(os.environ.get("ASYNC_HEARTBEAT_SECONDS", "5"))
 
 
 def _map_compare_columns(resp: CompareResponse) -> dict:
@@ -802,11 +798,18 @@ def _map_compare_columns(resp: CompareResponse) -> dict:
 
 async def _run_async_job(req: AsyncBacktestRequest, writer) -> None:
     """Background task: run the backtest and drive the backtest_runs row to a terminal
-    state. On ANY failure the row is set to 'failed' with a reason — never left running."""
+    state. Two guarantees (ADR-044) so the app never has to guess:
+      1. The row ALWAYS reaches a terminal state — success -> 'complete', any error OR
+         crash -> 'failed' with the traceback (truncated). It never goes silent.
+      2. A HEARTBEAT re-posts 'running' every few seconds WHILE the compute runs, so a
+         stall inside a stage is visible (progress alone only moves at stage boundaries).
+    """
     run_id = req.run_id
+    state = {"pct": 10}
 
     def on_progress(pct):
         # progress is best-effort; a failed progress ping must not abort the job
+        state["pct"] = pct
         try:
             writer.update_run(run_id, {"status": "running", "progress": pct})
         except Exception:
@@ -815,26 +818,42 @@ async def _run_async_job(req: AsyncBacktestRequest, writer) -> None:
     try:
         on_progress(10)  # job picked up
         # AsyncBacktestRequest IS a BacktestRequest (subclass) — the compare core reads
-        # only base fields. Run the COMPARE pipeline (same as /run/compare) off the
-        # event loop, so an async run keeps the six teaching cards.
-        resp = await asyncio.to_thread(_execute_compare_sync, req, on_progress)
+        # only base fields. Run the COMPARE pipeline (same as /run/compare) off the event
+        # loop so an async run keeps the six teaching cards; heartbeat while it runs.
+        compute = asyncio.create_task(
+            asyncio.to_thread(_execute_compare_sync, req, on_progress))
+        while True:
+            try:
+                resp = await asyncio.wait_for(asyncio.shield(compute),
+                                              timeout=_HEARTBEAT_SECONDS)
+                break
+            except asyncio.TimeoutError:
+                # still alive — touch the row (bumps updated_at) so the app watchdog can
+                # tell a slow run from a dead one and time out in minutes, not never.
+                try:
+                    await asyncio.to_thread(
+                        writer.update_run, run_id,
+                        {"status": "running", "progress": state["pct"]})
+                except Exception:
+                    pass
+
         if resp.status == "success":
             writer.update_run(run_id, _map_compare_columns(resp))
         else:
             writer.update_run(run_id, {
                 "status": "failed",
                 "progress": 100,
-                "error_message": _short_reason(resp.error),
+                "error_message": (resp.error or "Backtest failed")[:2000],
                 "engine_version": resp.engine_version,
                 "execution_time_ms": resp.execution_time_ms,
             })
     except Exception as e:
-        # last-resort guard: the row must reach a terminal state
+        # last-resort guard: the row MUST reach a terminal state, with the traceback.
         try:
             writer.update_run(run_id, {
                 "status": "failed",
                 "progress": 100,
-                "error_message": _short_reason(f"{type(e).__name__}: {e}"),
+                "error_message": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"[:2000],
             })
         except Exception:
             pass

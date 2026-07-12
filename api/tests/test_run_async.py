@@ -237,3 +237,42 @@ def test_run_async_rejects_ssrf_callback_url(monkeypatch, patched_data):
             asyncio.run(run_async(_req(callback_url=url), BG()))
         assert ei.value.status_code == 400, url
     assert fake.calls == []   # no callback POST attempted for any rejected URL
+
+
+# --- ADR-044: heartbeat + always-terminal callback --------------------------
+
+def test_async_emits_heartbeat_during_slow_compute(monkeypatch):
+    # a stall inside a stage must be visible: the job re-posts 'running' on a timer
+    # while the compute runs, not just at stage boundaries.
+    import time as _time
+    monkeypatch.setattr(server, "_HEARTBEAT_SECONDS", 0.05)
+
+    def slow_compute(req, on_progress):
+        on_progress(50)
+        _time.sleep(0.35)               # ~7 heartbeat intervals inside one "stage"
+        return server.CompareResponse(
+            status="success", engine_version="x", execution_time_ms=1,
+            primary={"kpis": {}, "equity_curve": []}, variants=[], teaching=[],
+            same_signal=True)
+    monkeypatch.setattr(server, "_execute_compare_sync", slow_compute)
+
+    w = FakeWriter()
+    asyncio.run(_run_async_job(_req(), w))
+    running_posts = [f for _, f in w.calls if f.get("status") == "running"]
+    assert len(running_posts) >= 3, running_posts   # heartbeats fired during the stall
+    assert w.row["status"] == "complete"
+
+
+def test_async_crash_writes_failed_with_traceback(monkeypatch):
+    # if the compute raises OUTSIDE its own handler, the last-resort guard still writes
+    # a terminal 'failed' with the traceback — the job never goes silent.
+    def boom(req, on_progress):
+        raise RuntimeError("kaboom in compute")
+    monkeypatch.setattr(server, "_execute_compare_sync", boom)
+    w = FakeWriter()
+    asyncio.run(_run_async_job(_req(), w))
+    assert w.row["status"] == "failed"
+    assert w.row["progress"] == 100
+    assert "kaboom in compute" in w.row["error_message"]
+    assert "Traceback" in w.row["error_message"]     # full traceback included
+    assert len(w.row["error_message"]) <= 2000       # truncated

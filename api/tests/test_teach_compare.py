@@ -72,7 +72,7 @@ def _run_compare(monkeypatch):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.18.1"
+    assert ENGINE_VERSION == "25.19.0"
 
 
 def test_compare_shape_and_anchors(monkeypatch):
