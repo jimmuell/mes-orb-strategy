@@ -506,8 +506,7 @@ async def ping():
 @app.post("/run", response_model=BacktestResponse, dependencies=[Depends(verify_api_key)])
 async def run(req: BacktestRequest):
     """Run a backtest with AI-generated signal code (synchronous)."""
-    with _no_gc():   # ADR-046
-        return _execute_run_sync(req)
+    return _execute_run_sync(req)
 
 
 def _execute_run_sync(req: BacktestRequest, on_progress=None) -> BacktestResponse:
@@ -844,23 +843,22 @@ async def _run_async_job(req: AsyncBacktestRequest, writer) -> None:
         # AsyncBacktestRequest IS a BacktestRequest (subclass) — the compare core reads
         # only base fields. Run the COMPARE pipeline (same as /run/compare) off the event
         # loop so an async run keeps the six teaching cards; heartbeat while it runs.
-        with _no_gc():   # ADR-046 — gc off while the (possibly long) compute runs
-            compute = asyncio.create_task(
-                asyncio.to_thread(_execute_compare_sync, req, on_progress))
-            while True:
+        compute = asyncio.create_task(
+            asyncio.to_thread(_execute_compare_sync, req, on_progress))
+        while True:
+            try:
+                resp = await asyncio.wait_for(asyncio.shield(compute),
+                                              timeout=_HEARTBEAT_SECONDS)
+                break
+            except asyncio.TimeoutError:
+                # still alive — touch the row (bumps updated_at) so the app watchdog can
+                # tell a slow run from a dead one and time out in minutes, not never.
                 try:
-                    resp = await asyncio.wait_for(asyncio.shield(compute),
-                                                  timeout=_HEARTBEAT_SECONDS)
-                    break
-                except asyncio.TimeoutError:
-                    # still alive — touch the row (bumps updated_at) so the app watchdog can
-                    # tell a slow run from a dead one and time out in minutes, not never.
-                    try:
-                        await asyncio.to_thread(
-                            writer.update_run, run_id,
-                            {"status": "running", "progress": state["pct"]})
-                    except Exception:
-                        pass
+                    await asyncio.to_thread(
+                        writer.update_run, run_id,
+                        {"status": "running", "progress": state["pct"]})
+                except Exception:
+                    pass
 
         if resp.status == "success":
             writer.update_run(run_id, _map_compare_columns(resp))
@@ -1241,8 +1239,7 @@ def _validate_primary(closed_trades: list, df: pd.DataFrame,
 async def run_compare(req: BacktestRequest):
     """TEACH-COMPARE (ADR-026): run the user's config and a stop-neutralized variant
     against the SAME signal in one logical run; report exact teaching deltas."""
-    with _no_gc():   # ADR-046
-        return _execute_compare_sync(req)
+    return _execute_compare_sync(req)
 
 
 def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResponse:

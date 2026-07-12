@@ -18,7 +18,7 @@ Usage:
     print_kpis(kpis)
 """
 
-__version__ = "25.21.0"
+__version__ = "25.22.0"
 
 import math
 import pandas as pd
@@ -643,19 +643,26 @@ def _quality_metrics(trades, df: pd.DataFrame, config: BacktestConfig) -> dict:
     entry_days = {t.entry_date.date() for t in trades if t.entry_date is not None}
     trades_per_day = (n / len(entry_days)) if entry_days else 0.0
 
-    # Single pass over closed trades: holding in BARS via the bar index (exact), and re-touch exits.
+    # Holding in BARS via the bar index (exact). ADR-047: resolve ALL trade dates in ONE
+    # batched get_indexer call. A per-trade get_indexer is O(n) on pandas 2.x (it astype's the
+    # whole DatetimeIndex on every call), so calling it once per trade is O(trades*n) = O(n^2)
+    # — the entire cause of the Railway superlinearity (pandas 3.0 made get_indexer cheap, which
+    # is why the laptop was linear). Batching is O(n) and returns identical positions.
+    closed = [t for t in trades if t.exit_date is not None and t.exit_price is not None]
     hold_bars = []
     retouch = 0
-    for t in trades:
-        if t.exit_date is None or t.exit_price is None:
-            continue  # skip still-open trades
-        i0, i1 = df.index.get_indexer([t.entry_date, t.exit_date])
-        if i0 == -1 or i1 == -1:
-            continue  # dates not on the bar index (defensive; trade dates come from df.index)
-        held = int(i1 - i0)
-        hold_bars.append(held)
-        if held <= 1 and abs(t.exit_price - t.entry_price) <= MES_TICK_SIZE:
-            retouch += 1
+    if closed:
+        nc = len(closed)
+        pos = df.index.get_indexer([t.entry_date for t in closed]
+                                   + [t.exit_date for t in closed])
+        for k, t in enumerate(closed):
+            i0, i1 = pos[k], pos[nc + k]
+            if i0 == -1 or i1 == -1:
+                continue  # dates not on the bar index (defensive; trade dates come from df.index)
+            held = int(i1 - i0)
+            hold_bars.append(held)
+            if held <= 1 and abs(t.exit_price - t.entry_price) <= MES_TICK_SIZE:
+                retouch += 1
 
     median_holding_bars = float(np.median(hold_bars)) if hold_bars else 0.0
     retouch_exit_share = (retouch / n) if n else 0.0

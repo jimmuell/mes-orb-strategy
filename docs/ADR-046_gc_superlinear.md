@@ -2,6 +2,8 @@
 
 **Status:** Accepted (v25.21.0) — fix shipped with an in-deploy A/B to confirm on Railway.
 
+> **SUPERSEDED by ADR-047** — the `/profile` A/B on Railway showed GC never runs there (`gc_collections=[0,0,0]`) and `gc.disable()` is a no-op. The real cause is an O(n^2) `get_indexer` in `_quality_metrics` (ADR-047). The production `gc.disable()` wraps were removed; `/profile`'s GC diagnostics were kept.
+
 ## What `/profile` (ADR-045) measured on Railway (engine 25.20.0, ORB-size long/short workload)
 
 | range | trades | total | primary_run | variants+teaching | peak_rss_mb | cpu_throttle_ratio |
