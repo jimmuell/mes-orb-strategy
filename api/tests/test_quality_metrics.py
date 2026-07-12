@@ -83,3 +83,18 @@ def test_quality_metrics_zero_trades():
     q = _quality_metrics([], _sane_df(), BacktestConfig(**CFG))
     assert q == {"trades_per_day": 0.0, "median_holding_bars": 0.0,
                  "retouch_exit_share": 0.0, "churn_suspected": False}
+
+
+def test_quality_metrics_batches_get_indexer(monkeypatch):
+    # ADR-047 regression guard: _quality_metrics must resolve trade dates in ONE batched
+    # df.index.get_indexer call, NOT once per trade (per-trade is O(n) on pandas 2.x -> O(n^2)).
+    import pandas as pd
+    orig = pd.Index.get_indexer
+    calls = {"n": 0}
+    def counting(self, *a, **k):
+        calls["n"] += 1
+        return orig(self, *a, **k)
+    monkeypatch.setattr(pd.Index, "get_indexer", counting)
+    q = run_backtest(_churn_df(), BacktestConfig(**CFG))["quality"]   # ~11 closed trades
+    assert calls["n"] <= 1, f"get_indexer called {calls['n']}x — O(n^2) churn-guard regression"
+    assert q["churn_suspected"] is True     # behavior preserved

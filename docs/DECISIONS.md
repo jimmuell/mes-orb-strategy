@@ -465,6 +465,22 @@ false vs true at 1 yr). Recommended follow-up root-cause fix: bump Railway `.pyt
 
 ---
 
+## ADR-047 — The real Railway superlinearity: O(n^2) get_indexer in the churn guard
+
+Recorded in full in [`ADR-047_quality_metrics_on2.md`](ADR-047_quality_metrics_on2.md). **Supersedes
+ADR-046's diagnosis.** The `/profile` A/B on Railway refuted GC: `gc_collections=[0,0,0]` at every
+range and `disable_gc` true vs false were identical (48s vs 46s) -> `gc.disable()` was a no-op.
+Reproducing the Railway env locally (python3.12 + pandas 2.3.3 — the laptop had pandas 3.0) exposed a
+clean O(n^2), and `cProfile` pinned `_quality_metrics` (ADR-042): it called `df.index.get_indexer([entry,
+exit])` once per trade, and on pandas 2.x each call `astype`s the whole DatetimeIndex (O(n)) -> O(trades*n)
+= O(n^2). pandas 3.0 made get_indexer cheap, masking it on the laptop. Fix: one batched `get_indexer`
+over all trade dates (O(n), byte-identical positions) -> 4yr 62s -> 0.78s (80x) under 3.12/pandas2.
+Also removed ADR-046's no-op production `gc.disable()` wraps (kept `/profile`'s GC diagnostics that
+proved GC wasn't it). New regression test: get_indexer called <=1x regardless of trade count.
+`__version__` -> **25.22.0**.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
