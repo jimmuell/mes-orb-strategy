@@ -523,7 +523,8 @@ async def env():
         "python": platform.python_version(),
         "packages": {p: v(p) for p in (
             "pandas", "numpy", "pyarrow", "fastapi", "uvicorn", "starlette",
-            "pydantic", "anyio", "requests", "httpx", "scipy", "backtester")},
+            "pydantic", "anyio", "requests", "httpx", "scipy", "backtester",
+            "h11", "httptools", "uvloop", "websockets", "urllib3")},
     }
 
 

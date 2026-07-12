@@ -17,4 +17,4 @@ def test_health_endpoint_answers():
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
-    assert body["engine_version"] == "25.23.0"
+    assert body["engine_version"] == "25.24.0"

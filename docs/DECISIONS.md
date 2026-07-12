@@ -498,6 +498,23 @@ Nixpacks floats the patch). Standing rules: every perf claim needs 3 runs + medi
 
 ---
 
+## ADR-049 — Lock the full transitive closure (pin h11; end half-pinning)
+
+Recorded in full in [`ADR-049_lock_transitive_deps.md`](ADR-049_lock_transitive_deps.md). ADR-048
+pinned the 9 DIRECT deps but left transitives to the resolver, and `h11` (uvicorn's HTTP/1.1 parser)
+drifted to 0.9.0 in prod — CRITICAL PYSEC-2026-348 / GHSA-vqfr-h8mv-ghfj (malformed chunked-encoding)
+on an internet-facing API. Fix: pin `h11==0.16.0` (patched; compatible with uvicorn 0.51 / httpx 0.28)
+and — because half-pinning IS the hole — lock the ENTIRE runtime transitive closure (35 pkgs) in
+`requirements.txt` (Railway installs from it, so it honors the lock). `pip-audit` also flagged
+`pytest 8.4.2` (PYSEC-2026-1845, dev-only) -> bumped to 9.0.3. Post-fix pip-audit (runtime + dev):
+clean. Task 3: h11 is INSTALLED BUT IDLE on the prod request path (required only by uvicorn; httpx is
+dev-only; uvicorn uses httptools via `--http auto`, not h11) — high confidence — so the vuln isn't
+reachable, but pinned regardless (defense in depth). `/env` now reports h11/httptools/uvloop/
+websockets/urllib3. Result-safe: golden snapshot passes under pandas 2 -> +$817.66 / -$2,244.27
+unchanged. Full suite 125 passed. `__version__` -> **25.24.0**.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument

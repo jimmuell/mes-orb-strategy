@@ -1,28 +1,57 @@
-# Runtime dependencies — EXACT pins (==) so dev and prod resolve to IDENTICAL versions on
-# every machine and every deploy (ADR-048).
+# FULL LOCK — direct deps AND their entire transitive closure pinned to == (ADR-048 + ADR-049).
 #
-# Why exact: a loose `pandas>=2.2,<3` let the dev laptop resolve to pandas 3.0 while Railway
-# resolved to 2.x — BOTH "valid" — and that silent gap changed ALGORITHMIC COMPLEXITY (an
-# index lookup that is O(1) on pandas 3.0 is O(n) on 2.x), hiding an 80x O(n^2) regression for
-# weeks (ADR-047). Never widen a pin without re-testing under the deployed Python (3.12).
-# To bump: change here deliberately, reinstall dev from this file, run the suite, and confirm
-# results are byte-identical. Standardised on PROD's versions (move dev to match prod, not the
-# reverse — production is the environment that must not break; verified result-identical).
+# ADR-048 pinned the 9 DIRECT deps but left transitives to the resolver — and h11 (uvicorn's
+# HTTP/1.1 parser) drifted to 0.9.0 in prod, a CRITICAL malformed-chunked-encoding advisory
+# (PYSEC-2026-348 / GHSA-vqfr-h8mv-ghfj). Half-pinning is what created that hole. So EVERYTHING
+# is pinned now: nothing floats, dev == prod == this file, and `pip-audit` on a fresh install is
+# clean.
 #
-# Python is pinned to 3.12 via api/.python-version (Nixpacks pins the minor; the patch floats —
-# /env reports the live patch). The versions below are what Python 3.12 resolves today.
+# Railway installs from THIS file (it is the lock). Regenerate after a deliberate bump:
+#   python3.12 -m venv /tmp/rt && /tmp/rt/bin/pip install <direct deps below> && /tmp/rt/bin/pip freeze
+# then re-run `pip-audit`, run the suite, and confirm results are byte-identical. Python is pinned
+# to 3.12 via api/.python-version. /env reports the running container's versions.
 
+# ── direct (the deps we chose) ──
 fastapi==0.139.0
 uvicorn[standard]==0.51.0
-starlette==1.3.1          # fastapi's ASGI core — pinned so the web stack can't drift
-pydantic==2.13.4          # fastapi's model layer — ""
-anyio==4.14.1             # starlette/async core — ""
-pandas==2.3.3             # <-- the pin that ends the O(n^2)-hiding drift (was pandas>=2.2,<3)
+pandas==2.3.3
 numpy==2.5.1
 requests==2.34.2
-pyarrow==24.0.0           # read the full-history Parquet dataset (ADR-035)
+pyarrow==24.0.0          # full-history Parquet dataset (ADR-035)
 
-# Edge-validation library (Monte Carlo + temporal-stability + verdict). Installed from git at
-# deploy; Railway must reach GitHub during pip install. Pinned to an exact commit for
-# reproducible deploys (back-tester main HEAD = v0.2.0 repackage). Bump this sha deliberately.
+# Edge-validation library — installed from git; Railway must reach GitHub at build. Pinned to an
+# exact commit (back-tester main HEAD = v0.2.0 repackage). Bump this sha deliberately.
 backtester @ git+https://github.com/jimmuell/back-tester.git@ef6fb684d482832f02a7f906cf01acc8e853c207
+
+# ── transitive closure (pinned; regenerate via pip freeze, don't hand-edit) ──
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.14.1
+certifi==2026.6.17
+charset-normalizer==3.4.9
+click==8.4.2
+h11==0.16.0             # uvicorn's fallback HTTP/1.1 parser. Patched release for PYSEC-2026-348 /
+                        # GHSA-vqfr-h8mv-ghfj (vulnerable <0.16.0). httptools handles inbound
+                        # parsing by default so h11 is idle in prod, but pinned regardless.
+httptools==0.8.0        # uvicorn[standard] — the actual inbound HTTP/1.1 parser used (--http auto)
+idna==3.18
+packaging==26.2
+patsy==1.0.2
+pydantic==2.13.4
+pydantic-core==2.46.4
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
+python-multipart==0.0.32
+pytz==2026.2
+PyYAML==6.0.3
+scipy==1.18.0
+six==1.17.0
+starlette==1.3.1
+statsmodels==0.14.6
+typing-extensions==4.16.0
+typing-inspection==0.4.2
+tzdata==2026.3
+urllib3==2.7.0
+uvloop==0.22.1
+watchfiles==1.2.0
+websockets==16.1

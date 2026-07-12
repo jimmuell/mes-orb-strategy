@@ -1,5 +1,5 @@
 # Dev/test-only dependencies (NOT installed on Railway deploy — see requirements.txt).
 # Run the engine test suite with:  cd api && python -m pytest -v
 -r requirements.txt
-pytest==8.4.2    # EXACT pins (ADR-048) — dev/CI reproducible; not shipped to Railway
+pytest==9.0.3    # bumped from 8.4.2 for PYSEC-2026-1845 (ADR-049); dev/CI-only, not shipped
 httpx==0.28.1    # required by fastapi.testclient.TestClient (ADR-039 import/health smoke test)
