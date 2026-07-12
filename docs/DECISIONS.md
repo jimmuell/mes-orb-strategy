@@ -432,6 +432,22 @@ heartbeat/crash tests. `__version__` → **25.19.0**.
 
 ---
 
+## ADR-045 — `/profile` diagnostic endpoint (locate the Railway superlinearity)
+
+Recorded in full in [`ADR-045_profile_endpoint.md`](ADR-045_profile_endpoint.md). ADR-044's ~15x
+local speedup was only ~2.9x on Railway, and Railway runtime is superlinear in range (~flat 2-3s to
+90d, then 24s at 365d; 6-yr never finished). A local per-stage profile of the compare pipeline is
+**sub-linear** (2.68x for 4x data) with **flat RSS** and no throttling — so the superlinearity is
+**environmental, not algorithmic**. Rather than ship a speculative fix off local numbers, add
+`POST /profile` (API-key gated, additive, read-only): it runs the compare pipeline and returns a
+per-stage wall-time breakdown (from the existing `_progress` hooks), **peak RSS** (memory-bound
+evidence), and a **before/after CPU busy-loop probe** (`cpu_throttle_ratio` >> 1 ⇒ Railway burst
+throttling) — discriminating memory vs CPU-throttling with production numbers. `/run*` untouched;
+inherits the ~60s proxy so it's for ≤~1yr (use `/run/async` for 6-yr). The follow-up fix targets the
+CONFIRMED cause. `__version__` -> **25.20.0**.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
