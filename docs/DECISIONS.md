@@ -448,6 +448,23 @@ CONFIRMED cause. `__version__` -> **25.20.0**.
 
 ---
 
+## ADR-046 — The Railway superlinearity is GC; disable it during a run
+
+Recorded in full in [`ADR-046_gc_superlinear.md`](ADR-046_gc_superlinear.md). The ADR-045 `/profile`
+tool, run on Railway, RULED OUT the two hypotheses it was built for: **not CPU throttling**
+(`cpu_throttle_ratio ~1.0` at every size) and **not memory-bound** (peak RSS ~460 MB at 1 yr, flat).
+The compute itself is superlinear (single sim loop 45->241->3162 ms; 3mo->1yr = 4x data, 13x time)
+yet **linear locally** (Python 3.14). The difference: Python **3.12's non-incremental GC** does
+O(n^2) work over the loop's retained per-bar `equity_curve` dicts + Trade/Timestamp objects; **3.13+
+incremental GC** (local) is linear — so the laptop never reproduced it. Fix: `_no_gc` context manager
+disables GC for the duration of `/run`, `/run/compare`, `/run/async`, `/profile` (result-preserving —
+the run creates no reference cycles; freed by refcount; RSS unchanged). `/profile` gains a
+`disable_gc` toggle + `gc_collections` field to **A/B-confirm on the deployed engine** (disable_gc
+false vs true at 1 yr). Recommended follow-up root-cause fix: bump Railway `.python-version` 3.12 ->
+3.13. `__version__` -> **25.21.0**.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
