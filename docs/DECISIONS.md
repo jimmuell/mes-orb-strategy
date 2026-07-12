@@ -481,6 +481,23 @@ proved GC wasn't it). New regression test: get_indexer called <=1x regardless of
 
 ---
 
+## ADR-048 — Pin the environment: dev and prod resolve to identical versions
+
+Recorded in full in [`ADR-048_pin_environment.md`](ADR-048_pin_environment.md). The root cause of the
+ADR-047 saga wasn't pandas — it was that nobody inventoried dev vs prod. `requirements.txt` said
+`pandas>=2.2,<3`, so the laptop resolved to **pandas 3.0** and Railway to **pandas 2.x** (both valid),
+and a `get_indexer` that's O(1) on pandas 3 is O(n) on 2 — a loose pin silently changed algorithmic
+complexity. Inventory found **9 of 11 packages diverged** (Python 3.14 vs 3.12; pandas, numpy,
+fastapi, uvicorn, starlette, anyio, pydantic, requests all differ). Fix: pin every runtime dep to
+exact `==` (incl. the ASGI transitives), standardise on **prod's** versions (pandas 2.x — move dev to
+match prod, not the reverse; verified byte-identical), and rebuild the dev venv as Python 3.12.6 +
+the pinned set (dev == prod now). Added `GET /env` (running container's Python + package versions, no
+auth) to make drift visible after every deploy. Python pinned via `api/.python-version=3.12` (minor;
+Nixpacks floats the patch). Standing rules: every perf claim needs 3 runs + median (Railway is noisy,
+1.43x spread measured); search first on any perf/env mystery. `__version__` -> **25.23.0**.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument
