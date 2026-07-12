@@ -29,6 +29,7 @@ import hashlib
 import math
 import os
 import signal as _signal
+import sys
 import time
 import traceback
 from typing import Optional
@@ -875,6 +876,69 @@ async def run_async(req: AsyncBacktestRequest, background_tasks: BackgroundTasks
         raise HTTPException(status_code=400, detail="callback_url host not allowed")
     background_tasks.add_task(_run_async_job, req, writer)
     return JSONResponse(status_code=202, content={"run_id": req.run_id, "status": "accepted"})
+
+
+def _cpu_probe_ms(iters: int = 5_000_000) -> float:
+    """Fixed CPU-bound busy loop. Run before/after a backtest: if the AFTER time is much
+    larger, the process was CPU-throttled during the run (Railway Hobby burst credits
+    exhausted) — the flat-then-cliff signature. Discriminates throttling from memory."""
+    t = time.perf_counter()
+    x = 0
+    for _ in range(iters):
+        x += 1
+    return round((time.perf_counter() - t) * 1000, 1)
+
+
+@app.post("/profile", dependencies=[Depends(verify_api_key)])
+async def profile(req: BacktestRequest):
+    """ADR-045 diagnostic — runs the COMPARE pipeline (the app's real path) and returns a
+    per-stage wall-time breakdown, peak RSS, and a before/after CPU-throttle probe, so the
+    Railway superlinearity can be located with PRODUCTION numbers (local benchmarks did not
+    reproduce it). Additive/read-only: /run, /run/compare, /run/async are untouched.
+
+    Stage marks come from the existing `_progress` hooks (no engine changes):
+      start→20 signal-gen (full df) + slice · 20→50 primary run · 50→80 six variants +
+      teaching · 80→95 validation · 95→end serialize (_to_native). Hits the ~60s proxy for
+      very long ranges — use /run/async (heartbeat) for those."""
+    import resource
+    probe_before = _cpu_probe_ms()
+    marks = {}
+    t0 = time.perf_counter()
+
+    def on_stage(pct):
+        marks[pct] = time.perf_counter() - t0
+
+    resp = await asyncio.to_thread(_execute_compare_sync, req, on_stage)
+    total_ms = round((time.perf_counter() - t0) * 1000, 1)
+    probe_after = _cpu_probe_ms()
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    rss_mb = round(rss / (1024 * 1024 if sys.platform == "darwin" else 1024), 1)
+
+    def span(a, b):
+        return round((marks[b] - marks[a]) * 1000, 1) if a in marks and b in marks else None
+
+    stages_ms = {
+        "signal_gen+slice": round(marks[20] * 1000, 1) if 20 in marks else None,
+        "primary_run": span(20, 50),
+        "variants+teaching": span(50, 80),
+        "validation": span(80, 95),
+        "serialize_finalize": (round(total_ms - marks[95] * 1000, 1) if 95 in marks else None),
+    }
+    kpis = (resp.primary or {}).get("kpis") or {}
+    return {
+        "engine_version": ENGINE_VERSION,
+        "status": resp.status,
+        "range": {"start": req.start_date, "end": req.end_date},
+        "run_validation": req.run_validation,
+        "trades": kpis.get("total_trades"),
+        "total_ms": total_ms,
+        "stages_ms": stages_ms,
+        "peak_rss_mb": rss_mb,
+        "cpu_probe_before_ms": probe_before,
+        "cpu_probe_after_ms": probe_after,
+        "cpu_throttle_ratio": round(probe_after / probe_before, 2) if probe_before else None,
+        "error": resp.error,
+    }
 
 
 # ---------------------------------------------------------------------------
