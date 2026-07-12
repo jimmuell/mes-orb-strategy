@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import subprocess
 import sys
 import urllib.request
@@ -77,10 +78,17 @@ def label(score: float | None) -> str:
 def osv_severity(vuln_id: str, aliases: list[str]) -> str:
     """Best-effort severity label for a vuln, from OSV (CVSS preferred, then DB label)."""
     for vid in [vuln_id, *aliases]:
+        # Only query well-formed advisory IDs (PYSEC-/GHSA-/CVE-…). Guards the OSV URL against a
+        # malformed id and closes the SSRF static-analysis flag on a security tool (CWE-918).
+        if not re.fullmatch(r"[A-Za-z0-9.\-]{1,64}", vid or ""):
+            continue
         try:
             with urllib.request.urlopen(f"https://api.osv.dev/v1/vulns/{vid}", timeout=20) as r:
                 data = json.load(r)
-        except Exception:
+        except Exception as e:
+            # Do NOT swallow silently: an OSV outage makes every finding UNKNOWN -> BLOCK, which
+            # would red-fail every PR. Log it so an operator sees "OSV unreachable", not "unknown vuln".
+            print(f"  [audit-gate] WARNING: OSV lookup failed for {vid}: {e}", file=sys.stderr)
             continue
         for sev in data.get("severity", []) or []:
             if str(sev.get("type", "")).startswith("CVSS"):
@@ -97,10 +105,17 @@ def osv_severity(vuln_id: str, aliases: list[str]) -> str:
 def main() -> int:
     reqfile = sys.argv[1] if len(sys.argv) > 1 else "api/requirements.txt"
     print(f"[audit-gate] pip-audit against {reqfile}", flush=True)
-    proc = subprocess.run(
-        [sys.executable, "-m", "pip_audit", "--format", "json", "--progress-spinner", "off",
-         "-r", reqfile],
-        capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pip_audit", "--format", "json", "--progress-spinner", "off",
+             "-r", reqfile],
+            capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        # pip-audit hits PyPI/OSV; without a timeout a hung process blocks CI up to GitHub's 6h
+        # job limit. Fail closed with a distinct exit code (2 = infra error, not a real finding).
+        print("[audit-gate] ❌ pip-audit timed out after 600s (network/PyPI/OSV stall)",
+              file=sys.stderr)
+        return 2
     if not proc.stdout.strip():
         print("[audit-gate] pip-audit produced no output:\n" + proc.stderr, file=sys.stderr)
         return 2
