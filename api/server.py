@@ -503,6 +503,30 @@ async def ping():
     }
 
 
+@app.get("/env")
+async def env():
+    """ADR-048 diagnostic — report the RUNNING container's Python + installed package versions,
+    so dev/prod drift is visible at a glance (a silent pandas major-version gap made the same
+    code O(1) on dev / O(n) in prod and hid an 80x O(n^2) regression). Version numbers aren't
+    secret, so no auth — same as /ping. Compare against api/requirements.txt after every deploy."""
+    import platform
+    from importlib.metadata import version, PackageNotFoundError
+
+    def v(pkg):
+        try:
+            return version(pkg)
+        except PackageNotFoundError:
+            return None
+
+    return {
+        "engine_version": ENGINE_VERSION,
+        "python": platform.python_version(),
+        "packages": {p: v(p) for p in (
+            "pandas", "numpy", "pyarrow", "fastapi", "uvicorn", "starlette",
+            "pydantic", "anyio", "requests", "httpx", "scipy", "backtester")},
+    }
+
+
 @app.post("/run", response_model=BacktestResponse, dependencies=[Depends(verify_api_key)])
 async def run(req: BacktestRequest):
     """Run a backtest with AI-generated signal code (synchronous)."""
