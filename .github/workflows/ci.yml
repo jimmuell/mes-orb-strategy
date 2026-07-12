@@ -1,0 +1,50 @@
+name: CI
+
+# Runs on every PR into main (and on main itself). Two gates, both required:
+#   1. test        — the 125-test engine suite under the EXACT prod Python (3.12.13)
+#   2. audit-gate  — pip-audit against the locked runtime set; HIGH/CRITICAL FAILS the build
+# ADR-050. The audit gate is a distinct job so a security failure reads as "security", not "tests".
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Engine test suite (py3.12.13)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # Must equal api/.python-version and Railway's runtime (ADR-050). Exact patch, no float.
+          python-version-file: api/.python-version
+      - name: Install locked runtime + dev deps
+        run: pip install -r requirements-dev.txt
+      - name: Run suite
+        env:
+          BACKTEST_API_KEY: ci-test-key
+        run: python -m pytest -q
+
+  audit-gate:
+    name: Security gate (pip-audit, HIGH/CRITICAL fails)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: api/.python-version
+      - name: Install pip-audit
+        run: pip install pip-audit==2.10.1
+      - name: Audit the locked runtime set (blocks on HIGH/CRITICAL)
+        # Audits api/requirements.txt (the shipped runtime lock). The gate classifies each finding's
+        # severity via OSV and exits non-zero on HIGH/CRITICAL/UNKNOWN — see scripts/audit_gate.py.
+        run: python scripts/audit_gate.py api/requirements.txt

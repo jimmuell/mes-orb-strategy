@@ -63,7 +63,7 @@ def _compare(monkeypatch, run_validation):
 
 
 def test_version_bumped():
-    assert ENGINE_VERSION == "25.24.0"
+    assert ENGINE_VERSION == "25.25.0"
 
 
 def test_validation_present_with_edge_vs_luck_when_on(monkeypatch):
