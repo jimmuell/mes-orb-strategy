@@ -515,6 +515,29 @@ unchanged. Full suite 125 passed. `__version__` -> **25.24.0**.
 
 ---
 
+## ADR-050 — Pin the Python patch, and make the security audit a CI gate with teeth
+
+Full ADR: [ADR-050_pin_python_patch_and_ci_audit_gate.md](ADR-050_pin_python_patch_and_ci_audit_gate.md).
+Two remaining drift holes after ADR-048/049. **Part 1 — Python patch:** `api/.python-version` pinned
+only the minor (`3.12`); Railway floated to `3.12.13` while a rebuilt dev venv came up `3.12.6` — dev
+and prod drifted on day one. **DECISION: pin the exact patch** (`api/.python-version = 3.12.13`);
+dev moved to match prod (rebuilt on 3.12.13 via `uv`), not the reverse. Rejected accepting the float:
+the whole thesis is "know exactly what we run," it had already silently diverged, and pinning costs
+nothing — we now own the deliberate bump. **Part 2 — pip-audit CI gate (the one that matters):** new
+`.github/workflows/ci.yml` runs on every PR — job `test` (125 tests under 3.12.13) + job `audit-gate`
+(`scripts/audit_gate.py api/requirements.txt`). The gate classifies each `pip-audit` finding by
+severity (OSV CVSS v3 base score, else DB label): **HIGH/CRITICAL FAIL the build** (exit 1), lower
+severities report-only, UNKNOWN blocks unless allow-listed. Accepted findings require a **written
+reason** in the gate's `ALLOWLIST` dict (currently empty) — ADR-049's "accept only with a written
+reason" made executable. **Proved teeth:** gate went red (exit 1) on a deliberately reintroduced
+`h11==0.9.0` CRITICAL (PYSEC-2026-348), green on the real lock; test input then removed. Caveat:
+`pip-audit -r` SIGABRTs under the uv python-build-standalone build (ensurepip), fine under CI's
+standard `actions/setup-python` — run the gate locally with a standard-build Python. Result-safe: only
+version string + tests + CI + gate changed; golden snapshot unchanged -> +$817.66 / -$2,244.27. Full
+suite 125 passed under 3.12.13. `__version__` -> **25.25.0**.
+
+---
+
 ## Economics & dependency pointer
 
 Economics: pnl uses `MES_POINT_VALUE = 5.0` ($5/point). The validation instrument

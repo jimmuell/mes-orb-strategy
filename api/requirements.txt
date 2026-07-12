@@ -9,7 +9,9 @@
 # Railway installs from THIS file (it is the lock). Regenerate after a deliberate bump:
 #   python3.12 -m venv /tmp/rt && /tmp/rt/bin/pip install <direct deps below> && /tmp/rt/bin/pip freeze
 # then re-run `pip-audit`, run the suite, and confirm results are byte-identical. Python is pinned
-# to 3.12 via api/.python-version. /env reports the running container's versions.
+# to the exact patch 3.12.13 via api/.python-version (ADR-050); CI runs pip-audit against this file
+# on every PR and fails on HIGH/CRITICAL (and unallow-listed UNKNOWN) findings via
+# scripts/audit_gate.py. /env reports the running container's versions.
 
 # ── direct (the deps we chose) ──
 fastapi==0.139.0
