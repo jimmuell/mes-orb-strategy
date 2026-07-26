@@ -1,0 +1,411 @@
+{
+  "generated_window": [
+    "2016-04-10",
+    "2026-04-09"
+  ],
+  "primary": {
+    "total_trades": 2561,
+    "net_profit": -5976.890049456466,
+    "profit_factor": 0.9027249232666907,
+    "max_drawdown": -7270.258828125033,
+    "max_drawdown_pct": -72.557042255597,
+    "win_rate": 34.322530261616556,
+    "avg_trade": -2.3338110306350903,
+    "exit_reasons": {
+      "tp": 803,
+      "sl": 1650,
+      "time": 109
+    },
+    "directions": {
+      "long": 1317,
+      "short": 1245
+    },
+    "days_with_trade": 2562,
+    "bootstrap": {
+      "iterations": 10000,
+      "seed": 42,
+      "ci_level": 0.95,
+      "net_profit": [
+        -5976.890049457557,
+        [
+          -12102.015015118843,
+          -19.327588975198914
+        ]
+      ],
+      "expectancy": [
+        -2.333811030635516,
+        [
+          -4.725503715391973,
+          -0.0075468914389687294
+        ]
+      ],
+      "profit_factor": [
+        0.9027249232666741,
+        [
+          0.8101393051862057,
+          0.999664963960046
+        ]
+      ],
+      "win_rate": [
+        0.3432253026161656,
+        [
+          0.3248730964467005,
+          0.3611870363139399
+        ]
+      ]
+    },
+    "edge_vs_luck": {
+      "overall": "fail",
+      "summary": "At least one critical check failed. The evidence does not support a reliable edge at this time. Review the failing findings before drawing any conclusions. Note: multiple-testing controls (Deflated Sharpe, Probability of Backtest Overfitting) have not yet been applied \u2014 treat all findings as preliminary.",
+      "findings": [
+        {
+          "key": "edge_vs_luck",
+          "title": "Edge vs Luck",
+          "status": "fail",
+          "headline": "95% CI for expectancy is entirely negative ($-5 \u2013 $-0/trade). No positive edge detected.",
+          "stat": -4.725503715391973
+        },
+        {
+          "key": "path_risk",
+          "title": "Path Risk (Drawdown Distribution)",
+          "status": "info",
+          "headline": "46% of trade-order shuffles reached a drawdown \u2265 $7,251 (the observed maximum).",
+          "stat": 0.457
+        },
+        {
+          "key": "persistence",
+          "title": "Temporal Persistence",
+          "status": "caution",
+          "headline": "20% of walk-forward windows were profitable. Edge is inconsistent across time windows.",
+          "stat": -0.009310015249876796
+        },
+        {
+          "key": "signal_vs_exposure",
+          "title": "Signal vs Exposure",
+          "status": "inconclusive",
+          "headline": "Strategy net is at the 7.7% percentile of random-entry simulations \u2014 mid-range, not conclusive.",
+          "stat": 0.0773
+        },
+        {
+          "key": "vs_buy_hold",
+          "title": "vs Buy-and-Hold",
+          "status": "info",
+          "headline": "Strategy ($-5,977) trailed buy-and-hold ($23,865) by $29,842.",
+          "stat": -29841.89
+        }
+      ],
+      "skipped": []
+    },
+    "per_year": [
+      {
+        "year": 2016,
+        "trades": 188,
+        "win_rate": 29.78723404255319,
+        "net_pnl": -859.370000343324
+      },
+      {
+        "year": 2017,
+        "trades": 252,
+        "win_rate": 33.73015873015873,
+        "net_pnl": -1167.480004224779
+      },
+      {
+        "year": 2018,
+        "trades": 257,
+        "win_rate": 30.739299610894943,
+        "net_pnl": -1567.4299991035482
+      },
+      {
+        "year": 2019,
+        "trades": 257,
+        "win_rate": 36.18677042801556,
+        "net_pnl": -354.93000015258946
+      },
+      {
+        "year": 2020,
+        "trades": 256,
+        "win_rate": 31.25,
+        "net_pnl": -1104.9399981784838
+      },
+      {
+        "year": 2021,
+        "trades": 256,
+        "win_rate": 36.328125,
+        "net_pnl": -279.94001037597843
+      },
+      {
+        "year": 2022,
+        "trades": 257,
+        "win_rate": 37.35408560311284,
+        "net_pnl": 160.070005416868
+      },
+      {
+        "year": 2023,
+        "trades": 255,
+        "win_rate": 34.90196078431372,
+        "net_pnl": -767.450009384157
+      },
+      {
+        "year": 2024,
+        "trades": 258,
+        "win_rate": 33.333333333333336,
+        "net_pnl": -277.42000602722334
+      },
+      {
+        "year": 2025,
+        "trades": 257,
+        "win_rate": 36.57587548638132,
+        "net_pnl": -34.93002799987976
+      },
+      {
+        "year": 2026,
+        "trades": 68,
+        "win_rate": 41.1764705882353,
+        "net_pnl": 276.93000091552676
+      }
+    ],
+    "time_in_market": {
+      "n": 2562,
+      "mean_min": 60.694769711163154,
+      "median_min": 25.0,
+      "p90_min": 180.0,
+      "max_min": 370.0
+    }
+  },
+  "full_history": {
+    "total_trades": 4682,
+    "net_profit": -14581.930067684589,
+    "profit_factor": 0.8361746189201062,
+    "max_drawdown": -16088.445156250109,
+    "max_drawdown_pct": -157.22002435003765,
+    "win_rate": 33.74626228107646,
+    "avg_trade": -3.1144660546101215,
+    "exit_reasons": {
+      "sl": 3029,
+      "tp": 1436,
+      "time": 218
+    },
+    "directions": {
+      "long": 2358,
+      "short": 2325
+    },
+    "days_with_trade": 4683,
+    "bootstrap": {
+      "iterations": 10000,
+      "seed": 42,
+      "ci_level": 0.95,
+      "net_profit": [
+        -14581.930067682271,
+        [
+          -21066.961307138452,
+          -7965.430057584297
+        ]
+      ],
+      "expectancy": [
+        -3.1144660546096263,
+        [
+          -4.499564567949263,
+          -1.7012879234481626
+        ]
+      ],
+      "profit_factor": [
+        0.836174618920128,
+        [
+          0.7692358217972501,
+          0.9084873655393856
+        ]
+      ],
+      "win_rate": [
+        0.3374626228107646,
+        [
+          0.3240068346860316,
+          0.3513455788124733
+        ]
+      ]
+    },
+    "per_year": [
+      {
+        "year": 2008,
+        "trades": 258,
+        "win_rate": 36.04651162790697,
+        "net_pnl": -707.4200053024304
+      },
+      {
+        "year": 2009,
+        "trades": 258,
+        "win_rate": 37.98449612403101,
+        "net_pnl": -646.1700022983571
+      },
+      {
+        "year": 2010,
+        "trades": 258,
+        "win_rate": 34.10852713178294,
+        "net_pnl": -786.1700025367754
+      },
+      {
+        "year": 2011,
+        "trades": 256,
+        "win_rate": 35.546875,
+        "net_pnl": -429.9400015544911
+      },
+      {
+        "year": 2012,
+        "trades": 255,
+        "win_rate": 31.764705882352942,
+        "net_pnl": -989.9499989414235
+      },
+      {
+        "year": 2013,
+        "trades": 256,
+        "win_rate": 30.46875,
+        "net_pnl": -1411.190004673006
+      },
+      {
+        "year": 2014,
+        "trades": 256,
+        "win_rate": 29.296875,
+        "net_pnl": -1687.4400022983568
+      },
+      {
+        "year": 2015,
+        "trades": 255,
+        "win_rate": 30.980392156862745,
+        "net_pnl": -1239.9499974918383
+      },
+      {
+        "year": 2016,
+        "trades": 257,
+        "win_rate": 28.79377431906615,
+        "net_pnl": -1566.1800034713765
+      },
+      {
+        "year": 2017,
+        "trades": 252,
+        "win_rate": 33.73015873015873,
+        "net_pnl": -1167.480004224779
+      },
+      {
+        "year": 2018,
+        "trades": 257,
+        "win_rate": 30.739299610894943,
+        "net_pnl": -1567.4299991035482
+      },
+      {
+        "year": 2019,
+        "trades": 257,
+        "win_rate": 36.18677042801556,
+        "net_pnl": -354.93000015258946
+      },
+      {
+        "year": 2020,
+        "trades": 256,
+        "win_rate": 31.25,
+        "net_pnl": -1104.9399981784838
+      },
+      {
+        "year": 2021,
+        "trades": 256,
+        "win_rate": 36.328125,
+        "net_pnl": -279.94001037597843
+      },
+      {
+        "year": 2022,
+        "trades": 257,
+        "win_rate": 37.35408560311284,
+        "net_pnl": 160.070005416868
+      },
+      {
+        "year": 2023,
+        "trades": 255,
+        "win_rate": 34.90196078431372,
+        "net_pnl": -767.450009384157
+      },
+      {
+        "year": 2024,
+        "trades": 258,
+        "win_rate": 33.333333333333336,
+        "net_pnl": -277.42000602722334
+      },
+      {
+        "year": 2025,
+        "trades": 257,
+        "win_rate": 36.57587548638132,
+        "net_pnl": -34.93002799987976
+      },
+      {
+        "year": 2026,
+        "trades": 68,
+        "win_rate": 41.1764705882353,
+        "net_pnl": 276.93000091552676
+      }
+    ]
+  },
+  "sweeps": {
+    "entry_body": {
+      "total_trades": 2520,
+      "net_profit": -4217.300038136382,
+      "profit_factor": 0.9384852395177821,
+      "max_drawdown": -6349.739492187836,
+      "max_drawdown_pct": -63.32288003276809,
+      "win_rate": 35.63492063492063,
+      "avg_trade": -1.673531761165231,
+      "days_with_trade": 2521,
+      "edge_vs_luck": "caution"
+    },
+    "slippage_0": {
+      "total_trades": 2561,
+      "net_profit": 425.60996389489446,
+      "profit_factor": 1.0074354417325877,
+      "max_drawdown": -3094.1351171883634,
+      "max_drawdown_pct": -30.782580752827926,
+      "win_rate": 34.439672003123775,
+      "avg_trade": 0.16618897457824852,
+      "days_with_trade": 2562,
+      "edge_vs_luck": "caution"
+    },
+    "slippage_2": {
+      "total_trades": 2561,
+      "net_profit": -12379.390057085831,
+      "profit_factor": 0.8114711585450614,
+      "max_drawdown": -12624.276210937489,
+      "max_drawdown_pct": -126.03782608117268,
+      "win_rate": 34.04919953143303,
+      "avg_trade": -4.833811033614148,
+      "days_with_trade": 2562,
+      "edge_vs_luck": "fail"
+    },
+    "target_first": {
+      "total_trades": 2561,
+      "net_profit": -5324.390049456473,
+      "profit_factor": 0.9129728599615975,
+      "max_drawdown": -6921.50882812504,
+      "max_drawdown_pct": -69.07652401204435,
+      "win_rate": 34.79109722764545,
+      "avg_trade": -2.0790277428568813,
+      "days_with_trade": 2562,
+      "edge_vs_luck": "caution"
+    },
+    "vp_5min": {
+      "total_trades": 2561,
+      "net_profit": -5260.6400138080935,
+      "profit_factor": 0.9135218446142863,
+      "max_drawdown": -7121.5722656249645,
+      "max_drawdown_pct": -70.81506595065409,
+      "win_rate": 34.63490823896915,
+      "avg_trade": -2.0541351088668853,
+      "days_with_trade": 2562,
+      "edge_vs_luck": "caution"
+    }
+  },
+  "provenance": {
+    "engine_version": "25.25.0",
+    "dataset": "ES_full_5min_continuous_UNadjusted.parquet",
+    "vp_source": "ES_full_1min_continuous_UNadjusted.txt",
+    "seed": 42,
+    "bootstrap_iters": 10000,
+    "commission_per_side": 0.62,
+    "slippage_ticks": 1,
+    "point_value": 5.0,
+    "initial_capital": 10000.0
+  }
+}
