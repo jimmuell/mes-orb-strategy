@@ -1,0 +1,1379 @@
+{
+  "window": [
+    "2016-04-11",
+    "2026-04-09"
+  ],
+  "primary_config": {
+    "timeframe": "5min",
+    "k": 1.5,
+    "n_baseline": 20,
+    "spike_eff": 0.5,
+    "spike_giveback_cap": 0.2,
+    "pullback_p": 0.4,
+    "bucket_mode": "threshold",
+    "regime_mode": "trailing_median",
+    "regime_er_m": 20,
+    "regime_trailing_window": 390
+  },
+  "regime_desc": "Kaufman ER(20), split at its TRAILING median over the prior 390 candles (rolling, causal)",
+  "headline_outcome": "fwd_ret_3 (points, signed)",
+  "n_grid_runs": 18,
+  "verdicts": {
+    "C1_forward_return": "Inconclusive",
+    "C1_giveback": "Refuted",
+    "C2_did": "Inconclusive",
+    "C3_timeframe": "Inconclusive",
+    "C1_robustness": "consistent-null",
+    "C1_support_count": 0,
+    "C1_refute_count": 0,
+    "C1_total_runs": 18
+  },
+  "primary": {
+    "config": {
+      "timeframe": "5min",
+      "k": 1.5,
+      "n_baseline": 20,
+      "spike_eff": 0.5,
+      "spike_giveback_cap": 0.2,
+      "pullback_p": 0.4,
+      "bucket_mode": "threshold",
+      "regime_mode": "trailing_median",
+      "regime_er_m": 20,
+      "regime_trailing_window": 390
+    },
+    "regime_desc": "Kaufman ER(20), split at its TRAILING median over the prior 390 candles (rolling, causal)",
+    "n_events": 66355,
+    "bucket_counts": {
+      "spike": 34599,
+      "pullback": 16690,
+      "middle": 15066
+    },
+    "cells": {
+      "spike|chop": {
+        "n": 15783,
+        "mean_fwd_ret_3": -0.033010200849014765,
+        "ci_iid": [
+          -0.13811181334347078,
+          0.06849141481340683
+        ],
+        "giveback_mean": 0.9573190185085042
+      },
+      "spike|trend": {
+        "n": 16972,
+        "mean_fwd_ret_3": -0.08135458402074004,
+        "ci_iid": [
+          -0.19196470657553616,
+          0.027655108413858022
+        ],
+        "giveback_mean": 0.9582710835563099
+      },
+      "pullback|chop": {
+        "n": 6907,
+        "mean_fwd_ret_3": -0.021499927609671347,
+        "ci_iid": [
+          -0.16679184160996088,
+          0.11785507456203845
+        ],
+        "giveback_mean": 1.5506680474105403
+      },
+      "pullback|trend": {
+        "n": 8541,
+        "mean_fwd_ret_3": -0.19798618428755416,
+        "ci_iid": [
+          -0.3463009308043555,
+          -0.05046247512000936
+        ],
+        "giveback_mean": 1.6263080402203935
+      },
+      "middle|chop": {
+        "n": 6797,
+        "mean_fwd_ret_3": -0.02217890245696631,
+        "ci_iid": [
+          -0.1861492202442254,
+          0.14448653817860804
+        ],
+        "giveback_mean": 1.1803786849350089
+      },
+      "middle|trend": {
+        "n": 7435,
+        "mean_fwd_ret_3": -0.0706792199058507,
+        "ci_iid": [
+          -0.22249579690652319,
+          0.0806346671149966
+        ],
+        "giveback_mean": 1.1870341198461836
+      }
+    },
+    "c1_forward_return": {
+      "contrast": 0.061017064966342634,
+      "ci": [
+        -0.06715202715261946,
+        0.18897188203786394
+      ],
+      "n_a": 32755,
+      "n_b": 15448,
+      "method": "day_clustered",
+      "iterations": 10000,
+      "seed": 42
+    },
+    "c1_giveback": {
+      "contrast": -0.6346760931484383,
+      "ci": [
+        -0.6614336060763509,
+        -0.6084003577450734
+      ],
+      "n_a": 32755,
+      "n_b": 15448,
+      "method": "day_clustered",
+      "iterations": 10000,
+      "seed": 42
+    },
+    "c2_by_regime": {
+      "chop": {
+        "contrast": -0.011510273239343418,
+        "ci": [
+          -0.19270140290816373,
+          0.1699565797972059
+        ],
+        "n_a": 15783,
+        "n_b": 6907,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "trend": {
+        "contrast": 0.11663160026681411,
+        "ci": [
+          -0.06639173606493763,
+          0.30386908835013055
+        ],
+        "n_a": 16972,
+        "n_b": 8541,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      }
+    },
+    "c2_did_chop_minus_trend": {
+      "did": -0.12814187350615752,
+      "ci": [
+        -0.39064009579549586,
+        0.1367235054656477
+      ],
+      "method": "day_clustered",
+      "iterations": 10000,
+      "seed": 42
+    },
+    "horizon_contrasts": {
+      "1": {
+        "contrast": 0.013452846278640372,
+        "ci": [
+          -0.05706511335501891,
+          0.08492552066974038
+        ],
+        "n_a": 33905,
+        "n_b": 16248,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "3": {
+        "contrast": 0.061017064966342634,
+        "ci": [
+          -0.06715202715261946,
+          0.18897188203786394
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "5": {
+        "contrast": 0.055167076434733536,
+        "ci": [
+          -0.1108110325775103,
+          0.21792650257020035
+        ],
+        "n_a": 31639,
+        "n_b": 14956,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "10": {
+        "contrast": 0.05751249740632791,
+        "ci": [
+          -0.17154374120560315,
+          0.2987034245386616
+        ],
+        "n_a": 29302,
+        "n_b": 13603,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      }
+    }
+  },
+  "timeframe_15min": {
+    "config": {
+      "timeframe": "15min",
+      "k": 1.5,
+      "n_baseline": 20,
+      "spike_eff": 0.5,
+      "spike_giveback_cap": 0.2,
+      "pullback_p": 0.4,
+      "bucket_mode": "threshold",
+      "regime_mode": "trailing_median",
+      "regime_er_m": 20,
+      "regime_trailing_window": 390
+    },
+    "regime_desc": "Kaufman ER(20), split at its TRAILING median over the prior 390 candles (rolling, causal)",
+    "n_events": 21937,
+    "bucket_counts": {
+      "spike": 3989,
+      "pullback": 10591,
+      "middle": 7357
+    },
+    "cells": {
+      "spike|chop": {
+        "n": 1671,
+        "mean_fwd_ret_3": 0.4528725314183124,
+        "ci_iid": [
+          -0.1514175643327348,
+          1.0662963794135245
+        ],
+        "giveback_mean": 0.6888922974793925
+      },
+      "spike|trend": {
+        "n": 1803,
+        "mean_fwd_ret_3": 0.37756516916250693,
+        "ci_iid": [
+          -0.1403320854132001,
+          0.8947760676650025
+        ],
+        "giveback_mean": 0.7196745319454142
+      },
+      "pullback|chop": {
+        "n": 4216,
+        "mean_fwd_ret_3": 0.18744070208728653,
+        "ci_iid": [
+          -0.14783117884250474,
+          0.5236020517077798
+        ],
+        "giveback_mean": 1.4098936505969033
+      },
+      "pullback|trend": {
+        "n": 4676,
+        "mean_fwd_ret_3": -0.14077202737382377,
+        "ci_iid": [
+          -0.45947390932420873,
+          0.1804547155688621
+        ],
+        "giveback_mean": 1.4539407089305547
+      },
+      "middle|chop": {
+        "n": 3120,
+        "mean_fwd_ret_3": -0.00873397435897436,
+        "ci_iid": [
+          -0.40713541666666664,
+          0.3912059294871792
+        ],
+        "giveback_mean": 0.9344533511080169
+      },
+      "middle|trend": {
+        "n": 3238,
+        "mean_fwd_ret_3": 0.3240426189005559,
+        "ci_iid": [
+          -0.05790804508956144,
+          0.701984249536751
+        ],
+        "giveback_mean": 0.9319277267868051
+      }
+    },
+    "c1_forward_return": {
+      "contrast": 0.3989433361535898,
+      "ci": [
+        -0.04282312765617005,
+        0.8329334999366634
+      ],
+      "n_a": 3474,
+      "n_b": 8892,
+      "method": "day_clustered",
+      "iterations": 10000,
+      "seed": 42
+    },
+    "c1_giveback": {
+      "contrast": -0.7281882746337301,
+      "ci": [
+        -0.7655051833286667,
+        -0.6914041314422603
+      ],
+      "n_a": 3474,
+      "n_b": 8892,
+      "method": "day_clustered",
+      "iterations": 10000,
+      "seed": 42
+    },
+    "c2_by_regime": {
+      "chop": {
+        "contrast": 0.2654318293310259,
+        "ci": [
+          -0.4136253392677224,
+          0.9443736679603203
+        ],
+        "n_a": 1671,
+        "n_b": 4216,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "trend": {
+        "contrast": 0.5183371965363307,
+        "ci": [
+          -0.07364102789909253,
+          1.1280339534176649
+        ],
+        "n_a": 1803,
+        "n_b": 4676,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      }
+    },
+    "c2_did_chop_minus_trend": {
+      "did": -0.2529053672053048,
+      "ci": [
+        -1.2077007511010824,
+        0.6931993205180086
+      ],
+      "method": "day_clustered",
+      "iterations": 10000,
+      "seed": 42
+    },
+    "horizon_contrasts": {
+      "1": {
+        "contrast": 0.18066618834374565,
+        "ci": [
+          -0.07496437436841094,
+          0.4362882787974874
+        ],
+        "n_a": 3762,
+        "n_b": 9833,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "3": {
+        "contrast": 0.3989433361535898,
+        "ci": [
+          -0.04282312765617005,
+          0.8329334999366634
+        ],
+        "n_a": 3474,
+        "n_b": 8892,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "5": {
+        "contrast": 0.0827118571529272,
+        "ci": [
+          -0.5047435349377309,
+          0.6615923524401228
+        ],
+        "n_a": 3212,
+        "n_b": 8162,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "10": {
+        "contrast": 0.6281869888098964,
+        "ci": [
+          -0.2870669281746633,
+          1.5391061901634882
+        ],
+        "n_a": 2510,
+        "n_b": 6838,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      }
+    }
+  },
+  "sensitivity": {
+    "primary": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.061017064966342634,
+        "ci": [
+          -0.06715202715261946,
+          0.18897188203786394
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6346760931484383,
+        "ci": [
+          -0.6614336060763509,
+          -0.6084003577450734
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.12814187350615752,
+        "ci": [
+          -0.39064009579549586,
+          0.1367235054656477
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34599,
+        "pullback": 16690,
+        "middle": 15066
+      },
+      "n_events": 66355
+    },
+    "k=1.25": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.25,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.058724576579526636,
+        "ci": [
+          -0.0514013381931559,
+          0.16858241851433042
+        ],
+        "n_a": 36646,
+        "n_b": 21912,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6938347826049818,
+        "ci": [
+          -0.7184095368535166,
+          -0.669938502433684
+        ],
+        "n_a": 36646,
+        "n_b": 21912,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.07232533878666966,
+        "ci": [
+          -0.3049551896775593,
+          0.16229539590872832
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 38575,
+        "pullback": 23496,
+        "middle": 18048
+      },
+      "n_events": 80119
+    },
+    "k=2.0": {
+      "config": {
+        "timeframe": "5min",
+        "k": 2.0,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.10060179150498696,
+        "ci": [
+          -0.0642966656102584,
+          0.2640115710782163
+        ],
+        "n_a": 25131,
+        "n_b": 8928,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6328894018391361,
+        "ci": [
+          -0.6675911129478687,
+          -0.5987707120485154
+        ],
+        "n_a": 25131,
+        "n_b": 8928,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.13745768914122272,
+        "ci": [
+          -0.47109466667471944,
+          0.18404991028618675
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 26803,
+        "pullback": 9727,
+        "middle": 9741
+      },
+      "n_events": 46271
+    },
+    "k=3.0": {
+      "config": {
+        "timeframe": "5min",
+        "k": 3.0,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.017991679470674746,
+        "ci": [
+          -0.33798338587340276,
+          0.3776982634243554
+        ],
+        "n_a": 11816,
+        "n_b": 2283,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.5735563091544641,
+        "ci": [
+          -0.6295874299851096,
+          -0.5166935155061407
+        ],
+        "n_a": 11816,
+        "n_b": 2283,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.1971821983045905,
+        "ci": [
+          -0.917522937526096,
+          0.5085774723382206
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 12939,
+        "pullback": 2540,
+        "middle": 3841
+      },
+      "n_events": 19320
+    },
+    "N=10": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 10,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.02495846454265359,
+        "ci": [
+          -0.088856534306711,
+          0.13869979641378116
+        ],
+        "n_a": 32385,
+        "n_b": 16218,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6707045541666597,
+        "ci": [
+          -0.6973485817517665,
+          -0.6447083189236166
+        ],
+        "n_a": 32385,
+        "n_b": 16218,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.08159581808155175,
+        "ci": [
+          -0.3235615482156455,
+          0.16011425717463132
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34167,
+        "pullback": 17327,
+        "middle": 15074
+      },
+      "n_events": 66568
+    },
+    "N=40": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 40,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.12796921837880115,
+        "ci": [
+          -0.011109546564501784,
+          0.27505579886111875
+        ],
+        "n_a": 32502,
+        "n_b": 15987,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6931561469383503,
+        "ci": [
+          -0.7228639090828506,
+          -0.6648830554462949
+        ],
+        "n_a": 32502,
+        "n_b": 15987,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": 0.004421783276010574,
+        "ci": [
+          -0.2643280207433022,
+          0.27487266162180823
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34386,
+        "pullback": 17368,
+        "middle": 15262
+      },
+      "n_events": 67016
+    },
+    "E=0.4": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.4,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.06112568811441299,
+        "ci": [
+          -0.06705456743810037,
+          0.18897188203786394
+        ],
+        "n_a": 32756,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6346992282177667,
+        "ci": [
+          -0.661434417198295,
+          -0.6084258731293313
+        ],
+        "n_a": 32756,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.12791803859733536,
+        "ci": [
+          -0.390627289490882,
+          0.1368225356411226
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34600,
+        "pullback": 16690,
+        "middle": 15065
+      },
+      "n_events": 66355
+    },
+    "E=0.6": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.6,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.059161200476238233,
+        "ci": [
+          -0.06930710900823754,
+          0.18759797630326974
+        ],
+        "n_a": 32504,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6361352722141607,
+        "ci": [
+          -0.6629854548977284,
+          -0.6097660029407627
+        ],
+        "n_a": 32504,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.12179421525033858,
+        "ci": [
+          -0.38541582652721396,
+          0.14429774587774333
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34334,
+        "pullback": 16690,
+        "middle": 15331
+      },
+      "n_events": 66355
+    },
+    "cap=0.15": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.15,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.05914726474983421,
+        "ci": [
+          -0.07364871107465715,
+          0.1924165011370842
+        ],
+        "n_a": 26577,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6573125247167035,
+        "ci": [
+          -0.6844042195786473,
+          -0.6308838545880426
+        ],
+        "n_a": 26577,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.1268372056603559,
+        "ci": [
+          -0.3987879488373975,
+          0.15009025746756763
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 28073,
+        "pullback": 16690,
+        "middle": 21592
+      },
+      "n_events": 66355
+    },
+    "cap=0.25": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.25,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.07004496121598254,
+        "ci": [
+          -0.05547627471974351,
+          0.19672188720585504
+        ],
+        "n_a": 37756,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6148033586437395,
+        "ci": [
+          -0.6418273587292281,
+          -0.5888663089291272
+        ],
+        "n_a": 37756,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.1313769308586513,
+        "ci": [
+          -0.39121221326101063,
+          0.12739618509447365
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 39869,
+        "pullback": 16690,
+        "middle": 9796
+      },
+      "n_events": 66355
+    },
+    "P=0.33": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.33,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.06543992176895153,
+        "ci": [
+          -0.04627469474605572,
+          0.17812937184803201
+        ],
+        "n_a": 32755,
+        "n_b": 20830,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.5616078981324224,
+        "ci": [
+          -0.585105161006593,
+          -0.5388727293841079
+        ],
+        "n_a": 32755,
+        "n_b": 20830,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.1095954506176226,
+        "ci": [
+          -0.3466122408967479,
+          0.13223093489305202
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34599,
+        "pullback": 22378,
+        "middle": 9378
+      },
+      "n_events": 66355
+    },
+    "P=0.5": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.5,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.032539163471251166,
+        "ci": [
+          -0.10430219257246158,
+          0.17174641470148616
+        ],
+        "n_a": 32755,
+        "n_b": 12020,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.7146691853869704,
+        "ci": [
+          -0.7460743208237361,
+          -0.6843779046592934
+        ],
+        "n_a": 32755,
+        "n_b": 12020,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.10198401486867015,
+        "ci": [
+          -0.38467820787255314,
+          0.1765176521207478
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34599,
+        "pullback": 13023,
+        "middle": 18733
+      },
+      "n_events": 66355
+    },
+    "regime=insample_median": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "insample_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.061017064966342634,
+        "ci": [
+          -0.06715202715261946,
+          0.18897188203786394
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6346760931484383,
+        "ci": [
+          -0.6614336060763509,
+          -0.6084003577450734
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.14190506197217104,
+        "ci": [
+          -0.40626231260716167,
+          0.12667641985556324
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34599,
+        "pullback": 16690,
+        "middle": 15066
+      },
+      "n_events": 66355
+    },
+    "regime=fixed_0.30": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "fixed",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.061017064966342634,
+        "ci": [
+          -0.06715202715261946,
+          0.18897188203786394
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6346760931484383,
+        "ci": [
+          -0.6614336060763509,
+          -0.6084003577450734
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.16321270969933996,
+        "ci": [
+          -0.45998463854872923,
+          0.13228000833431663
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34599,
+        "pullback": 16690,
+        "middle": 15066
+      },
+      "n_events": 66355
+    },
+    "regime=ADX>20": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "adx",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.061017064966342634,
+        "ci": [
+          -0.06715202715261946,
+          0.18897188203786394
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6346760931484383,
+        "ci": [
+          -0.6614336060763509,
+          -0.6084003577450734
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.019358981033465013,
+        "ci": [
+          -0.27129217328307903,
+          0.23387299715253196
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34599,
+        "pullback": 16690,
+        "middle": 15066
+      },
+      "n_events": 66355
+    },
+    "regime_M=40": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 40,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.061017064966342634,
+        "ci": [
+          -0.06715202715261946,
+          0.18897188203786394
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6346760931484383,
+        "ci": [
+          -0.6614336060763509,
+          -0.6084003577450734
+        ],
+        "n_a": 32755,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.22848523617030755,
+        "ci": [
+          -0.501956688549088,
+          0.03991121670560153
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 34599,
+        "pullback": 16690,
+        "middle": 15066
+      },
+      "n_events": 66355
+    },
+    "bucket=percentile": {
+      "config": {
+        "timeframe": "5min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "percentile",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.03446762742836236,
+        "ci": [
+          -0.11169061849154598,
+          0.1815920783273757
+        ],
+        "n_a": 15740,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.6607163510768768,
+        "ci": [
+          -0.6897302044517533,
+          -0.6328797235431792
+        ],
+        "n_a": 15740,
+        "n_b": 15448,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.11606211860899454,
+        "ci": [
+          -0.4181585479571329,
+          0.1823894334443358
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 16629,
+        "pullback": 16690,
+        "middle": 33036
+      },
+      "n_events": 66355
+    },
+    "timeframe=15min": {
+      "config": {
+        "timeframe": "15min",
+        "k": 1.5,
+        "n_baseline": 20,
+        "spike_eff": 0.5,
+        "spike_giveback_cap": 0.2,
+        "pullback_p": 0.4,
+        "bucket_mode": "threshold",
+        "regime_mode": "trailing_median",
+        "regime_er_m": 20,
+        "regime_trailing_window": 390
+      },
+      "c1_forward_return": {
+        "contrast": 0.3989433361535898,
+        "ci": [
+          -0.04282312765617005,
+          0.8329334999366634
+        ],
+        "n_a": 3474,
+        "n_b": 8892,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c1_giveback": {
+        "contrast": -0.7281882746337301,
+        "ci": [
+          -0.7655051833286667,
+          -0.6914041314422603
+        ],
+        "n_a": 3474,
+        "n_b": 8892,
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "c2_did": {
+        "did": -0.2529053672053048,
+        "ci": [
+          -1.2077007511010824,
+          0.6931993205180086
+        ],
+        "method": "day_clustered",
+        "iterations": 10000,
+        "seed": 42
+      },
+      "bucket_counts": {
+        "spike": 3989,
+        "pullback": 10591,
+        "middle": 7357
+      },
+      "n_events": 21937
+    }
+  }
+}
