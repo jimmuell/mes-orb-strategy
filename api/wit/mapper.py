@@ -19,11 +19,13 @@ import json
 import os
 
 from wit.config import VPORBConfig
+from wit.event_study import EventStudyConfig
 from wit.extraction.completeness import score_completeness
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(os.path.dirname(_HERE))
 _STRATEGY_CONFIG_SCHEMA = os.path.join(_REPO, "contract", "strategy-config.v1.json")
+_EVENT_STUDY_SCHEMA = os.path.join(_REPO, "contract", "event-study-config.v1.json")
 
 # Per-template-field DECLARED mode vocabulary (contract/modes.md, Class A). map_template
 # rejects any token not declared for the dimension (UnsupportedConstruct). Tokens that are
@@ -43,6 +45,24 @@ FIELD_MODE_VOCAB = {
     "C1": {"rth_window"},                                  # session
 }
 _ET_TZ = "America/New_York"
+
+# Class B (event study) dimension vocabularies (contract/modes.md). The mode tokens live
+# INSIDE the carrier field's params (J1.params.event/path_bucket/regime.mode), not on
+# field.mode — Class B is WIT-authored, so the whole event-study spec sits under J1.
+EVENT_MODES = {"body_vs_trailing_median"}
+PATH_MODES = {"path_threshold", "path_percentile"}
+REGIME_MODES = {"kaufman_er_trailing_median", "kaufman_er_insample_median",
+                "kaufman_er_fixed", "adx_threshold", "none"}
+TIMEFRAMES = {"5min", "15min"}
+# vocab regime token -> engine EventStudyConfig.regime_mode enum
+REGIME_TOKEN_TO_ENGINE = {
+    "kaufman_er_trailing_median": "trailing_median",
+    "kaufman_er_insample_median": "insample_median",
+    "kaufman_er_fixed": "fixed",
+    "adx_threshold": "adx",
+}
+# vocab path token -> engine EventStudyConfig.bucket_mode enum
+PATH_TOKEN_TO_BUCKET = {"path_threshold": "threshold", "path_percentile": "percentile"}
 
 
 class UnsupportedConstruct(Exception):
@@ -91,7 +111,7 @@ def map_template(template: dict) -> dict:
     if cls == "C":
         raise UntestableStrategy(cls="C")
     if cls == "B":
-        raise NotImplementedError("Class B mapper: P3c-3")
+        return _map_class_b(template)
     if cls != "A":
         raise UntestableStrategy(cls=cls)
 
@@ -218,4 +238,106 @@ def strategy_config_to_vporb(wire: dict) -> VPORBConfig:
         same_bar_policy=wire["exits"]["same_bar_policy"],
         commission_per_side=wire["costs"]["commission_per_side"],
         slippage_ticks=wire["costs"]["slippage_ticks"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Class B — event study (WIT-03 §3.5)
+# ---------------------------------------------------------------------------
+def _map_class_b(template: dict) -> dict:
+    """Build the wire EventStudyConfig from the WIT-authored carrier fields (J1 event/
+    path_bucket/regime/outcomes/window; B2 timeframe). Reads ONLY mode/params — never
+    prose. Class B is WIT-authored, so §5 defaults rarely apply."""
+    j1 = _params(template, "J1")
+    event = j1.get("event", {})
+    path = j1.get("path_bucket", {})
+    regime = j1.get("regime", {})
+    outcomes = j1.get("outcomes", {})
+    window = j1.get("window", {})
+    # timeframe: J1 authoritative; B2 is the guru-source that permits it ("any timeframe").
+    timeframe = j1.get("timeframe") or _params(template, "B2").get("timeframe")
+
+    # vocabulary gates (contract/modes.md, Class B) — unknown token fails loud
+    if event.get("mode") not in EVENT_MODES:
+        raise UnsupportedConstruct(field="J1.event", mode=event.get("mode"))
+    if path.get("mode") not in PATH_MODES:
+        raise UnsupportedConstruct(field="J1.path_bucket", mode=path.get("mode"))
+    if regime.get("mode") not in REGIME_MODES:
+        raise UnsupportedConstruct(field="J1.regime", mode=regime.get("mode"))
+    if timeframe not in TIMEFRAMES:
+        raise UnsupportedConstruct(field="B2", mode=timeframe)
+
+    assumptions: list[str] = []
+    for fid in ("J1",):     # J1 is specified (WIT-authored); no §5 default lands. Kept explicit.
+        if _field(template, fid).get("status") == "unspecified":
+            assumptions.append(fid)
+
+    config = {
+        "config_version": "1.0",
+        "event": {"mode": event.get("mode"),
+                  "params": {"k": event.get("k"), "n_baseline": event.get("n_baseline")}},
+        "path_bucket": {"mode": path.get("mode"),
+                        "params": {"spike_eff": path.get("spike_eff"),
+                                   "spike_giveback_cap": path.get("spike_giveback_cap"),
+                                   "pullback_p": path.get("pullback_p"),
+                                   "bucket_mode": path.get("bucket_mode")}},
+        "regime": {"mode": regime.get("mode"),
+                   "params": {"regime_er_m": regime.get("regime_er_m"),
+                              "regime_trailing_window": regime.get("regime_trailing_window"),
+                              "regime_fixed_er": regime.get("regime_fixed_er"),
+                              "regime_adx_len": regime.get("regime_adx_len"),
+                              "regime_adx_thresh": regime.get("regime_adx_thresh")}},
+        "conditions": ["regime_chop", "regime_trend"],
+        "outcomes": {"horizons_bars": outcomes.get("horizons"),
+                     "measures": outcomes.get("measures")},
+        "timeframe": timeframe,
+        "data": {"dataset": "ES_1min_continuous", "granularity_needed": "1min",
+                 "window": {"start": window.get("start"), "end": window.get("end")}},
+    }
+    _event_study_hygiene(config)
+    return {"kind": "event_study", "config": config, "assumptions_applied": assumptions}
+
+
+def _event_study_hygiene(config: dict) -> None:
+    with open(_EVENT_STUDY_SCHEMA) as fh:
+        required = json.load(fh)["required"]
+    missing = [k for k in required if k not in config]
+    if missing:
+        raise ValueError(f"emitted EventStudyConfig missing required keys: {missing}")
+
+
+def event_study_config_to_engine(wire: dict) -> EventStudyConfig:
+    """Adapter: wire EventStudyConfig -> the frozen engine EventStudyConfig.
+    Unknown regime/event/path token -> UnsupportedConstruct; never a silent default."""
+    if wire["event"]["mode"] not in EVENT_MODES:
+        raise UnsupportedConstruct(field="event", mode=wire["event"]["mode"])
+    path_token = wire["path_bucket"]["mode"]
+    if path_token not in PATH_TOKEN_TO_BUCKET:
+        raise UnsupportedConstruct(field="path_bucket", mode=path_token)
+    regime_token = wire["regime"]["mode"]
+    if regime_token not in REGIME_TOKEN_TO_ENGINE:
+        raise UnsupportedConstruct(field="regime", mode=regime_token)
+    if wire["timeframe"] not in TIMEFRAMES:
+        raise UnsupportedConstruct(field="timeframe", mode=wire["timeframe"])
+
+    ep = wire["event"]["params"]
+    pp = wire["path_bucket"]["params"]
+    rp = wire["regime"]["params"]
+    win = wire["data"]["window"]
+    return EventStudyConfig(
+        timeframe=wire["timeframe"],
+        k=ep["k"],
+        n_baseline=ep["n_baseline"],
+        spike_eff=pp["spike_eff"],
+        spike_giveback_cap=pp["spike_giveback_cap"],
+        pullback_p=pp["pullback_p"],
+        bucket_mode=pp["bucket_mode"],
+        regime_mode=REGIME_TOKEN_TO_ENGINE[regime_token],
+        regime_er_m=rp["regime_er_m"],
+        regime_trailing_window=rp["regime_trailing_window"],
+        regime_fixed_er=rp["regime_fixed_er"],
+        regime_adx_len=rp["regime_adx_len"],
+        regime_adx_thresh=rp["regime_adx_thresh"],
+        start=win["start"],
+        end=win["end"],
     )

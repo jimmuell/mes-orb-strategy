@@ -14,7 +14,8 @@ import os
 import pytest
 
 from wit.config import VPORBConfig
-from wit.mapper import (map_template, strategy_config_to_vporb,
+from wit.event_study import EventStudyConfig
+from wit.mapper import (map_template, strategy_config_to_vporb, event_study_config_to_engine,
                         UnsupportedConstruct, UntestableStrategy)
 from wit.extraction import FIELD_IDS
 
@@ -98,7 +99,37 @@ def test_G4_class_C_refused():
     assert exc.value.cls == "C"
 
 
-def test_class_B_not_implemented_this_slice():
-    t = _load("WIT-T-0002.template.json")   # Class B
-    with pytest.raises(NotImplementedError):
+# ── G2 — Class B anchor: round-trip equals EventStudyConfig() exactly ──
+def test_G2_t0002_roundtrip_equals_eventstudyconfig():
+    t = _load("WIT-T-0002.template.json")
+    mapped = map_template(t)
+    assert mapped["kind"] == "event_study"
+    cfg = event_study_config_to_engine(mapped["config"])
+    assert cfg == EventStudyConfig()                     # exact frozen-dataclass equality
+
+
+def test_G2_no_prose_value_needed():
+    t = _load("WIT-T-0002.template.json")
+    for fid in t["fields"]:
+        t["fields"][fid]["value"] = "XXXX prose scrambled XXXX"
+    assert event_study_config_to_engine(map_template(t)["config"]) == EventStudyConfig()
+
+
+def test_class_B_unknown_regime_token_raises():
+    t = _load("WIT-T-0002.template.json")
+    t["fields"]["J1"]["params"]["regime"]["mode"] = "my_special_regime"
+    with pytest.raises(UnsupportedConstruct) as exc:
         map_template(t)
+    assert exc.value.field == "J1.regime"
+    assert exc.value.mode == "my_special_regime"
+
+
+def test_class_B_adapter_unmapped_regime_enum_raises():
+    """A declared-but-not-mapped regime token ('none') passes the mapper vocab gate but
+    has no engine enum -> the adapter refuses, never a silent default."""
+    t = _load("WIT-T-0002.template.json")
+    t["fields"]["J1"]["params"]["regime"]["mode"] = "none"   # in REGIME_MODES, not in the engine map
+    wire = map_template(t)["config"]
+    with pytest.raises(UnsupportedConstruct) as exc:
+        event_study_config_to_engine(wire)
+    assert exc.value.field == "regime"
