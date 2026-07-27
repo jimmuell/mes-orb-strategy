@@ -1,0 +1,188 @@
+{
+  "template_version": "1.0",
+  "source": {
+    "url": null,
+    "title": "video #2 — unnamed \"3-step\" strategy (Volume-Profile ORB)",
+    "channel": null,
+    "transcript_hash": null
+  },
+  "fields": {
+    "A1": {
+      "value": "WIT nickname: Volume-Profile Opening Range Breakout (VP-ORB). Source presents it unnamed as 'this strategy'; channel/URL not captured with the transcript.",
+      "status": "specified",
+      "source_quote": "the one you'll learn today is backed by a 10year track record and it consistently gives me wins like this, this, and this",
+      "assumption": null
+    },
+    "A2": {
+      "value": "Five performance assertions; claims_shown_evidence = false (no win rate/PF/DD/equity shown). Structured rows in claims[].",
+      "status": "specified",
+      "source_quote": "it has been proven to be extremely profitable over a 10year back test",
+      "assumption": null
+    },
+    "A3": {
+      "value": "Two internal contradictions (R:R arithmetic; 'any market' vs a 9:30 ET open-range). Structured rows in consistency_flags[].",
+      "status": "specified",
+      "source_quote": "we had a $35 risk to make $620",
+      "assumption": null
+    },
+    "B1": {
+      "value": "Guru demonstrates on NASDAQ (0.25 ticks). WIT tests ES/MES ($1.25/tick, $5/point) as a disclosed proxy under the guru's 'any market' claim.",
+      "status": "specified",
+      "source_quote": "for NASDAQ, which we're using in this example",
+      "assumption": null
+    },
+    "B2": {
+      "value": "5-minute — the sole decision timeframe.",
+      "status": "specified",
+      "source_quote": "We're going to stay on this time frame for the entire strategy",
+      "assumption": null
+    },
+    "B3": {
+      "value": "Volume profile over 09:30-09:45 ET needs intra-range volume distribution; ideal tick/1-min. WIT distributes each bar's volume across its high-low span in tick rows.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": "Volume-profile/intrabar features computed from finest licensed data (1-min); approximation disclosed (WIT-02 §5, B3)."
+    },
+    "C1": {
+      "value": "Session start 09:30 ET; levels drawn at 09:45 ET; entries only before 11:00 ET. Forced-flat time not stated (see F4).",
+      "status": "specified",
+      "source_quote": "the entry must happen before 11:00 a.m. Eastern Standard Time",
+      "assumption": null
+    },
+    "C2": {
+      "value": "No volatility/trend regime filter stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "C3": {
+      "value": "No calendar/event filter stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "D1": {
+      "value": "First 5-min candle to close its body through the value-area high => longs only that day; through the value-area low => shorts only.",
+      "status": "specified",
+      "source_quote": "the very next 5-minute candle closes its body through our level… we're now going to only be looking for buys on this trading day",
+      "assumption": null
+    },
+    "D2": {
+      "value": "Fixed-range volume profile over 09:30-09:45, value area 70%; levels VAH, VAL, POC.",
+      "status": "specified",
+      "source_quote": "wait for a break of our value area high or our value area low",
+      "assumption": null
+    },
+    "D3": {
+      "value": "Enter at the close of the breakout candle. Interpretation flagged: close-beyond (primary) vs entire-body-beyond (variant).",
+      "status": "specified",
+      "source_quote": "literally enter as soon as this candle closes",
+      "assumption": null
+    },
+    "D4": {
+      "value": "Market order at signal close.",
+      "status": "specified",
+      "source_quote": "just click market buy",
+      "assumption": null
+    },
+    "E1": {
+      "value": "No sizing rule stated; the guru's own examples imply ~16x variable risk ($35 vs $585).",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": "1 contract (MES) (WIT-02 §5, E1)."
+    },
+    "F1": {
+      "value": "Stop 2 ticks beyond POC (longs below; shorts mirrored above POC by symmetry).",
+      "status": "specified",
+      "source_quote": "drag this right up to two ticks under the PC",
+      "assumption": null
+    },
+    "F2": {
+      "value": "Fixed 2:1 reward:risk from entry.",
+      "status": "specified",
+      "source_quote": "drag your target until that ratio is two",
+      "assumption": null
+    },
+    "F3": {
+      "value": "No active management (no break-even, trailing, or scaling).",
+      "status": "implied",
+      "source_quote": "you just sit back and let the market do the heavy lifting",
+      "assumption": null
+    },
+    "F4": {
+      "value": "No forced-flat time stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": "Force-flat at session close (16:00 ET) if neither stop nor target hit (WIT-02 §5, F4)."
+    },
+    "F5": {
+      "value": "No same-bar stop+target policy stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": "Stop-first (conservative) (WIT-02 §5, F5)."
+    },
+    "G1": {
+      "value": "One setup/day; the first qualifying break sets the day's only direction. Re-entry after stop-out not stated.",
+      "status": "implied",
+      "source_quote": "You just trade one setup on one time frame… the same thing every single day",
+      "assumption": "Re-entry: none, max 1 trade/day — daily setup implied (WIT-02 §5, G1)."
+    },
+    "G2": {
+      "value": "No daily/weekly loss limit stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "H1": {
+      "value": "Video never mentions commission.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": "$0.62/side/contract (MES); sensitivity-tested (WIT-02 §5, H1)."
+    },
+    "H2": {
+      "value": "Video never mentions slippage.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": "1 tick/side; 0/1/2-tick sweep (WIT-02 §5, H2)."
+    },
+    "I1": {
+      "value": "range_minutes=15, value_area_pct=70, stop_offset_ticks=2, rr_target=2.0, entry_cutoff=11:00 ET, timeframe=5m. v1 tests the stated defaults only.",
+      "status": "specified",
+      "source_quote": "wait until 9:45 EST",
+      "assumption": null
+    },
+    "J1": {
+      "value": "Primary window 10y 2016-07-01->2026-06-30 (mirrors the 10-year claim), ES 5-min; secondary full history 2008->. Metrics: trades, net PnL($MES), PF, max DD, win rate, avg trade, expectancy(R), avg time-in-market/day. Stats: bootstrap CIs (seed 42, 10k), MC edge-vs-luck, per-year, regime.",
+      "status": "specified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "J2": {
+      "value": "Interpretation set: (1) entry close-beyond vs full-body-beyond; (2) slippage 0/1/2 ticks; (3) same-bar stop-first vs target-first. Verdict marked fragile if it flips.",
+      "status": "specified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "K1": {
+      "value": "Untestable remainder: live chart-reading coaching, the $200k anecdote, the 'level will be defended' narrative, all mentorship/funded-trader claims.",
+      "status": "specified",
+      "source_quote": "this level is extremely powerful… it will be defended",
+      "assumption": null
+    }
+  },
+  "claims": [
+    {"claim": "Profitable over a 10-year backtest", "quote": "it has been proven to be extremely profitable over a 10year back test", "testable": true},
+    {"claim": "Made over $200,000 in a couple of months with own capital", "quote": "I put my own capital behind it and made over $200,000 in just a couple of months", "testable": false},
+    {"claim": "Consistently gives wins", "quote": "consistently gives me wins like this, this, and this", "testable": false},
+    {"claim": "Works on any market", "quote": "this doesn't matter what market you're trading… futures, stocks, crypto, or forex", "testable": true},
+    {"claim": "Consistent profits in less than 90 minutes per day", "quote": "consistent profits in less than 90 minutes per day", "testable": true}
+  ],
+  "consistency_flags": [
+    {"description": "Risk/reward arithmetic contradiction: '$35 risk to make $620' is impossible under the stated fixed 2:1 rule ($35 risk => $70 target). The second example ($585 risk to make $1,170) is consistent.", "quotes": ["we had a $35 risk to make $620", "drag your target until that ratio is two"]},
+    {"description": "'Same time works for any market': a 9:30 ET opening range has no meaning for 24-hour markets (crypto, forex) as claimed.", "quotes": ["this doesn't matter what market you're trading… futures, stocks, crypto, or forex"]}
+  ],
+  "completeness": {"score": 66, "class": "A", "required_missing": []},
+  "interpretations": [
+    {"field": "D3", "readings": ["close beyond the level (primary)", "entire candle body beyond the level (variant)"]}
+  ]
+}

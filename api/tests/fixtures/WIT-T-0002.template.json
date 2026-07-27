@@ -1,0 +1,189 @@
+{
+  "template_version": "1.0",
+  "source": {
+    "url": null,
+    "title": "video #1 — candlestick formation (Candle Formation Path)",
+    "channel": null,
+    "transcript_hash": null
+  },
+  "fields": {
+    "A1": {
+      "value": "WIT nickname: Candle Formation Path (CFP). Unnamed candlestick-reading method; channel/URL not captured.",
+      "status": "specified",
+      "source_quote": "It's a clue inside the candlestick that tells you when momentum is actually shifting",
+      "assumption": null
+    },
+    "A2": {
+      "value": "Six assertions (4 testable claims about formation path, 2 untestable). claims_shown_evidence = false. Structured rows in claims[].",
+      "status": "specified",
+      "source_quote": "A candlestick can finish looking super bullish, but it can form in a way that shows you it's fake",
+      "assumption": null
+    },
+    "A3": {
+      "value": "No arithmetic contradiction. Recorded instead: all shown examples are post-hoc selections (survivorship in the exhibits).",
+      "status": "specified",
+      "source_quote": "I'll also show you the fake out versions so you know what is real versus a fake signal",
+      "assumption": null
+    },
+    "B1": {
+      "value": "Guru's examples show the NASDAQ index but no instrument is specified (the claim is market-agnostic). WIT tests ES as a disclosed proxy.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "B2": {
+      "value": "Guru says any timeframe. WIT primary 5-minute (day-trading context), secondary 15-minute (better path resolution).",
+      "status": "specified",
+      "source_quote": "this can work on a one minute chart, 5 minute, any type of chart, a daily chart",
+      "assumption": null
+    },
+    "B3": {
+      "value": "Path within a candle needs finer bars: 1-min sub-bars give 5 per 5-min candle, 15 per 15-min. No tick data; path measured on 1-min closes/extremes.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": "Path composed from finest licensed data (1-min); approximation disclosed (WIT-02 §5, B3)."
+    },
+    "C1": {
+      "value": "No session rules stated. WIT restricts to RTH 09:30-16:00 ET for regime comparability.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "C2": {
+      "value": "'Choppy' vs bigger-picture trend is invoked as a concept but never defined numerically — no executable filter.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "C3": {
+      "value": "No calendar/event filter stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "D1": {
+      "value": "No directional rule — the claim is about candle formation, not a long/short entry system.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "D2": {
+      "value": "A 'big' bullish/bearish candle; size never quantified (partial).",
+      "status": "implied",
+      "source_quote": "if you're thinking that's just a big green candlestick",
+      "assumption": null
+    },
+    "D3": {
+      "value": "No entry trigger — the shown trade uses a discretionary head-and-shoulders read plus a break of a high. No mechanical trigger to disambiguate.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "D4": {
+      "value": "No order mechanics stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "E1": {
+      "value": "No sizing rule (no runnable strategy to size).",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "F1": {
+      "value": "'Stop loss below that big candlestick' — shown once as an example, not stated as a rule (partial).",
+      "status": "implied",
+      "source_quote": "I put my stop loss below that big candlestick",
+      "assumption": null
+    },
+    "F2": {
+      "value": "No profit target stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "F3": {
+      "value": "No trade management stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "F4": {
+      "value": "No time exit stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "F5": {
+      "value": "No same-bar policy stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "G1": {
+      "value": "No trade-frequency limit stated; no daily setup is implied (this is not a once-a-day system).",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "G2": {
+      "value": "No loss limit stated.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "H1": {
+      "value": "Moot — no strategy to cost.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "H2": {
+      "value": "Moot — no strategy to cost.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "I1": {
+      "value": "Guru states no optimization surface. WIT-chosen claim-codification knobs (event study): big_candle_k, path_efficiency_threshold, retrace_pct_threshold, regime_measure+threshold, forward_horizons.",
+      "status": "unspecified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "J1": {
+      "value": "Event study (Class B). Event = RTH candle whose body >= k x rolling-median body; direction = sign of body. Path buckets Spike/Pullback/Middle from 1-min sub-bars. Regime = pre-declared chop/trend on prior bars. Outcomes: signed fwd return +1/+3/+5/+10, giveback, P(next against). Bootstrap CIs (seed 42, 10k); both timeframes.",
+      "status": "specified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "J2": {
+      "value": "Interpretation set: Spike/Pullback thresholds and the regime measure are WIT codifications; every threshold gets a sensitivity row; a claim supported under only one threshold is reported fragile.",
+      "status": "specified",
+      "source_quote": null,
+      "assumption": null
+    },
+    "K1": {
+      "value": "Untestable remainder: head-and-shoulders reads, 'areas that make sense', double-top/second-attempt sequencing, the $4,000 anecdote, the PDF/funnel. No profitability verdict possible.",
+      "status": "specified",
+      "source_quote": "wait for something like this to happen of the market to make another attempt to go higher and then reverse",
+      "assumption": null
+    }
+  },
+  "claims": [
+    {"claim": "Formation path predicts follow-through vs reversal", "quote": "A candlestick can finish looking super bullish, but it can form in a way that shows you it's fake.", "testable": true},
+    {"claim": "Straight-up moves give it back", "quote": "if the market moves straight up with no pullbacks, even over 60 seconds, it's not going to be healthy and it's likely to give it back up", "testable": true},
+    {"claim": "Context/regime conditions the signal", "quote": "a spike higher that in a choppy environment is more likely to instantly get reversed the next candlestick", "testable": true},
+    {"claim": "Works on any timeframe", "quote": "this can work on a one minute chart, 5 minute, any type of chart, a daily chart", "testable": true},
+    {"claim": "$4,000 winning trade", "quote": "I am up over $4,000", "testable": false},
+    {"claim": "Cleaner entries, tighter stops", "quote": "your entries get cleaner, your stops get tighter", "testable": false}
+  ],
+  "consistency_flags": [
+    {"description": "No arithmetic contradiction found. Survivorship in exhibits: every example is a hand-picked chart chosen after the fact; no statistics of any kind are shown.", "quotes": ["I'll also show you the fake out versions so you know what is real versus a fake signal"]}
+  ],
+  "completeness": {"score": 21, "class": "B", "required_missing": ["B1", "D1"]},
+  "interpretations": [
+    {"field": "C2", "readings": ["Kaufman efficiency-ratio regime split", "ADX-based trend/chop split"]},
+    {"field": "D2", "readings": ["body >= k x trailing-median body over N prior candles"]}
+  ]
+}

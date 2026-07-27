@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://willittrade.com/schema/strategy-template.v1.json",
+  "title": "WIT-02 Strategy Template v1",
+  "$comment": "Canonical machine schema for the WIT-02 strategy template (WIT-02 §6; WIT-03 §4 owns this file, WIT-02 owns the semantics). RECONCILIATION (WIT-02 §2 vs §6): §2 describes A2 (claimed_performance) and A3 (internal_consistency_flags) as fields that carry the performance claims and the internal contradictions. §6 also defines top-level arrays `claims[]` and `consistency_flags[]`. Per this prompt, §6 wins for STRUCTURE: A2/A3 remain field objects (status/value/source_quote/assumption like every other field), but the machine-readable rows live in the top-level `claims[]` and `consistency_flags[]` arrays. FIELD COUNT: WIT-02 §2's header says '25 fields' but its field tables enumerate 27 IDs (A1-A3, B1-B3, C1-C3, D1-D4, E1, F1-F5, G1-G2, H1-H2, I1, J1-J2, K1). This schema includes all 27 that §2 defines — the tables are authoritative for the field set.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "template_version",
+    "source",
+    "fields",
+    "claims",
+    "consistency_flags",
+    "completeness",
+    "interpretations"
+  ],
+  "properties": {
+    "template_version": {
+      "type": "string",
+      "description": "semver-major on breaking field changes (WIT-02 §6). v1 = '1.0'."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "title", "channel", "transcript_hash"],
+      "properties": {
+        "url": {"type": ["string", "null"]},
+        "title": {"type": ["string", "null"]},
+        "channel": {"type": ["string", "null"]},
+        "transcript_hash": {"type": ["string", "null"]}
+      }
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "All 27 template fields A1..K1 (WIT-02 §2). Every field is a field object.",
+      "required": [
+        "A1", "A2", "A3",
+        "B1", "B2", "B3",
+        "C1", "C2", "C3",
+        "D1", "D2", "D3", "D4",
+        "E1",
+        "F1", "F2", "F3", "F4", "F5",
+        "G1", "G2",
+        "H1", "H2",
+        "I1",
+        "J1", "J2",
+        "K1"
+      ],
+      "patternProperties": {
+        "^[A-K][0-9]$": {"$ref": "#/$defs/field"}
+      }
+    },
+    "claims": {
+      "type": "array",
+      "description": "Every performance assertion (WIT-02 A2/§4.3). Structured home per §6.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "quote", "testable"],
+        "properties": {
+          "claim": {"type": "string"},
+          "quote": {"type": "string"},
+          "testable": {"type": "boolean"}
+        }
+      }
+    },
+    "consistency_flags": {
+      "type": "array",
+      "description": "Contradictions within the source (WIT-02 A3/§4.4). Structured home per §6.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "quotes"],
+        "properties": {
+          "description": {"type": "string"},
+          "quotes": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "class", "required_missing"],
+      "properties": {
+        "score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "class": {"type": "string", "enum": ["A", "B", "C"]},
+        "required_missing": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "interpretations": {
+      "type": "array",
+      "description": "Reasonable alternate readings of ambiguous rules (WIT-02 J2/§4.5).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "readings"],
+        "properties": {
+          "field": {"type": "string"},
+          "readings": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "status", "source_quote", "assumption"],
+      "properties": {
+        "value": {
+          "description": "Extracted content, or null. Any JSON type (string is typical).",
+          "type": ["string", "number", "integer", "boolean", "object", "array", "null"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["specified", "implied", "unspecified"],
+          "description": "WIT-02 §1: specified (stated) | implied (inferred, quote required) | unspecified."
+        },
+        "source_quote": {
+          "type": ["string", "null"],
+          "description": "Verbatim transcript snippet; mandatory (non-null) for specified/implied (WIT-02 §4.1)."
+        },
+        "assumption": {
+          "type": ["string", "null"],
+          "description": "If unspecified and required, the §5 default applied. Otherwise null."
+        }
+      }
+    }
+  }
+}

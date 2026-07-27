@@ -1,0 +1,103 @@
+"""WIT-P3b — schema validation + completeness-scorer goldens (deterministic, no network).
+
+The two hand-filled templates are the ground-truth calibration anchors:
+  WIT-T-0001 (Volume-Profile ORB)      -> Class A
+  WIT-T-0002 (Candle Formation Path)   -> Class B
+
+Run:  cd api && BACKTEST_API_KEY=k .venv/bin/python -m pytest tests/test_completeness.py -q
+"""
+from __future__ import annotations
+
+import json
+import os
+
+import pytest
+
+from wit.extraction import validate_template, score_completeness, FIELD_IDS
+from wit.extraction.completeness import assumption_fills
+
+_FIX = os.path.join(os.path.dirname(__file__), "fixtures")
+
+
+def _load(name):
+    with open(os.path.join(_FIX, name)) as fh:
+        return json.load(fh)
+
+
+@pytest.fixture
+def t0001():
+    return _load("WIT-T-0001.template.json")
+
+
+@pytest.fixture
+def t0002():
+    return _load("WIT-T-0002.template.json")
+
+
+# ── schema ──
+def test_schema_has_all_27_fields():
+    assert len(FIELD_IDS) == 27
+    assert FIELD_IDS[0] == "A1" and FIELD_IDS[-1] == "K1"
+
+
+def test_fixtures_validate(t0001, t0002):
+    assert validate_template(t0001) == []
+    assert validate_template(t0002) == []
+
+
+def test_validator_catches_bad_status(t0001):
+    t0001["fields"]["B1"]["status"] = "totally-made-up"
+    errs = validate_template(t0001)
+    assert any("B1.status" in e for e in errs)
+
+
+def test_validator_requires_source_quote_for_specified(t0001):
+    t0001["fields"]["B1"]["source_quote"] = None   # B1 is specified
+    errs = validate_template(t0001)
+    assert any("B1" in e and "source_quote" in e for e in errs)
+
+
+def test_validator_exempts_wit_authored_J_from_quote(t0001):
+    # J1 is specified with a null source_quote by design (WIT-authored) — must be OK.
+    assert t0001["fields"]["J1"]["status"] == "specified"
+    assert t0001["fields"]["J1"]["source_quote"] is None
+    assert validate_template(t0001) == []
+
+
+# ── scorer goldens ──
+def test_t0001_is_class_A(t0001):
+    r = score_completeness(t0001)
+    assert r["class"] == "A"
+    assert r["required_missing"] == []          # all required fields satisfied
+    assert assumption_fills(t0001) <= 6         # WIT-02 §3 Class-A limit (anchor ~5)
+
+
+def test_t0002_is_class_B(t0002):
+    r = score_completeness(t0002)
+    assert r["class"] == "B"
+    # mechanical required_missing under the pinned §5-default rule (see report):
+    assert r["required_missing"] == ["B1", "D1"]
+
+
+def test_scores_are_in_range(t0001, t0002):
+    for t in (t0001, t0002):
+        s = score_completeness(t)["score"]
+        assert isinstance(s, int) and 0 <= s <= 100
+    # A should out-score B (more of the execution surface is present)
+    assert score_completeness(t0001)["score"] > score_completeness(t0002)["score"]
+
+
+def test_stored_completeness_matches_recomputed(t0001, t0002):
+    # the completeness block baked into each fixture must equal a fresh recompute
+    for t in (t0001, t0002):
+        r = score_completeness(t)
+        assert t["completeness"]["class"] == r["class"]
+        assert t["completeness"]["required_missing"] == r["required_missing"]
+        assert t["completeness"]["score"] == r["score"]
+
+
+def test_class_C_when_no_testable_claim_and_missing_required(t0002):
+    # strip testability from every claim -> not A, no testable claim -> C
+    for c in t0002["claims"]:
+        c["testable"] = False
+    assert score_completeness(t0002)["class"] == "C"
