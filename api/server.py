@@ -1743,6 +1743,7 @@ from wit.config_hash import config_hash as _wit_config_hash
 from wit.run_store import WITRunStore
 from wit.vp_orb_runner import run_vp_orb, PARQUET_5MIN as _VPORB_PARQUET
 from wit.event_study import run_config, load_1min_rth, build_candles, RAW_1MIN as _ES_RAW_1MIN
+from wit.sweeps import build_backtest_sweep, build_event_study_sweep
 from callback_writer import get_wit_callback_writer
 
 _WIT_RUNS = WITRunStore()
@@ -1768,6 +1769,7 @@ class WitRunRequest(BaseModel):
     callback_url: str
     config: dict = Field(..., description="the WIRE StrategyConfig / EventStudyConfig")
     budget: WitBudget = Field(default_factory=WitBudget)
+    sweep: bool = Field(default=False, description="run the engine-owned sensitivity grid too")
 
 
 async def verify_wit_key(authorization: Optional[str] = Header(default=None)):
@@ -1867,38 +1869,103 @@ def _wit_terminal(run_id, writer, status, *, result=None, error=None):
             pass
 
 
-async def _run_wit_job(run_id: str, kind: str, engine_cfg, config_hash: str,
-                       callback_url: str, budget_seconds: float) -> None:
-    """Background job: heartbeat + GUARANTEED terminal state (mirrors _run_async_job)."""
-    writer = get_wit_callback_writer(callback_url, os.environ.get("WIT_CALLBACK_HMAC_SECRET"))
-    _WIT_RUNS.update(run_id, {"status": "running", "progress": {"stage": "loading_data"}})
-    loop = asyncio.get_event_loop()
+def _budget_error(budget_seconds: float) -> dict:
+    return {"code": "BUDGET_EXCEEDED",
+            "message": f"exceeded {budget_seconds}s wall budget", "detail": {}}
+
+
+async def _compute_within_budget(kind: str, engine_cfg, run_id: str, config_hash: str,
+                                 budget_left: float, loop) -> tuple[str, dict | None]:
+    """Run ONE compute in a worker thread under a wall budget, with heartbeats. Returns
+    ('ok', result) or ('timeout', None); the thread is cancelled on timeout. Exceptions
+    from the compute propagate to the caller."""
     compute = asyncio.create_task(
         asyncio.to_thread(_wit_compute, kind, engine_cfg, run_id, config_hash))
     start = loop.time()
+    while True:
+        remaining = budget_left - (loop.time() - start)
+        if remaining <= 0:
+            compute.cancel()
+            return "timeout", None
+        try:
+            result = await asyncio.wait_for(asyncio.shield(compute),
+                                            timeout=min(_HEARTBEAT_SECONDS, remaining))
+            return "ok", result
+        except asyncio.TimeoutError:
+            if loop.time() - start >= budget_left:
+                compute.cancel()
+                return "timeout", None
+            _WIT_RUNS.update(run_id, {"status": "running"})   # heartbeat touch
+
+
+async def _run_wit_job(run_id: str, kind: str, engine_cfg, config_hash: str,
+                       callback_url: str, budget_seconds: float) -> None:
+    """Single-run background job: heartbeat + GUARANTEED terminal state (mirrors _run_async_job)."""
+    writer = get_wit_callback_writer(callback_url, os.environ.get("WIT_CALLBACK_HMAC_SECRET"))
+    _WIT_RUNS.update(run_id, {"status": "running", "progress": {"stage": "loading_data"}})
+    loop = asyncio.get_event_loop()
     try:
-        while True:
+        status, result = await _compute_within_budget(
+            kind, engine_cfg, run_id, config_hash, budget_seconds, loop)
+        if status == "timeout":
+            _wit_terminal(run_id, writer, "failed", error=_budget_error(budget_seconds))
+            return
+        _wit_terminal(run_id, writer, "succeeded", result=result)
+    except Exception as e:
+        tb = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"[:2000]
+        _wit_terminal(run_id, writer, "failed",
+                      error={"code": "INTERNAL", "message": str(e)[:500],
+                             "detail": {"traceback": tb}})
+
+
+async def _run_wit_sweep_job(run_id: str, kind: str, engine_cfg, config_hash: str,
+                             callback_url: str, budget_seconds: float) -> None:
+    """Sweep background job (WIT-03 §8.5): PRIMARY first (same budget/failure semantics), then the
+    engine-owned grid SEQUENTIALLY under the SHARED remaining budget. Cells that don't fit are
+    recorded as skipped — never silent. 'succeeded' iff the primary completed."""
+    writer = get_wit_callback_writer(callback_url, os.environ.get("WIT_CALLBACK_HMAC_SECRET"))
+    _WIT_RUNS.update(run_id, {"status": "running", "progress": {"stage": "loading_data"}})
+    loop = asyncio.get_event_loop()
+    start = loop.time()
+    try:
+        # a. primary — a primary over budget fails exactly like a single run
+        status, primary_result = await _compute_within_budget(
+            kind, engine_cfg, run_id, config_hash, budget_seconds, loop)
+        if status == "timeout":
+            _wit_terminal(run_id, writer, "failed", error=_budget_error(budget_seconds))
+            return
+        # b. grid, sequential, shared budget
+        grid = (build_backtest_sweep(engine_cfg) if kind == "backtest"
+                else build_event_study_sweep(engine_cfg))
+        sensitivity: dict = {}
+        skipped: list[str] = []
+        stopped = False
+        for name, cell_cfg in grid.items():
+            if stopped:
+                skipped.append(name)
+                continue
             remaining = budget_seconds - (loop.time() - start)
             if remaining <= 0:
-                compute.cancel()
-                _wit_terminal(run_id, writer, "failed",
-                              error={"code": "BUDGET_EXCEEDED",
-                                     "message": f"exceeded {budget_seconds}s wall budget",
-                                     "detail": {}})
-                return
+                skipped.append(name)
+                stopped = True
+                continue
+            _WIT_RUNS.update(run_id, {"progress": {"stage": f"sweep:{name}"}})
             try:
-                result = await asyncio.wait_for(asyncio.shield(compute),
-                                                timeout=min(_HEARTBEAT_SECONDS, remaining))
-                break
-            except asyncio.TimeoutError:
-                if loop.time() - start >= budget_seconds:
-                    compute.cancel()
-                    _wit_terminal(run_id, writer, "failed",
-                                  error={"code": "BUDGET_EXCEEDED",
-                                         "message": f"exceeded {budget_seconds}s wall budget",
-                                         "detail": {}})
-                    return
-                _WIT_RUNS.update(run_id, {"status": "running"})   # heartbeat touch
+                st, cell_result = await _compute_within_budget(
+                    kind, cell_cfg, run_id, config_hash, remaining, loop)
+            except Exception:
+                skipped.append(name)   # a cell error doesn't complete → disclosed, loop continues
+                continue
+            if st == "ok":
+                sensitivity[name] = cell_result
+            else:                      # cell ran out of budget → it + the rest are skipped
+                skipped.append(name)
+                stopped = True
+        # c. terminal (succeeded — the primary completed)
+        result = dict(primary_result)
+        result["sensitivity"] = sensitivity
+        result["sweep"] = {"requested": len(grid), "completed": len(sensitivity),
+                           "skipped": skipped}
         _wit_terminal(run_id, writer, "succeeded", result=result)
     except Exception as e:
         tb = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"[:2000]
@@ -1941,13 +2008,18 @@ async def wit_submit_run(req: WitRunRequest, background_tasks: BackgroundTasks):
         return _wit_error(400, "INVALID_CONFIG", f"malformed wire config: {e}", {})
 
     chash = _wit_config_hash(req.config)
+    # A sweep and a single run of the same config are DIFFERENT jobs — key them apart so they
+    # never collide. The config_hash echoed in provenance stays the plain wire-config hash (the
+    # jobs receive `chash`, not the idempotency key).
+    idem_hash = chash + ":sweep" if req.sweep else chash
     run_id, is_new = _WIT_RUNS.register(
-        req.evaluation_id, chash,
+        req.evaluation_id, idem_hash,
         {"kind": req.kind, "status": "queued", "progress": {"stage": None},
          "result": None, "error": None})
     if is_new:
         _WIT_RUNS.update(run_id, {"status": "queued"})
-        background_tasks.add_task(_run_wit_job, run_id, req.kind, engine_cfg, chash,
+        job = _run_wit_sweep_job if req.sweep else _run_wit_job
+        background_tasks.add_task(job, run_id, req.kind, engine_cfg, chash,
                                   req.callback_url, req.budget.max_wall_seconds)
     state = _WIT_RUNS.get(run_id) or {}
     return JSONResponse(status_code=202,
