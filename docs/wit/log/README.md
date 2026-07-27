@@ -16,5 +16,18 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P1c-report.md | Merge Phase 1 | Merge confirmation |
 | WIT-P2a-report.md | Design (event study) | Alignment/event-count recon + full design writeup |
 | WIT-P2b-report.md | Build+run (WIT-0002) | Tests/anomalies + headline; report → ../reports/WIT-0002 |
+| WIT-P2d-report.md | Session close (Phase 2) | Prompt-log backfill commit report |
+| WIT-P2e-report.md | Session close (Phase 2) | Handoff + planning-files commit report |
+| WIT-P3a-report.md | Recon (Phase 3) | Server/deploy/extraction recon + slice plan |
+| WIT-P3b-report.md | Build (schema+scorer) | Template schema + completeness scorer + golden fixtures |
+| WIT-P3b-fix-report.md | Fix (scorer gating) | §5 defaults entry-gated — no-trigger ⇒ never Class A |
+| WIT-P3c-report.md | Design (mapper) | Param-channel design + mode vocabulary + golden plan |
+| WIT-P3c-1-report.md | Build (param channel) | Schema delta + fixture params + modes.md + wire-contract fix |
+| WIT-P3c-2-report.md | Build (Class A mapper) | template→StrategyConfig→VPORBConfig; G1 exact equality |
+| WIT-P3c-3-report.md | Build (Class B mapper) | template→EventStudyConfig; G2 exact equality |
+| WIT-P3d-report.md | Build (/wit/v1 router) | submit/status/signed callback/idempotency; §3.6 gaps |
+| WIT-P3g-report.md | Hardening | constant-time auth + exec kill switch + backtest/ retirement plan |
+| WIT-P3h-report.md | Merge Phase 3 | Checkpoint merge to main (181 green, CI success) |
+| WIT-P3i-report.md | Session close (Phase 3) | Handoff rewrite + prompt-log index |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.
