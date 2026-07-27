@@ -29,5 +29,10 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P3g-report.md | Hardening | constant-time auth + exec kill switch + backtest/ retirement plan |
 | WIT-P3h-report.md | Merge Phase 3 | Checkpoint merge to main (181 green, CI success) |
 | WIT-P3i-report.md | Session close (Phase 3) | Handoff rewrite + prompt-log index |
+| WIT-P3e-1-report.md | Build (extraction prompt) | Mode vocab generated from modes.md († excluded), pure/no-dep |
+| WIT-P3e-2-report.md | Build (extraction core) | anthropic dev-only provider + retry orchestrator + gated golden |
+| WIT-P3f-report.md | Build (sweep runner) | Engine-owned grids, sweep flag, shared wall budget |
+| WIT-P3j-report.md | Merge Phase 3 ckpt 2 | Checkpoint merge to main (206 green, CI success) |
+| WIT-P3k-report.md | Session close (Phase 3) | Handoff rewrite + prompt-log index |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.
