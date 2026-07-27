@@ -66,3 +66,46 @@ def get_callback_writer(callback_url: Optional[str],
     if not callback_url or not callback_secret:
         return None
     return CallbackWriter(callback_url, callback_secret)
+
+
+# ---------------------------------------------------------------------------
+# WIT callback writer (WIT-P3d) — signs the exact byte payload with an HMAC.
+# Reuses is_allowed_callback_url verbatim (https-only, suffix allowlist, no
+# redirects). The legacy CallbackWriter above is untouched.
+# ---------------------------------------------------------------------------
+import hashlib
+import hmac
+
+
+class WITCallbackWriter:
+    """POST a WIT run update, authenticated OUT by X-WIT-Signature =
+    hex(HMAC-SHA256(exact_body_bytes, WIT_CALLBACK_HMAC_SECRET))."""
+
+    def __init__(self, url: str, secret: str, timeout: float = 15.0):
+        self.url = url
+        self._secret = secret.encode("utf-8") if isinstance(secret, str) else secret
+        self.timeout = timeout
+
+    def post(self, payload: dict) -> None:
+        """POST one update. Signs the EXACT bytes sent. Raises on non-2xx."""
+        import json as _json
+        body = _json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        sig = hmac.new(self._secret, body, hashlib.sha256).hexdigest()
+        resp = requests.post(
+            self.url,
+            data=body,   # send the exact signed bytes (not json= which would re-serialize)
+            headers={"Content-Type": "application/json", "X-WIT-Signature": sig},
+            timeout=self.timeout,
+            allow_redirects=False,  # a redirect must never bounce the signature to another host
+        )
+        resp.raise_for_status()
+
+
+def get_wit_callback_writer(callback_url: Optional[str],
+                            hmac_secret: Optional[str]) -> Optional[WITCallbackWriter]:
+    """Build a signing writer, or None if either value is missing. The endpoint enforces
+    is_allowed_callback_url before scheduling; a missing HMAC secret disables the callback
+    (poll fallback via GET /wit/v1/runs/{id} still works) — surfaced by the router."""
+    if not callback_url or not hmac_secret:
+        return None
+    return WITCallbackWriter(callback_url, hmac_secret)

@@ -50,7 +50,7 @@ Derived deterministically from a filled WIT-02 template by the **mapper** (engin
   "config_version": "1.0",
   "instrument": { "symbol": "ES", "tick_size": 0.25, "tick_value": 1.25, "proxy_for": "NQ|null" },
   "data": { "dataset": "ES_5min_continuous", "granularity_needed": "5min|1min", "window": {"start": "2016-07-01", "end": "2026-07-01"} },
-  "session": { "tz": "America/New_York", "trade_window": ["09:30","11:00"], "force_flat": "15:55" }, // ET wall-clock, matching the engine; same instants as the prior CT example — representation alignment, not a time change.
+  "session": { "tz": "America/New_York", "trade_window": ["09:45","10:55"], "force_flat": "15:55" }, // trade_window = entry-eligibility window [first_eligible_bar_start, last_eligible_bar_start], ET wall-clock; force_flat = last RTH bar start. Example values are VP-ORB's (the mapper emits them from C1.params, P3c-2).
   "filters": { "regime": [...], "calendar": [...] },
   "bias":    { "mode": "vp_value_area_break", "params": {"range_minutes": 15, "va_pct": 70} },
   "setup_entry": { "trigger": "bar_close_beyond_level", "level": "va_high_low", "order": "market_on_close" },
@@ -117,6 +117,7 @@ Edge function `wit-extract`: input `{transcript, source_meta}` → LLM (structur
 - Contract changes: PR against `contract/` + this doc, approved by lead engineer before either builder implements. Fixtures for Lovable regenerate from the OpenAPI examples at each version.
 
 ### Change log
+- **WIT-P3d (2026-07-27):** (a) §3.4 `session.trade_window` semantics pinned — *entry-eligibility window* `[first_eligible_bar_start, last_eligible_bar_start]`, ET wall-clock; illustrative example updated to `["09:45","10:55"]` to match what real VP-ORB configs carry (the mapper emits from `C1.params`, P3c-2). (b) `contract/modes.md` — every token the engine cannot yet realize marked `†` ("declared, not engine-supported in v1 → UNSUPPORTED_CONSTRUCT") so the vocabulary never over-promises (P3e's extraction prompt is generated from it). No wire-shape change; `config_version` stays `1.0`.
 - **WIT-P3c-1 (2026-07-27):** corrected the §3.4/§3.5 examples to match the engine — §3.5 event `k*ATR` → `k * trailing-median body` with the three path thresholds (`spike_eff`/`spike_giveback_cap`/`pullback_p`); §3.4 `session` re-expressed in ET wall-clock (`America/New_York`, `09:30`/`11:00`/`15:55`) — **same instants** as the prior CT example (representation alignment, not a time change). Wire shapes unchanged; `config_version` stays `1.0`. Machine copies added at `contract/{modes,strategy-config.v1,event-study-config.v1}`.
 
 ## 8. Engine-side work implied (Claude Code backlog seed)
