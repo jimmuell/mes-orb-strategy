@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://willittrade.com/contract/strategy-config.v1.json",
+  "title": "WIT StrategyConfig (Class A) — wire config v1",
+  "$comment": "Machine copy of the WIT-03 §3.4 StrategyConfig, corrected to match the engine (WIT-P3c-1): session is ET wall-clock (America/New_York; 09:30/11:00/15:55 — same instants as the prior CT example), matching vp_orb_runner load_5min. The mode/enum tokens are the Class-A dimensions in contract/modes.md; an out-of-vocabulary mode -> UNSUPPORTED_CONSTRUCT. Derived deterministically from a filled WIT-02 template by the engine-side mapper (P3c-2). config_version stays 1.0 (wire shape unchanged from §3.4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["config_version", "instrument", "data", "session", "bias",
+               "setup_entry", "sizing", "exits", "risk_controls", "costs"],
+  "properties": {
+    "config_version": {"const": "1.0"},
+    "instrument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "tick_size", "tick_value"],
+      "properties": {
+        "symbol": {"type": "string"},
+        "tick_size": {"type": "number"},
+        "tick_value": {"type": "number"},
+        "proxy_for": {"type": ["string", "null"]}
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset", "granularity_needed", "window"],
+      "properties": {
+        "dataset": {"type": "string"},
+        "granularity_needed": {"type": "string", "enum": ["5min", "1min"]},
+        "window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start", "end"],
+          "properties": {"start": {"type": "string"}, "end": {"type": "string"}}
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tz", "trade_window", "force_flat"],
+      "$comment": "ET wall-clock, matching the engine (vp_orb_runner load_5min: tz-naive ET). trade_window = [entry_start, entry_cutoff]; force_flat = last RTH bar start.",
+      "properties": {
+        "tz": {"const": "America/New_York"},
+        "trade_window": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
+        "force_flat": {"type": "string"}
+      }
+    },
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "regime": {"type": "array"},
+        "calendar": {"type": "array"}
+      }
+    },
+    "bias": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"type": "string", "enum": ["vp_value_area_break", "orb_break", "none"]},
+        "params": {"type": ["object", "null"]}
+      }
+    },
+    "setup_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger", "level", "order"],
+      "properties": {
+        "trigger": {"type": "string", "enum": ["bar_close_beyond_level", "bar_body_beyond_level"]},
+        "level": {"type": "string", "enum": ["va_high_low", "orb_high_low"]},
+        "order": {"type": "string", "enum": ["market_on_close", "market_next_open"]},
+        "params": {"type": ["object", "null"]}
+      }
+    },
+    "sizing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "value"],
+      "properties": {
+        "mode": {"type": "string", "enum": ["fixed_contracts"]},
+        "value": {"type": "number"}
+      }
+    },
+    "exits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stop", "target", "time_exit", "same_bar_policy"],
+      "properties": {
+        "stop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"type": "string", "enum": ["level_offset", "structure"]},
+            "ref": {"type": "string", "enum": ["poc", "va", "orb"]},
+            "ticks": {"type": "number"}
+          }
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"type": "string", "enum": ["r_multiple", "level", "none"]},
+            "value": {"type": "number"}
+          }
+        },
+        "management": {"type": "array"},
+        "time_exit": {"type": "string", "enum": ["force_flat", "fixed_time", "none"]},
+        "same_bar_policy": {"type": "string", "enum": ["stop_first", "target_first"]}
+      }
+    },
+    "risk_controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_trades_per_day", "reentry"],
+      "properties": {
+        "max_trades_per_day": {"type": "integer"},
+        "reentry": {"type": "string", "enum": ["none"]}
+      }
+    },
+    "costs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commission_per_side", "slippage_ticks"],
+      "properties": {
+        "commission_per_side": {"type": "number"},
+        "slippage_ticks": {"type": "integer"}
+      }
+    },
+    "assumptions_applied": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Field ids / dimensions where a WIT-02 §5 default was injected; echoed into the report."
+    }
+  }
+}

@@ -28,6 +28,7 @@ import contextlib
 import dataclasses
 import gc
 import hashlib
+import hmac
 import math
 import os
 import signal as _signal
@@ -212,8 +213,24 @@ async def verify_api_key(x_api_key: Optional[str] = Header(default=None)):
             detail="Service not configured: BACKTEST_API_KEY is not set",
         )
     # Missing and wrong keys are both 401 (a missing header is just an absent key).
-    if not x_api_key or x_api_key != API_KEY:
+    # Constant-time compare (bytes on both sides so it's total for non-ASCII keys) —
+    # a plain != leaks the key length/prefix via timing.
+    if not x_api_key or not hmac.compare_digest(
+            x_api_key.encode("utf-8"), API_KEY.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+async def enforce_exec_enabled():
+    """WIT-03 §8.7 exec-endpoint kill switch. When DISABLE_EXEC_ENDPOINTS is truthy the
+    signal_code-accepting endpoints (/run, /run/async, /run/compare, /profile) refuse —
+    so the future WIT Railway service sets this flag and the arbitrary-code path is dead
+    code there (structured configs only, WIT-03 §1/§8.7). Default OFF: the TradingGYM
+    deployment is byte-identical to today. NEVER gates /wit/v1/* or the /health,/ping,/env
+    probes. Read dynamically so the flag can flip per deployment without re-import."""
+    if os.environ.get("DISABLE_EXEC_ENDPOINTS", "").strip().lower() in ("1", "true"):
+        raise HTTPException(
+            status_code=403,
+            detail="Code-execution endpoints are disabled on this deployment (EXEC_DISABLED)")
 
 
 class BacktestRequest(BaseModel):
@@ -528,7 +545,8 @@ async def env():
     }
 
 
-@app.post("/run", response_model=BacktestResponse, dependencies=[Depends(verify_api_key)])
+@app.post("/run", response_model=BacktestResponse,
+          dependencies=[Depends(enforce_exec_enabled), Depends(verify_api_key)])
 async def run(req: BacktestRequest):
     """Run a backtest with AI-generated signal code (synchronous)."""
     return _execute_run_sync(req)
@@ -907,7 +925,8 @@ async def _run_async_job(req: AsyncBacktestRequest, writer) -> None:
             pass
 
 
-@app.post("/run/async", status_code=202, dependencies=[Depends(verify_api_key)])
+@app.post("/run/async", status_code=202,
+          dependencies=[Depends(enforce_exec_enabled), Depends(verify_api_key)])
 async def run_async(req: AsyncBacktestRequest, background_tasks: BackgroundTasks):
     """Accept a backtest job, return 202 immediately, run it in the background and write
     progress + result to the backtest_runs row (ADR-037). The sync /run is unchanged."""
@@ -936,7 +955,7 @@ def _cpu_probe_ms(iters: int = 5_000_000) -> float:
     return round((time.perf_counter() - t) * 1000, 1)
 
 
-@app.post("/profile", dependencies=[Depends(verify_api_key)])
+@app.post("/profile", dependencies=[Depends(enforce_exec_enabled), Depends(verify_api_key)])
 async def profile(req: BacktestRequest, disable_gc: bool = True):
     """ADR-045/046 diagnostic — runs the COMPARE pipeline (the app's real path) and returns a
     per-stage wall-time breakdown, peak RSS, a before/after CPU-throttle probe, and GC
@@ -1260,7 +1279,7 @@ def _validate_primary(closed_trades: list, df: pd.DataFrame,
 
 
 @app.post("/run/compare", response_model=CompareResponse,
-          dependencies=[Depends(verify_api_key)])
+          dependencies=[Depends(enforce_exec_enabled), Depends(verify_api_key)])
 async def run_compare(req: BacktestRequest):
     """TEACH-COMPARE (ADR-026): run the user's config and a stop-neutralized variant
     against the SAME signal in one logical run; report exact teaching deltas."""
@@ -1704,6 +1723,251 @@ def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResp
             execution_time_ms=int((time.time() - start_time) * 1000),
             error=f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()[-500:]}",
         )
+
+
+# ===========================================================================
+# WIT run surface — /wit/v1/* (WIT-P3d)
+# Additive: the legacy /run* endpoints and their X-API-Key auth are untouched.
+# This surface accepts STRUCTURED wire configs ONLY — there is no signal_code
+# field anywhere here (WIT-03 §1). Wire config -> engine config via the P3c
+# adapters -> the existing runners; the async job mirrors _run_async_job's
+# heartbeat + guaranteed-terminal-state pattern (ADR-037).
+# ===========================================================================
+import datetime as _dt
+import json as _json
+import math as _math
+
+from wit.mapper import (strategy_config_to_vporb, event_study_config_to_engine,
+                        UnsupportedConstruct, UntestableStrategy)
+from wit.config_hash import config_hash as _wit_config_hash
+from wit.run_store import WITRunStore
+from wit.vp_orb_runner import run_vp_orb, PARQUET_5MIN as _VPORB_PARQUET
+from wit.event_study import run_config, load_1min_rth, build_candles, RAW_1MIN as _ES_RAW_1MIN
+from callback_writer import get_wit_callback_writer
+
+_WIT_RUNS = WITRunStore()
+_WIT_STAGES = ("loading_data", "simulating", "validating")
+
+# required top-level keys of each wire contract (structural hygiene on inbound configs)
+def _load_required(rel):
+    with open(os.path.join(os.path.dirname(__file__), "..", "contract", rel)) as fh:
+        return _json.load(fh)["required"]
+_WIT_WIRE_REQUIRED = {
+    "backtest": _load_required("strategy-config.v1.json"),
+    "event_study": _load_required("event-study-config.v1.json"),
+}
+
+
+class WitBudget(BaseModel):
+    max_wall_seconds: float = Field(default=600.0, gt=0)
+
+
+class WitRunRequest(BaseModel):
+    evaluation_id: str
+    kind: str = Field(..., description="backtest | event_study")
+    callback_url: str
+    config: dict = Field(..., description="the WIRE StrategyConfig / EventStudyConfig")
+    budget: WitBudget = Field(default_factory=WitBudget)
+
+
+async def verify_wit_key(authorization: Optional[str] = Header(default=None)):
+    """Bearer auth for /wit/v1/* (WIT-03 §2). Own env var — NOT BACKTEST_API_KEY.
+    Read dynamically so config changes (and tests) take effect without re-import."""
+    key = os.environ.get("WIT_ENGINE_SERVICE_KEY")
+    if not key:
+        raise HTTPException(status_code=503,
+                            detail="Service not configured: WIT_ENGINE_SERVICE_KEY is not set")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    # constant-time compare (bytes both sides so it's total for non-ASCII keys) — a
+    # plain != leaks the key length/prefix via timing.
+    token = authorization[len("Bearer "):].strip()
+    if not hmac.compare_digest(token.encode("utf-8"), key.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="Invalid service key")
+
+
+def _wit_error(status: int, code: str, message: str, detail: dict | None = None):
+    return JSONResponse(status_code=status,
+                        content={"error": {"code": code, "message": message,
+                                           "detail": detail or {}}})
+
+
+def _finite(x):
+    return x if isinstance(x, (int, float)) and _math.isfinite(x) else None
+
+
+def _provenance(config_hash: str, dataset: str) -> dict:
+    return {"engine_version": ENGINE_VERSION, "dataset_version": dataset,
+            "config_hash": config_hash,
+            "completed_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}
+
+
+# ── result builders — populate ONLY what the runners actually return (§3.6) ──
+def _backtest_result(res, config_hash: str) -> dict:
+    kpis = res.kpis
+    metrics = {
+        "trades": kpis.get("total_trades"),
+        "net_pnl": _finite(kpis.get("net_profit")),
+        "profit_factor": _finite(kpis.get("profit_factor")),
+        "max_drawdown": _finite(kpis.get("max_drawdown")),
+        "win_rate": _finite(kpis.get("win_rate")),
+        "avg_trade": _finite(kpis.get("avg_trade")),
+        "expectancy_r": None,   # GAP: run_vp_orb does not compute R-expectancy
+    }
+    equity = [{"t": str(p.get("date")), "equity": _finite(p.get("equity"))}
+              for p in (kpis.get("equity_curve") or [])]
+    # OMITTED (not computed by run_vp_orb): confidence.bootstrap, confidence.edge_vs_luck,
+    # regimes, sweep_results. trades_url null (no signed-URL infra; Supabase-side).
+    return {"kind": "backtest", "metrics": metrics, "equity_curve": equity,
+            "trades_url": None,
+            "provenance": _provenance(config_hash, os.path.basename(_VPORB_PARQUET))}
+
+
+def _event_study_result(d: dict, config_hash: str) -> dict:
+    # The event-study runner natively returns per-cell conditional stats + day-clustered
+    # CIs (§3.6: "event-study results replace metrics with conditional distributions+CIs").
+    return {"kind": "event_study", "event_study": d,
+            "provenance": _provenance(config_hash, os.path.basename(_ES_RAW_1MIN))}
+
+
+def _load_and_build_candles(engine_cfg):
+    """Event-study data step (module-level so tests can stub it)."""
+    one = load_1min_rth(engine_cfg.start, engine_cfg.end)
+    return build_candles(one, engine_cfg.timeframe)
+
+
+def _wit_compute(kind: str, engine_cfg, run_id: str, config_hash: str) -> dict:
+    """Runs in a worker thread. Sets REAL pipeline stages; returns the §3.6 result."""
+    if kind == "backtest":
+        _WIT_RUNS.update(run_id, {"progress": {"stage": "simulating"}})
+        return _backtest_result(run_vp_orb(engine_cfg), config_hash)
+    # event_study: observable load -> validate boundaries
+    _WIT_RUNS.update(run_id, {"progress": {"stage": "loading_data"}})
+    candles = _load_and_build_candles(engine_cfg)
+    _WIT_RUNS.update(run_id, {"progress": {"stage": "validating"}})
+    return _event_study_result(run_config(candles, engine_cfg), config_hash)
+
+
+def _wit_terminal(run_id, writer, status, *, result=None, error=None):
+    fields = {"status": status}
+    if result is not None:
+        fields["result"] = result
+    if error is not None:
+        fields["error"] = error
+    _WIT_RUNS.update(run_id, fields)
+    if writer is not None:
+        payload = {"run_id": run_id, "status": status}
+        if result is not None:
+            payload["result"] = result
+        if error is not None:
+            payload["error"] = error
+        try:
+            writer.post(payload)     # best-effort; GET is the source of truth
+        except Exception:
+            pass
+
+
+async def _run_wit_job(run_id: str, kind: str, engine_cfg, config_hash: str,
+                       callback_url: str, budget_seconds: float) -> None:
+    """Background job: heartbeat + GUARANTEED terminal state (mirrors _run_async_job)."""
+    writer = get_wit_callback_writer(callback_url, os.environ.get("WIT_CALLBACK_HMAC_SECRET"))
+    _WIT_RUNS.update(run_id, {"status": "running", "progress": {"stage": "loading_data"}})
+    loop = asyncio.get_event_loop()
+    compute = asyncio.create_task(
+        asyncio.to_thread(_wit_compute, kind, engine_cfg, run_id, config_hash))
+    start = loop.time()
+    try:
+        while True:
+            remaining = budget_seconds - (loop.time() - start)
+            if remaining <= 0:
+                compute.cancel()
+                _wit_terminal(run_id, writer, "failed",
+                              error={"code": "BUDGET_EXCEEDED",
+                                     "message": f"exceeded {budget_seconds}s wall budget",
+                                     "detail": {}})
+                return
+            try:
+                result = await asyncio.wait_for(asyncio.shield(compute),
+                                                timeout=min(_HEARTBEAT_SECONDS, remaining))
+                break
+            except asyncio.TimeoutError:
+                if loop.time() - start >= budget_seconds:
+                    compute.cancel()
+                    _wit_terminal(run_id, writer, "failed",
+                                  error={"code": "BUDGET_EXCEEDED",
+                                         "message": f"exceeded {budget_seconds}s wall budget",
+                                         "detail": {}})
+                    return
+                _WIT_RUNS.update(run_id, {"status": "running"})   # heartbeat touch
+        _wit_terminal(run_id, writer, "succeeded", result=result)
+    except Exception as e:
+        tb = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"[:2000]
+        _wit_terminal(run_id, writer, "failed",
+                      error={"code": "INTERNAL", "message": str(e)[:500],
+                             "detail": {"traceback": tb}})
+
+
+def _adapt_wire(kind: str, config: dict):
+    """Structural hygiene + adapt to the engine config. Raises for the router to map."""
+    missing = [k for k in _WIT_WIRE_REQUIRED[kind] if k not in config]
+    if missing:
+        raise ValueError(f"wire config missing required keys: {missing}")
+    if kind == "backtest":
+        return strategy_config_to_vporb(config)
+    return event_study_config_to_engine(config)
+
+
+@app.post("/wit/v1/runs", status_code=202, dependencies=[Depends(verify_wit_key)])
+async def wit_submit_run(req: WitRunRequest, background_tasks: BackgroundTasks):
+    if req.kind == "sensitivity_sweep":
+        return _wit_error(400, "UNSUPPORTED_CONSTRUCT",
+                          "sensitivity_sweep runs are not supported yet",
+                          {"kind": "sensitivity_sweep"})
+    if req.kind not in ("backtest", "event_study"):
+        return _wit_error(400, "INVALID_CONFIG", f"unknown kind '{req.kind}'",
+                          {"kind": req.kind})
+    if not is_allowed_callback_url(req.callback_url):
+        return _wit_error(400, "INVALID_CONFIG", "callback_url host not allowed",
+                          {"callback_url": req.callback_url})
+    # validate + adapt (mapping bugs are engine bugs; adapter enforces mode/tz)
+    try:
+        engine_cfg = _adapt_wire(req.kind, req.config)
+    except UnsupportedConstruct as e:
+        return _wit_error(400, "UNSUPPORTED_CONSTRUCT", str(e),
+                          {"field": e.field, "mode": e.mode})
+    except UntestableStrategy as e:
+        return _wit_error(400, "INVALID_CONFIG", str(e), {"class": e.cls})
+    except (KeyError, TypeError, ValueError) as e:
+        return _wit_error(400, "INVALID_CONFIG", f"malformed wire config: {e}", {})
+
+    chash = _wit_config_hash(req.config)
+    run_id, is_new = _WIT_RUNS.register(
+        req.evaluation_id, chash,
+        {"kind": req.kind, "status": "queued", "progress": {"stage": None},
+         "result": None, "error": None})
+    if is_new:
+        _WIT_RUNS.update(run_id, {"status": "queued"})
+        background_tasks.add_task(_run_wit_job, run_id, req.kind, engine_cfg, chash,
+                                  req.callback_url, req.budget.max_wall_seconds)
+    state = _WIT_RUNS.get(run_id) or {}
+    return JSONResponse(status_code=202,
+                        content={"run_id": run_id, "status": state.get("status", "queued"),
+                                 "estimated_seconds": None})   # no honest estimator yet
+
+
+@app.get("/wit/v1/runs/{run_id}", dependencies=[Depends(verify_wit_key)])
+async def wit_get_run(run_id: str):
+    state = _WIT_RUNS.get(run_id)
+    if state is None:
+        return _wit_error(404, "INVALID_CONFIG", f"unknown run_id '{run_id}'",
+                          {"run_id": run_id})
+    body = {"run_id": run_id, "kind": state.get("kind"), "status": state.get("status"),
+            "progress": state.get("progress") or {"stage": None}}
+    if state.get("status") == "succeeded":
+        body["result"] = state.get("result")
+    elif state.get("status") == "failed":
+        body["error"] = state.get("error")
+    return body
 
 
 if __name__ == "__main__":
