@@ -1715,6 +1715,7 @@ def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResp
 # heartbeat + guaranteed-terminal-state pattern (ADR-037).
 # ===========================================================================
 import datetime as _dt
+import hmac as _hmac
 import json as _json
 import math as _math
 
@@ -1760,7 +1761,9 @@ async def verify_wit_key(authorization: Optional[str] = Header(default=None)):
                             detail="Service not configured: WIT_ENGINE_SERVICE_KEY is not set")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
-    if authorization[len("Bearer "):].strip() != key:
+    # constant-time compare — a plain != leaks the key length/prefix via timing.
+    token = authorization[len("Bearer "):].strip()
+    if not _hmac.compare_digest(token, key):
         raise HTTPException(status_code=403, detail="Invalid service key")
 
 
