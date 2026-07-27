@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://willittrade.com/contract/event-study-config.v1.json",
+  "title": "WIT EventStudyConfig (Class B) — wire config v1",
+  "$comment": "Machine copy of the WIT-03 §3.5 EventStudyConfig, corrected to match the engine (WIT-P3c-1): the event is body >= k * trailing-median body (NOT k*ATR), and the path split is three thresholds (spike_eff, spike_giveback_cap, pullback_p) rather than a single path_efficiency_split. Mode/enum tokens are the Class-B dimensions in contract/modes.md; an out-of-vocabulary mode -> UNSUPPORTED_CONSTRUCT. config_version stays 1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["config_version", "event", "path_bucket", "regime", "outcomes", "timeframe", "data"],
+  "properties": {
+    "config_version": {"const": "1.0"},
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "params"],
+      "properties": {
+        "mode": {"type": "string", "enum": ["body_vs_trailing_median"]},
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["k", "n_baseline"],
+          "properties": {"k": {"type": "number"}, "n_baseline": {"type": "integer"}}
+        }
+      }
+    },
+    "path_bucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "params"],
+      "properties": {
+        "mode": {"type": "string", "enum": ["path_threshold", "path_percentile"]},
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "spike_eff": {"type": "number"},
+            "spike_giveback_cap": {"type": "number"},
+            "pullback_p": {"type": "number"},
+            "bucket_mode": {"type": "string", "enum": ["threshold", "percentile"]}
+          }
+        }
+      }
+    },
+    "regime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"type": "string",
+                 "enum": ["kaufman_er_trailing_median", "kaufman_er_insample_median",
+                          "kaufman_er_fixed", "adx_threshold", "none"]},
+        "params": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "regime_er_m": {"type": "integer"},
+            "regime_trailing_window": {"type": "integer"},
+            "regime_fixed_er": {"type": "number"},
+            "regime_adx_len": {"type": "integer"},
+            "regime_adx_thresh": {"type": "number"}
+          }
+        }
+      }
+    },
+    "conditions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Regime split labels evaluated per event, e.g. regime_chop / regime_trend."
+    },
+    "outcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["horizons_bars", "measures"],
+      "properties": {
+        "horizons_bars": {"type": "array", "items": {"type": "integer"}},
+        "measures": {"type": "array",
+                     "items": {"type": "string", "enum": ["fwd_return", "giveback", "p_against"]}}
+      }
+    },
+    "timeframe": {"type": "string", "enum": ["5min", "15min"]},
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset", "granularity_needed", "window"],
+      "properties": {
+        "dataset": {"type": "string"},
+        "granularity_needed": {"type": "string", "enum": ["5min", "1min"]},
+        "window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start", "end"],
+          "properties": {"start": {"type": "string"}, "end": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

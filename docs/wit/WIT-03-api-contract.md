@@ -50,7 +50,7 @@ Derived deterministically from a filled WIT-02 template by the **mapper** (engin
   "config_version": "1.0",
   "instrument": { "symbol": "ES", "tick_size": 0.25, "tick_value": 1.25, "proxy_for": "NQ|null" },
   "data": { "dataset": "ES_5min_continuous", "granularity_needed": "5min|1min", "window": {"start": "2016-07-01", "end": "2026-07-01"} },
-  "session": { "tz": "America/Chicago", "trade_window": ["08:30","10:00"], "force_flat": "14:55" },
+  "session": { "tz": "America/New_York", "trade_window": ["09:30","11:00"], "force_flat": "15:55" }, // ET wall-clock, matching the engine; same instants as the prior CT example — representation alignment, not a time change.
   "filters": { "regime": [...], "calendar": [...] },
   "bias":    { "mode": "vp_value_area_break", "params": {"range_minutes": 15, "va_pct": 70} },
   "setup_entry": { "trigger": "bar_close_beyond_level", "level": "va_high_low", "order": "market_on_close" },
@@ -65,7 +65,7 @@ Derived deterministically from a filled WIT-02 template by the **mapper** (engin
 
 ### 3.5 `EventStudyConfig` (Class B)
 ```json
-{ "event": {"definition": "bar body >= k*ATR", "params": {"k": 2, "path_efficiency_split": 0.75}},
+{ "event": {"definition": "bar body >= k * trailing-median body", "params": {"k": 1.5, "spike_eff": 0.50, "spike_giveback_cap": 0.20, "pullback_p": 0.40}},
   "conditions": ["regime_chop", "regime_trend"],
   "outcomes": {"horizons_bars": [1, 3, 5, 10], "measures": ["fwd_return", "giveback_pct"]},
   "data": { "...": "as 3.4" } }
@@ -115,6 +115,9 @@ Edge function `wit-extract`: input `{transcript, source_meta}` → LLM (structur
 - Path-versioned engine API (`/wit/v1/`); additive changes free, breaking changes bump the path.
 - `template_version`, `config_version`, `engine_version`, `dataset_version` all recorded per run; library permalinks must re-render forever from stored payloads (never recompute old reports silently).
 - Contract changes: PR against `contract/` + this doc, approved by lead engineer before either builder implements. Fixtures for Lovable regenerate from the OpenAPI examples at each version.
+
+### Change log
+- **WIT-P3c-1 (2026-07-27):** corrected the §3.4/§3.5 examples to match the engine — §3.5 event `k*ATR` → `k * trailing-median body` with the three path thresholds (`spike_eff`/`spike_giveback_cap`/`pullback_p`); §3.4 `session` re-expressed in ET wall-clock (`America/New_York`, `09:30`/`11:00`/`15:55`) — **same instants** as the prior CT example (representation alignment, not a time change). Wire shapes unchanged; `config_version` stays `1.0`. Machine copies added at `contract/{modes,strategy-config.v1,event-study-config.v1}`.
 
 ## 8. Engine-side work implied (Claude Code backlog seed)
 

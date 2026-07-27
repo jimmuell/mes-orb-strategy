@@ -23,7 +23,11 @@ SCHEMA_PATH = os.path.join(_REPO, "schema", "strategy-template.v1.json")
 
 _STATUS_ENUM = {"specified", "implied", "unspecified"}
 _CLASS_ENUM = {"A", "B", "C"}
+# Every field object MUST carry these four (WIT-02 §1).
 _FIELD_KEYS = {"value", "status", "source_quote", "assumption"}
+# Plus two OPTIONAL machine-param keys (WIT-P3c-1): mode (string|null), params (object|null).
+_FIELD_OPTIONAL_KEYS = {"mode", "params"}
+_FIELD_ALLOWED_KEYS = _FIELD_KEYS | _FIELD_OPTIONAL_KEYS
 # WIT-02 §J: the validation plan (J1/J2) is authored by WIT, not extracted from the
 # guru, so a specified J field legitimately has no transcript source_quote. Every
 # other section carries the §4.1 quote-for-specified/implied requirement.
@@ -138,9 +142,14 @@ def _validate_field(fid: str, obj) -> list[str]:
     missing = _FIELD_KEYS - set(obj)
     if missing:
         errs.append(f"fields.{fid} missing keys: {sorted(missing)}")
-    extra = set(obj) - _FIELD_KEYS
+    extra = set(obj) - _FIELD_ALLOWED_KEYS
     if extra:
         errs.append(f"fields.{fid} has unknown keys: {sorted(extra)}")
+    # Optional machine-param keys (WIT-P3c-1): mode string|null, params object|null.
+    if "mode" in obj and obj["mode"] is not None and not isinstance(obj["mode"], str):
+        errs.append(f"fields.{fid}.mode must be a string or null")
+    if "params" in obj and obj["params"] is not None and not isinstance(obj["params"], dict):
+        errs.append(f"fields.{fid}.params must be an object or null")
     status = obj.get("status")
     if status not in _STATUS_ENUM:
         errs.append(f"fields.{fid}.status must be one of {sorted(_STATUS_ENUM)} (got {status!r})")

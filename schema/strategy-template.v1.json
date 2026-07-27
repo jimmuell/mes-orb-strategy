@@ -124,6 +124,14 @@
         "assumption": {
           "type": ["string", "null"],
           "description": "If unspecified and required, the §5 default applied. Otherwise null."
+        },
+        "mode": {
+          "type": ["string", "null"],
+          "description": "OPTIONAL machine param channel (WIT-P3c-1). Controlled-vocabulary mode token for config-relevant fields (contract/modes.md); null for prose-only/metadata fields. The mapper reads mode/params/status — NEVER value prose."
+        },
+        "params": {
+          "type": ["object", "null"],
+          "description": "OPTIONAL machine param channel (WIT-P3c-1). Typed machine-readable parameters for this field, e.g. D2 {range_start,range_end,value_area_pct,granularity}; null when none."
         }
       }
     }
