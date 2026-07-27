@@ -264,3 +264,45 @@ def test_legacy_run_still_needs_x_api_key_not_bearer(client):
     # /run uses X-API-Key; a WIT bearer must not authenticate it (separate auth)
     r = client.post("/run", json={"signal_code": "x"}, headers=_AUTH)
     assert r.status_code in (401, 422, 503)   # never 200 on a bearer-only request
+
+
+# ── WIT-P3g: exec-endpoint kill switch (DISABLE_EXEC_ENDPOINTS) ──
+_EXEC_BODIES = {
+    "/run": {"signal_code": "x"},
+    "/run/compare": {"signal_code": "x"},
+    "/profile": {"signal_code": "x"},
+    "/run/async": {"signal_code": "x", "run_id": "r",
+                   "callback_url": "https://x.supabase.co/f", "callback_secret": "s"},
+}
+
+
+def test_exec_endpoints_403_when_disabled(client, monkeypatch):
+    monkeypatch.setenv("DISABLE_EXEC_ENDPOINTS", "1")
+    monkeypatch.setenv("BACKTEST_API_KEY", "k")
+    hdr = {"X-API-Key": "k"}
+    for path, body in _EXEC_BODIES.items():
+        r = client.post(path, json=body, headers=hdr)
+        assert r.status_code == 403, f"{path} not gated: {r.status_code}"
+        assert "EXEC_DISABLED" in r.json()["detail"], path
+
+
+def test_exec_disabled_does_not_gate_wit_or_probes(client, monkeypatch):
+    monkeypatch.setenv("DISABLE_EXEC_ENDPOINTS", "true")   # case-insensitive
+    _stub_backtest(monkeypatch)
+    # /wit/v1/* still works
+    r = _submit(client, "backtest", _min_wire_backtest())
+    assert r.status_code == 202
+    g = client.get(f"/wit/v1/runs/{r.json()['run_id']}", headers=_AUTH)
+    assert g.status_code == 200 and g.json()["status"] == "succeeded"
+    # unauthenticated probes still 200
+    for probe in ("/health", "/ping", "/env"):
+        assert client.get(probe).status_code == 200, probe
+
+
+def test_exec_endpoints_not_gated_when_flag_off(client, monkeypatch):
+    monkeypatch.delenv("DISABLE_EXEC_ENDPOINTS", raising=False)
+    monkeypatch.setenv("BACKTEST_API_KEY", "k")
+    # wrong key -> reaches auth (401), NOT the 403 EXEC_DISABLED gate -> proves no drift
+    r = client.post("/run", json={"signal_code": "x"}, headers={"X-API-Key": "wrong"})
+    assert r.status_code == 401
+    assert "EXEC_DISABLED" not in r.text

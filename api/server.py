@@ -28,6 +28,7 @@ import contextlib
 import dataclasses
 import gc
 import hashlib
+import hmac
 import math
 import os
 import signal as _signal
@@ -212,8 +213,24 @@ async def verify_api_key(x_api_key: Optional[str] = Header(default=None)):
             detail="Service not configured: BACKTEST_API_KEY is not set",
         )
     # Missing and wrong keys are both 401 (a missing header is just an absent key).
-    if not x_api_key or x_api_key != API_KEY:
+    # Constant-time compare (bytes on both sides so it's total for non-ASCII keys) —
+    # a plain != leaks the key length/prefix via timing.
+    if not x_api_key or not hmac.compare_digest(
+            x_api_key.encode("utf-8"), API_KEY.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+async def enforce_exec_enabled():
+    """WIT-03 §8.7 exec-endpoint kill switch. When DISABLE_EXEC_ENDPOINTS is truthy the
+    signal_code-accepting endpoints (/run, /run/async, /run/compare, /profile) refuse —
+    so the future WIT Railway service sets this flag and the arbitrary-code path is dead
+    code there (structured configs only, WIT-03 §1/§8.7). Default OFF: the TradingGYM
+    deployment is byte-identical to today. NEVER gates /wit/v1/* or the /health,/ping,/env
+    probes. Read dynamically so the flag can flip per deployment without re-import."""
+    if os.environ.get("DISABLE_EXEC_ENDPOINTS", "").strip().lower() in ("1", "true"):
+        raise HTTPException(
+            status_code=403,
+            detail="Code-execution endpoints are disabled on this deployment (EXEC_DISABLED)")
 
 
 class BacktestRequest(BaseModel):
@@ -528,7 +545,8 @@ async def env():
     }
 
 
-@app.post("/run", response_model=BacktestResponse, dependencies=[Depends(verify_api_key)])
+@app.post("/run", response_model=BacktestResponse,
+          dependencies=[Depends(enforce_exec_enabled), Depends(verify_api_key)])
 async def run(req: BacktestRequest):
     """Run a backtest with AI-generated signal code (synchronous)."""
     return _execute_run_sync(req)
@@ -907,7 +925,8 @@ async def _run_async_job(req: AsyncBacktestRequest, writer) -> None:
             pass
 
 
-@app.post("/run/async", status_code=202, dependencies=[Depends(verify_api_key)])
+@app.post("/run/async", status_code=202,
+          dependencies=[Depends(enforce_exec_enabled), Depends(verify_api_key)])
 async def run_async(req: AsyncBacktestRequest, background_tasks: BackgroundTasks):
     """Accept a backtest job, return 202 immediately, run it in the background and write
     progress + result to the backtest_runs row (ADR-037). The sync /run is unchanged."""
@@ -936,7 +955,7 @@ def _cpu_probe_ms(iters: int = 5_000_000) -> float:
     return round((time.perf_counter() - t) * 1000, 1)
 
 
-@app.post("/profile", dependencies=[Depends(verify_api_key)])
+@app.post("/profile", dependencies=[Depends(enforce_exec_enabled), Depends(verify_api_key)])
 async def profile(req: BacktestRequest, disable_gc: bool = True):
     """ADR-045/046 diagnostic — runs the COMPARE pipeline (the app's real path) and returns a
     per-stage wall-time breakdown, peak RSS, a before/after CPU-throttle probe, and GC
@@ -1260,7 +1279,7 @@ def _validate_primary(closed_trades: list, df: pd.DataFrame,
 
 
 @app.post("/run/compare", response_model=CompareResponse,
-          dependencies=[Depends(verify_api_key)])
+          dependencies=[Depends(enforce_exec_enabled), Depends(verify_api_key)])
 async def run_compare(req: BacktestRequest):
     """TEACH-COMPARE (ADR-026): run the user's config and a stop-neutralized variant
     against the SAME signal in one logical run; report exact teaching deltas."""
@@ -1715,7 +1734,6 @@ def _execute_compare_sync(req: BacktestRequest, on_progress=None) -> CompareResp
 # heartbeat + guaranteed-terminal-state pattern (ADR-037).
 # ===========================================================================
 import datetime as _dt
-import hmac as _hmac
 import json as _json
 import math as _math
 
@@ -1761,9 +1779,10 @@ async def verify_wit_key(authorization: Optional[str] = Header(default=None)):
                             detail="Service not configured: WIT_ENGINE_SERVICE_KEY is not set")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
-    # constant-time compare — a plain != leaks the key length/prefix via timing.
+    # constant-time compare (bytes both sides so it's total for non-ASCII keys) — a
+    # plain != leaks the key length/prefix via timing.
     token = authorization[len("Bearer "):].strip()
-    if not _hmac.compare_digest(token, key):
+    if not hmac.compare_digest(token.encode("utf-8"), key.encode("utf-8")):
         raise HTTPException(status_code=403, detail="Invalid service key")
 
 
