@@ -181,7 +181,7 @@
   "consistency_flags": [
     {"description": "No arithmetic contradiction found. Survivorship in exhibits: every example is a hand-picked chart chosen after the fact; no statistics of any kind are shown.", "quotes": ["I'll also show you the fake out versions so you know what is real versus a fake signal"]}
   ],
-  "completeness": {"score": 21, "class": "B", "required_missing": ["B1", "D1"]},
+  "completeness": {"score": 21, "class": "B", "required_missing": ["B1", "D1", "D3", "D4", "F2|F4"]},
   "interpretations": [
     {"field": "C2", "readings": ["Kaufman efficiency-ratio regime split", "ADX-based trend/chop split"]},
     {"field": "D2", "readings": ["body >= k x trailing-median body over N prior candles"]}
