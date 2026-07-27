@@ -306,3 +306,69 @@ def test_exec_endpoints_not_gated_when_flag_off(client, monkeypatch):
     r = client.post("/run", json={"signal_code": "x"}, headers={"X-API-Key": "wrong"})
     assert r.status_code == 401
     assert "EXEC_DISABLED" not in r.text
+
+
+# ── WIT-P3f: sensitivity sweep ──
+def test_sweep_true_runs_all_cells(client, monkeypatch, captured_callbacks):
+    _stub_backtest(monkeypatch)
+    r = _submit(client, "backtest", _min_wire_backtest(), sweep=True)
+    assert r.status_code == 202
+    g = client.get(f"/wit/v1/runs/{r.json()['run_id']}", headers=_AUTH).json()
+    assert g["status"] == "succeeded"
+    res = g["result"]
+    # primary result intact
+    assert res["kind"] == "backtest" and res["metrics"]["trades"] == 16
+    # all 5 backtest cells completed, none skipped
+    assert set(res["sensitivity"].keys()) == {
+        "entry_body", "slippage_0", "slippage_2", "target_first", "vp_5min"}
+    assert res["sweep"] == {"requested": 5, "completed": 5, "skipped": []}
+
+
+def test_sweep_false_has_no_sensitivity(client, monkeypatch):
+    _stub_backtest(monkeypatch)
+    r = _submit(client, "backtest", _min_wire_backtest())      # sweep defaults False
+    g = client.get(f"/wit/v1/runs/{r.json()['run_id']}", headers=_AUTH).json()
+    assert g["status"] == "succeeded"
+    assert "sensitivity" not in g["result"]
+    assert "sweep" not in g["result"]
+
+
+def test_sweep_budget_skips_disclosed(client, monkeypatch):
+    # primary fits (0.15s < 0.25s budget); cells run out of the shared budget -> skipped
+    def slow(cfg):
+        time.sleep(0.15)
+        return types.SimpleNamespace(kpis={"total_trades": 1, "equity_curve": []}, trades=[])
+    monkeypatch.setattr(server, "run_vp_orb", slow)
+    r = _submit(client, "backtest", _min_wire_backtest(),
+                sweep=True, budget={"max_wall_seconds": 0.25})
+    g = client.get(f"/wit/v1/runs/{r.json()['run_id']}", headers=_AUTH).json()
+    assert g["status"] == "succeeded"                          # primary completed
+    res = g["result"]
+    assert res["sweep"]["requested"] == 5
+    assert res["sweep"]["completed"] + len(res["sweep"]["skipped"]) == 5
+    assert res["sweep"]["skipped"]                             # at least one cell skipped, disclosed
+    # every skipped cell name is a real grid cell, none silently vanished
+    assert set(res["sweep"]["skipped"]) <= {
+        "entry_body", "slippage_0", "slippage_2", "target_first", "vp_5min"}
+
+
+def test_sweep_primary_over_budget_fails(client, monkeypatch):
+    def slow(cfg):
+        time.sleep(0.6)
+        return types.SimpleNamespace(kpis={}, trades=[])
+    monkeypatch.setattr(server, "run_vp_orb", slow)
+    r = _submit(client, "backtest", _min_wire_backtest(),
+                sweep=True, budget={"max_wall_seconds": 0.1})
+    g = client.get(f"/wit/v1/runs/{r.json()['run_id']}", headers=_AUTH).json()
+    assert g["status"] == "failed"
+    assert g["error"]["code"] == "BUDGET_EXCEEDED"
+
+
+def test_sweep_idempotency_distinct_from_single(client, monkeypatch):
+    _stub_backtest(monkeypatch)
+    cfg = _min_wire_backtest()
+    s1 = _submit(client, "backtest", cfg, evaluation_id="ev-S", sweep=True)
+    s2 = _submit(client, "backtest", cfg, evaluation_id="ev-S", sweep=True)
+    single = _submit(client, "backtest", cfg, evaluation_id="ev-S", sweep=False)
+    assert s1.json()["run_id"] == s2.json()["run_id"]          # same sweep run
+    assert single.json()["run_id"] != s1.json()["run_id"]      # sweep vs single -> different runs
