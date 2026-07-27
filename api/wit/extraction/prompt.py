@@ -31,28 +31,52 @@ def _read_modes() -> str:
 
 
 def _cells(line: str) -> list[str]:
-    # a markdown table row "| a | b | c |" -> ["a","b","c"] (drop leading/trailing empties)
-    parts = [c.strip() for c in line.strip().strip("|").split("|")]
+    # a markdown table row "| a | b | c |" -> ["a","b","c"]. Split on UNESCAPED pipes only —
+    # a cell may contain an escaped `\|` (e.g. stop params `{ref: poc\|va\|orb, ticks}`);
+    # splitting on those would fragment the row and misalign the columns.
+    parts = re.split(r"(?<!\\)\|", line.strip())
+    parts = [p.replace(r"\|", "|").strip() for p in parts]
+    # drop the leading/trailing empty cells produced by the outer pipes
+    if parts and parts[0] == "":
+        parts = parts[1:]
+    if parts and parts[-1] == "":
+        parts = parts[:-1]
     return parts
 
 
+def _param_keys(cell: str) -> list[str]:
+    """Extract the typed param KEYS from a modes.md params cell, e.g.
+    `{range_start, range_end, value_area_pct, granularity}` -> those 4;
+    `{ref: poc|va|orb, ticks}` -> [ref, ticks]. `—` -> []."""
+    m = re.search(r"\{([^}]*)\}", cell)
+    if not m:
+        return []
+    keys = []
+    for part in m.group(1).split(","):
+        k = part.split(":")[0].strip().strip("`").strip()
+        if k:
+            keys.append(k)
+    return keys
+
+
 @lru_cache(maxsize=1)
-def _parse_modes() -> tuple[dict, dict]:
-    """Parse BOTH mode tables. Returns (supported, unsupported), each dimension -> list of
-    tokens, PER-DIMENSION (never a global set). A token is supported iff it is NOT immediately
-    followed by †. Dimensions with no backtick tokens (e.g. costs, data.window) are omitted."""
-    supported: dict[str, list[str]] = {}
-    unsupported: dict[str, list[str]] = {}
-    dim_col = tok_col = None
+def _parse_modes() -> dict[str, dict]:
+    """Parse BOTH mode tables → dimension -> {supported, unsupported, field, param_keys}.
+    Tokens are PER-DIMENSION (never a global set); a token is supported iff NOT immediately
+    followed by †. `field` and `param_keys` come from the Field and params columns so
+    contract/modes.md stays the single source of truth for those too."""
+    out: dict[str, dict] = {}
+    dim_col = tok_col = field_col = param_col = None
     in_table = False
     for raw in _read_modes().splitlines():
         line = raw.rstrip()
         is_row = line.lstrip().startswith("|")
         if is_row and "v1 mode tokens" in line:
-            # header row — locate the columns by name
             cells = _cells(line)
             dim_col = cells.index("Dimension")
             tok_col = cells.index("v1 mode tokens")
+            field_col = cells.index("Field")
+            param_col = next(i for i, c in enumerate(cells) if "params" in c)
             in_table = True
             continue
         if not is_row:
@@ -61,30 +85,31 @@ def _parse_modes() -> tuple[dict, dict]:
         if not in_table or set(line.strip("| ")) <= {"-", ":", " "}:
             continue  # separator row |---|---|
         cells = _cells(line)
-        if dim_col is None or tok_col is None or max(dim_col, tok_col) >= len(cells):
+        if dim_col is None or max(dim_col, tok_col, field_col, param_col) >= len(cells):
             continue
         dm = re.search(r"`([^`]+)`", cells[dim_col])
         if not dm:
             continue
         dimension = dm.group(1)
+        rec = out.setdefault(dimension, {"supported": [], "unsupported": [],
+                                         "field": cells[field_col],
+                                         "param_keys": _param_keys(cells[param_col])})
         for tok, dagger in _TOKEN_RE.findall(cells[tok_col]):
-            bucket = unsupported if dagger == _DAGGER else supported
-            bucket.setdefault(dimension, [])
-            if tok not in bucket[dimension]:
-                bucket[dimension].append(tok)
-    return supported, unsupported
+            key = "unsupported" if dagger == _DAGGER else "supported"
+            if tok not in rec[key]:
+                rec[key].append(tok)
+    return out
 
 
 def supported_modes() -> dict[str, list[str]]:
-    """dimension -> list of ENGINE-SUPPORTED v1 mode tokens (†-marked tokens excluded)."""
-    sup, _ = _parse_modes()
-    return {d: list(t) for d, t in sup.items()}
+    """dimension -> list of ENGINE-SUPPORTED v1 mode tokens (†-marked tokens excluded).
+    Only dimensions that have at least one supported token are returned."""
+    return {d: list(r["supported"]) for d, r in _parse_modes().items() if r["supported"]}
 
 
 def unsupported_modes() -> dict[str, list[str]]:
     """dimension -> list of declared-but-not-engine-supported (†) tokens — the backlog view."""
-    _, uns = _parse_modes()
-    return {d: list(t) for d, t in uns.items()}
+    return {d: list(r["unsupported"]) for d, r in _parse_modes().items() if r["unsupported"]}
 
 
 # ---------------------------------------------------------------------------
@@ -164,15 +189,18 @@ def _field_spec_block() -> str:
 
 
 def _vocab_block() -> str:
-    sup = supported_modes()
+    recs = _parse_modes()
     lines = [
         "CONFIG-RELEVANT MODE VOCABULARY (contract/modes.md — the ONLY tokens you may use):",
-        "For these fields, set `mode` to one of the listed supported tokens and fill typed",
-        "`params`. If the strategy needs a construct not listed here, leave mode null and",
-        "describe it in `value` — do NOT invent a mode token, and NEVER use a token not listed.",
+        "For each dimension below, on the named template field(s) set `mode` to one of the listed",
+        "supported tokens and fill the typed `params` keys. If the strategy needs a construct not",
+        "listed here, leave mode null and describe it in `value` — do NOT invent a mode token, and",
+        "NEVER use a token not listed.",
     ]
-    for dim in sorted(sup):
-        lines.append(f"    {dim}: {', '.join(sup[dim])}")
+    for dim in sorted(d for d, r in recs.items() if r["supported"]):
+        r = recs[dim]
+        params = f" params {{{', '.join(r['param_keys'])}}}" if r["param_keys"] else ""
+        lines.append(f"    {dim} (field {r['field']}): mode ∈ {{{', '.join(r['supported'])}}}{params}")
     return "\n".join(lines)
 
 

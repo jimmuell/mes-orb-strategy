@@ -81,15 +81,34 @@ def test_system_prompt_contains_every_supported_token():
             assert t in p, f"supported token missing from prompt: {t}"
 
 
+def _offered_mode_tokens(prompt: str) -> set[str]:
+    """Every token actually offered as a `mode` in the vocab block's 'mode ∈ {...}' clauses."""
+    tokens: set[str] = set()
+    for m in re.finditer(r"mode ∈ \{([^}]*)\}", prompt):
+        tokens.update(t.strip() for t in m.group(1).split(",") if t.strip())
+    return tokens
+
+
 def test_system_prompt_offers_no_unsupported_token():
     p = build_system_prompt()
-    # the 5 distinctive underscore-tokens must be wholly absent
+    offered = _offered_mode_tokens(p)
+    # exactly the supported set is offered as modes — no more, no less
+    assert offered == {t for tokens in supported_modes().values() for t in tokens}
+    assert NEVER_SUPPORTED.isdisjoint(offered)
+    # the 5 distinctive underscore-tokens appear NOWHERE (not modes, not params, not prose)
     for t in ("orb_break", "opening_range", "orb_high_low", "market_next_open", "fixed_time"):
         assert t not in p, f"unsupported token leaked into prompt: {t}"
-    # `structure` / `level` must not appear as STANDALONE words (compounds like
-    # entry.level, level_offset, bar_close_beyond_level are legitimate)
-    assert not re.search(r"(?<![\w.])structure(?![\w])", p)
-    assert not re.search(r"(?<![\w.])level(?![\w])", p)
+    # `structure` never appears (it's not a supported mode nor a param key anywhere)
+    assert "structure" not in p
+
+
+def test_vocab_block_names_field_ids_and_param_keys():
+    p = build_system_prompt()
+    block = p[p.index("CONFIG-RELEVANT MODE VOCABULARY"):]
+    assert "field D2" in block          # setup dimension → its template field id
+    assert "range_start" in block       # a setup param key
+    assert "entry_start" in block       # session (C1) param key
+    assert "ticks" in block             # stop (F1) param key
 
 
 def test_system_prompt_encodes_key_rules():
