@@ -20,6 +20,9 @@ pandas==2.3.3
 numpy==2.5.1
 requests==2.34.2
 pyarrow==24.0.0          # full-history Parquet dataset (ADR-035)
+anthropic==0.120.0       # WIT extraction (engine-owned per P3m-a/P3r): POST /wit/v1/extract calls
+                         # the ensemble, which calls the SDK. Lazy import in provider.py. Promoted
+                         # from requirements-dev.txt into the SHIPPED lock; passes the ADR-050 gate.
 
 # Edge-validation library — installed from git; Railway must reach GitHub at build. Pinned to an
 # exact commit (back-tester main HEAD = v0.2.0 repackage). Bump this sha deliberately.
@@ -32,11 +35,16 @@ anyio==4.14.1
 certifi==2026.6.17
 charset-normalizer==3.4.9
 click==8.4.2
+distro==1.9.0           # anthropic (P3r)
+docstring-parser==0.18.0  # anthropic (P3r)
 h11==0.16.0             # uvicorn's fallback HTTP/1.1 parser. Patched release for PYSEC-2026-348 /
                         # GHSA-vqfr-h8mv-ghfj (vulnerable <0.16.0). httptools handles inbound
                         # parsing by default so h11 is idle in prod, but pinned regardless.
+httpcore==1.0.9         # httpx transport (anthropic, P3r)
 httptools==0.8.0        # uvicorn[standard] — the actual inbound HTTP/1.1 parser used (--http auto)
+httpx==0.28.1           # anthropic HTTP client (P3r); also fastapi TestClient in dev
 idna==3.18
+jiter==0.16.0           # anthropic fast JSON parser (P3r)
 packaging==26.2
 patsy==1.0.2
 pydantic==2.13.4
@@ -48,6 +56,7 @@ pytz==2026.2
 PyYAML==6.0.3
 scipy==1.18.0
 six==1.17.0
+sniffio==1.3.1          # anyio/httpx/anthropic async-lib detection (P3r; was an unpinned gap)
 starlette==1.3.1
 statsmodels==0.14.6
 typing-extensions==4.16.0

@@ -47,5 +47,6 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P3e-8-report.md | Build (prompt-spec alignment) | narrated-vs-generalized fixed + quote-selection + testable defined; F1 fixed, D2 + claims-testable still miss → pre-committed endgame (P3q re-adjudication) |
 | WIT-P3q-adjudication.md | Final ruling (3 disputes) | Three disputed entries RE-RATIFIED; fixtures FINAL; known-residuals register R1-R3; v1 acceptance rationale |
 | WIT-P3q-report.md | Final ruling (commit) | Docs-only: fixtures FINAL, residuals register, extraction v1 accepted for curated launch |
+| WIT-P3r-report.md | Build (extract endpoint) | POST /wit/v1/extract (engine-owned k=3 ensemble); anthropic → shipped runtime lock, ADR-050 gate green |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.

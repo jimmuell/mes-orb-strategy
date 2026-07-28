@@ -1744,6 +1744,7 @@ from wit.run_store import WITRunStore
 from wit.vp_orb_runner import run_vp_orb, PARQUET_5MIN as _VPORB_PARQUET
 from wit.event_study import run_config, load_1min_rth, build_candles, RAW_1MIN as _ES_RAW_1MIN
 from wit.sweeps import build_backtest_sweep, build_event_study_sweep
+from wit.extraction.ensemble import extract_template_ensemble
 from callback_writer import get_wit_callback_writer
 
 _WIT_RUNS = WITRunStore()
@@ -2040,6 +2041,129 @@ async def wit_get_run(run_id: str):
     elif state.get("status") == "failed":
         body["error"] = state.get("error")
     return body
+
+
+# ── POST /wit/v1/extract (WIT-P3r) — engine-owned extraction via the k=3 ensemble ──
+# Decided P3m-a, unblocked P3q: the ENGINE owns extraction; Supabase merely calls this. Mirrors the
+# /wit/v1/runs async-job pattern exactly — same bearer auth (verify_wit_key), same run store +
+# idempotency, same heartbeat + GUARANTEED-terminal-state, same signed callback. A dedicated kill
+# switch (WIT_DISABLE_EXTRACT) 503s the route; k is env-configurable (WIT_EXTRACT_K, default 3).
+
+# Transcript size cap. The WIT surface otherwise takes structured configs (no raw-text cap existed),
+# so this is a NEW documented bound: 200_000 chars (~200 KB). A 2-hour caption track is ~120 KB, so
+# this clears realistic transcripts while bounding memory and per-call model cost (k independent sends).
+_WIT_EXTRACT_MAX_CHARS = int(os.environ.get("WIT_EXTRACT_MAX_CHARS", "200000"))
+
+
+def _extract_k() -> int:
+    """Ensemble sample count; env-tunable (WIT-P3r). Default 3 (the P3e-7 decision); floored at 1."""
+    try:
+        return max(1, int(os.environ.get("WIT_EXTRACT_K", "3")))
+    except ValueError:
+        return 3
+
+
+async def enforce_extract_enabled():
+    """WIT-P3r kill switch. When WIT_DISABLE_EXTRACT is truthy the extract route 503s (e.g. to stop
+    model spend without a redeploy). Mirrors the DISABLE_EXEC_ENDPOINTS pattern; scoped to
+    /wit/v1/extract only — never gates /wit/v1/runs or the legacy surface."""
+    if os.environ.get("WIT_DISABLE_EXTRACT", "").strip().lower() in ("1", "true"):
+        raise HTTPException(status_code=503,
+                            detail="Extraction endpoint disabled (WIT_DISABLE_EXTRACT)")
+
+
+class WitSourceMeta(BaseModel):
+    title: Optional[str] = None
+    url: Optional[str] = None
+    channel: Optional[str] = None
+
+
+class WitExtractRequest(BaseModel):
+    evaluation_id: str
+    callback_url: str
+    transcript: str
+    source_meta: WitSourceMeta = Field(default_factory=WitSourceMeta)
+    budget: WitBudget = Field(default_factory=WitBudget)
+
+
+async def _run_wit_extract_job(run_id: str, transcript: str, source_meta: dict,
+                               callback_url: str, budget_seconds: float, k: int) -> None:
+    """Background extraction job: run extract_template_ensemble(k) in a worker thread under the wall
+    budget with heartbeats, then a GUARANTEED terminal state (mirrors _run_wit_job). The wall budget
+    covers the WHOLE ensemble (all k sequential extractions share it); a timeout => BUDGET_EXCEEDED."""
+    writer = get_wit_callback_writer(callback_url, os.environ.get("WIT_CALLBACK_HMAC_SECRET"))
+    _WIT_RUNS.update(run_id, {"status": "running", "progress": {"stage": "extracting"}})
+    loop = asyncio.get_event_loop()
+    try:
+        compute = asyncio.create_task(
+            asyncio.to_thread(extract_template_ensemble, transcript, source_meta, k=k))
+        start = loop.time()
+        res = None
+        while res is None:
+            if budget_seconds - (loop.time() - start) <= 0:
+                compute.cancel()
+                _wit_terminal(run_id, writer, "failed", error=_budget_error(budget_seconds))
+                return
+            try:
+                remaining = budget_seconds - (loop.time() - start)
+                res = await asyncio.wait_for(asyncio.shield(compute),
+                                             timeout=min(_HEARTBEAT_SECONDS, remaining))
+            except asyncio.TimeoutError:
+                if loop.time() - start >= budget_seconds:
+                    compute.cancel()
+                    _wit_terminal(run_id, writer, "failed", error=_budget_error(budget_seconds))
+                    return
+                _WIT_RUNS.update(run_id, {"status": "running"})   # heartbeat touch
+        if res.get("status") == "ok":
+            # raw_meta carries ensemble_meta (incl. per-run demotions/downgrades) per P3m-a/P3r.
+            result = {"template": res["template"], "completeness": res["completeness"],
+                      "raw_meta": {**(res.get("raw_meta") or {}),
+                                   "ensemble_meta": res.get("ensemble_meta")}}
+            _wit_terminal(run_id, writer, "succeeded", result=result)
+        else:
+            _wit_terminal(run_id, writer, "failed",
+                          error={"code": "EXTRACTION_FAILED",
+                                 "message": "ensemble extraction failed",
+                                 "detail": {"errors": res.get("errors") or [],
+                                            "ensemble_meta": res.get("ensemble_meta")}})
+    except Exception as e:
+        tb = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"[:2000]
+        _wit_terminal(run_id, writer, "failed",
+                      error={"code": "INTERNAL", "message": str(e)[:500],
+                             "detail": {"traceback": tb}})
+
+
+@app.post("/wit/v1/extract", status_code=202,
+          dependencies=[Depends(enforce_extract_enabled), Depends(verify_wit_key)])
+async def wit_submit_extract(req: WitExtractRequest, background_tasks: BackgroundTasks):
+    transcript = req.transcript or ""
+    if not transcript.strip():
+        return _wit_error(400, "INVALID_CONFIG", "transcript is required and must be non-empty", {})
+    if len(transcript) > _WIT_EXTRACT_MAX_CHARS:
+        return _wit_error(400, "INVALID_CONFIG",
+                          f"transcript exceeds the {_WIT_EXTRACT_MAX_CHARS}-char cap",
+                          {"length": len(transcript), "cap": _WIT_EXTRACT_MAX_CHARS})
+    if not is_allowed_callback_url(req.callback_url):
+        return _wit_error(400, "INVALID_CONFIG", "callback_url host not allowed",
+                          {"callback_url": req.callback_url})
+    source_meta = req.source_meta.model_dump()
+    # idempotency: INTERNAL content hash of transcript + source_meta, never echoed (P3f pattern);
+    # prefixed so it can never collide with a run/sweep key for the same evaluation_id.
+    idem = "extract:" + hashlib.sha256(
+        _json.dumps({"t": transcript, "s": source_meta}, sort_keys=True,
+                    separators=(",", ":")).encode("utf-8")).hexdigest()
+    run_id, is_new = _WIT_RUNS.register(
+        req.evaluation_id, idem,
+        {"kind": "extract", "status": "queued", "progress": {"stage": None},
+         "result": None, "error": None})
+    if is_new:
+        _WIT_RUNS.update(run_id, {"status": "queued"})
+        background_tasks.add_task(_run_wit_extract_job, run_id, transcript, source_meta,
+                                  req.callback_url, req.budget.max_wall_seconds, _extract_k())
+    state = _WIT_RUNS.get(run_id) or {}
+    return JSONResponse(status_code=202,
+                        content={"run_id": run_id, "status": state.get("status", "queued"),
+                                 "estimated_seconds": None})
 
 
 if __name__ == "__main__":

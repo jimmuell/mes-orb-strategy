@@ -65,13 +65,13 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
 
 ## Current state (verify on open, don't assume)
 
-* main = the WIT-P3q commit (final re-adjudication: fixtures FINAL, known-residuals register
-  R1-R3, extraction v1 ACCEPTED for the curated workflow); prior 7f7d424 (P3e-8). No open branch (wit-phase3 deleted at
+* main = the WIT-P3r commit (POST /wit/v1/extract shipped — engine-owned extraction via the k=3
+  ensemble; anthropic promoted to the shipped runtime lock, ADR-050 green); prior 83456fb (P3q). No open branch (wit-phase3 deleted at
   P3j, fully merged). Suite **212 passed / 0 failed / 2 skipped** (the 2 skips are the
   network+cost-gated live extraction tier — correct in CI). CI green (run 30359775950).
 * Session-3 arc on main: P3e-1 prompt builder → P3e-2 extraction core → P3f sweep runner →
   P3j checkpoint merge → P3k close-out → P3l docs alignment → P3e-4 grounding + status rules → P3m process hardening →
-  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline → P3e-6 determinism + coherence → P3e-7 ensemble vote → P3e-8 prompt-spec alignment → P3q final ruling.
+  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline → P3e-6 determinism + coherence → P3e-7 ensemble vote → P3e-8 prompt-spec alignment → P3q final ruling → P3r extract endpoint.
   Sessions 1–2 (scorer, schema, mapper vertical, /wit/v1 router, hardening) stand as described in
   the P3i handoff; see `docs/wit/log/`.
 * Extraction layer (`api/wit/extraction/`): prompt builder generates the supported mode vocabulary
@@ -93,23 +93,22 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
   sequentially under the shared remaining budget; `result.sweep.skipped` ALWAYS discloses what
   didn't run. `sweep=false` byte-identical to P3d.
 
-▶ RESUME HERE — extraction quality CLOSED for v1 (P3q: fixtures FINAL, residuals
-register R1-R3 in docs/wit/log/WIT-P3q-adjudication.md; live-golden misses outside
-R1-R3 = regression => lead review). Next slice: POST /wit/v1/extract — calls
-extract_template_ensemble(k=3); auth + budget like the other /wit/v1 routes;
-returns {template, completeness, raw_meta incl. ensemble_meta}; anthropic moves
-from requirements-dev.txt to the SHIPPED runtime lock and must pass the ADR-050
-audit gate; per-call cost = 3 extractions. Jim's lane: Railway deploy confirm +
-WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1;
-FirstRateData confirmation email (draft in the Notion tracker row).
+▶ RESUME HERE — POST /wit/v1/extract SHIPPED (P3r): the engine back end is
+feature-complete for v1 (read + grade + test + sweep, all behind /wit/v1). Next
+candidates, lead to sequence with Jim: (1) Supabase front office (WIT-03 §6: auth,
+tables, edge function calling the engine); (2) front-end integration of live engine
+results (Lovable app currently on fixtures); (3) library seeding workflow (curated,
+human-reviewed per P3q §4). Jim's lane: Railway deploy confirm + env vars incl. the
+new extract kill switch; FirstRateData confirmation email (draft in the Notion
+tracker row).
 
 ## Open items (carried + new; none blocking the adjudication)
 
 * DONE P3o — calibration anchors adjudicated: fixtures ratified 9/9, T-file ratios
   restated (18/27, 9/27), claims rubric now coverage-based.
-* NEW — `POST /wit/v1/extract` slice pending (see RESUME HERE); moving anthropic into the shipped
-  runtime lock is part of it.
-* WIT-03 §8: items 3 and 6 remain genuinely open (item 7 annotated ✓ in P3o).
+* DONE P3r — `POST /wit/v1/extract` shipped (engine-owned k=3 ensemble); anthropic moved into the
+  shipped runtime lock with its transitive closure, ADR-050 audit gate green.
+* WIT-03 §8: items 3 and 6 remain genuinely open (items 7, 8 annotated ✓; 8 shipped P3r).
 * NEW — sweep disclosure granularity: `skipped[]` conflates errored cells with not-run cells (the
   count always discloses; the nature doesn't). Later slice: split "errored" from "skipped".
   Sensitivity cells carry the PRIMARY's config_hash (variant name is the discriminator) — fine

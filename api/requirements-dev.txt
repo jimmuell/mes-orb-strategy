@@ -2,6 +2,6 @@
 # Run the engine test suite with:  cd api && python -m pytest -v
 -r requirements.txt
 pytest==9.0.3    # bumped from 8.4.2 for PYSEC-2026-1845 (ADR-049); dev/CI-only, not shipped
-httpx==0.28.1    # required by fastapi.testclient.TestClient (ADR-039 import/health smoke test)
-anthropic==0.120.0  # dev/CI-only; the LIVE extraction call runs in Supabase, not on the Railway
-                    # runtime (see requirements.txt header). Used by the gated extraction harness.
+# httpx and anthropic MOVED to the shipped runtime lock (requirements.txt) in WIT-P3r: the
+# engine now owns extraction (POST /wit/v1/extract -> ensemble -> anthropic SDK), and httpx is
+# anthropic's HTTP client (still also used by fastapi TestClient here). Inherited via -r above.
