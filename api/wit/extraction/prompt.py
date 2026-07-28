@@ -181,7 +181,24 @@ EXTRACTION RULES (WIT-02 §1/§4) — follow exactly:
    motivational or illustrative language to 'implied'. 'implied' requires a direct, specific
    inference the quote forces — not a charitable reconstruction. WHEN IN DOUBT BETWEEN 'implied'
    AND 'unspecified', CHOOSE 'unspecified' — the honest gap IS the product.
-Field conventions: each field object is {value, status, source_quote, assumption[, mode, params]};
+9. BASIS DISCIPLINE: for every REQUIRED field (B1, B2, D1, D2, D3, D4, F1, F2, F4)
+   whose status is "specified" or "implied", set "basis" to exactly one of:
+     "stated_rule"          — stated as an instruction/definition, executable as stated;
+     "generalized_practice" — stated once (e.g. inside a worked example) BUT generalized
+                              beyond it (habitual framing or an explicit general
+                              justification) AND its referent is executable within this
+                              template's own structure;
+     "narrated_example"     — narration of one specific trade/chart, however habitual it
+                              sounds, or a referent that exists only inside that exhibit;
+     "tendency_or_claim"    — what price tends to do, or a performance claim.
+   A basis of "narrated_example" or "tendency_or_claim" does NOT support "specified" or
+   "implied" — set status "unspecified" and let value describe the honest gap. The
+   engine deterministically demotes contradictions; over-crediting cannot pass. Invented
+   examples (from no test source): "I got in when it broke that resistance" inside a
+   recap of one past trade => narrated_example => unspecified. "I always put my stop just
+   below the signal candle — that level being defended is why the trade works" =>
+   generalized_practice => implied, IF the signal candle is defined in this template.
+Field conventions: each field object is {value, status, source_quote, assumption[, mode, params, basis]};
 status ∈ {specified, implied, unspecified}."""
 
 

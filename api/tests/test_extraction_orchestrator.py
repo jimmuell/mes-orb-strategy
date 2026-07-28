@@ -54,9 +54,33 @@ def _regrounded(template, quote):
     return t
 
 
+# WIT-P3e-5 CI plumbing (NOT golden tuning — the fixtures on disk are byte-identical): the new
+# gates require required fields to DECLARE a basis and every claim quote to be grounded. These
+# helpers make an in-memory fake template satisfy those gates against FAKE_TX.
+_REQUIRED_BASIS_FIELDS = ("B1", "B2", "D1", "D2", "D3", "D4", "F1", "F2", "F4")
+
+
+def _with_basis(t, basis="stated_rule"):
+    """Declare `basis` on every required specified/implied field (default stated_rule = no demotion)."""
+    for fid in _REQUIRED_BASIS_FIELDS:
+        f = t["fields"].get(fid)
+        if isinstance(f, dict) and f.get("status") in ("specified", "implied"):
+            f["basis"] = basis
+    return t
+
+
+def _ci_ready(t):
+    """Make a (re)grounded fake template pass ALL P3e-5 CI gates against FAKE_TX: required
+    fields declare basis, and claims[] are emptied (the fixture's real claims are not grounded
+    in FAKE_TX; claim grounding has its own dedicated tests below)."""
+    _with_basis(t)
+    t["claims"] = []
+    return t
+
+
 def _grounded_template():
-    """A schema-valid Class-A template whose quotes are all grounded in FAKE_TX."""
-    return _regrounded(_valid_template(), GROUNDED)
+    """A schema-valid Class-A template that passes ALL CI-safe gates against FAKE_TX."""
+    return _ci_ready(_regrounded(_valid_template(), GROUNDED))
 
 
 def test_valid_first_try(monkeypatch):
@@ -151,7 +175,7 @@ def test_grounding_paraphrase_retries_and_names_field(monkeypatch):
 
 def test_grounding_paraphrase_then_exact_succeeds(monkeypatch):
     seq = [_regrounded(_valid_template(), PARAPHRASE),
-           _regrounded(_valid_template(), GROUNDED)]
+           _grounded_template()]
     calls = {"n": 0}
 
     def fake(s, u, *, model, api_key=None):
@@ -180,16 +204,123 @@ def test_grounding_tolerates_whitespace_and_case(monkeypatch):
     wonky = "  A  BREAK   of Our\nVALUE Area High "
     monkeypatch.setattr(provider, "extract_once",
                         lambda s, u, *, model, api_key=None: _ret(
-                            _regrounded(_valid_template(), wonky)))
+                            _ci_ready(_regrounded(_valid_template(), wonky))))
     r = extract.extract_template(FAKE_TX, {}, max_retries=0)
     assert r["status"] == "ok"             # no grounding error despite the messy whitespace/case
 
 
 def test_grounding_never_checks_j_fields(monkeypatch):
-    t = _regrounded(_valid_template(), GROUNDED)   # every non-J field grounded
+    t = _ci_ready(_regrounded(_valid_template(), GROUNDED))   # every non-J field grounded
     t["fields"]["J1"]["status"] = "specified"
     t["fields"]["J1"]["source_quote"] = PARAPHRASE  # ungrounded — but J is WIT-authored, exempt
     monkeypatch.setattr(provider, "extract_once",
                         lambda s, u, *, model, api_key=None: _ret(copy.deepcopy(t)))
     r = extract.extract_template(FAKE_TX, {}, max_retries=0)
     assert r["status"] == "ok"             # an ungrounded J quote does NOT block success
+
+
+# ── WIT-P3e-5: basis discipline (evidence gate + deterministic demotion) + claims grounding ──
+
+
+def _claim(quote, testable=False, text="Made $1000 in a day"):
+    return {"claim": text, "quote": quote, "testable": testable}
+
+
+def test_basis_narrated_example_demotes_required_field(monkeypatch):
+    t = _grounded_template()
+    t["fields"]["D3"]["basis"] = "narrated_example"   # required field, was specified+grounded
+    monkeypatch.setattr(provider, "extract_once",
+                        lambda s, u, *, model, api_key=None: _ret(copy.deepcopy(t)))
+    r = extract.extract_template(FAKE_TX, {}, max_retries=0)
+    assert r["status"] == "ok"                          # demotion is deterministic, NOT a failure
+    # demoted to unspecified BEFORE scoring, and the demotion is recorded
+    assert r["template"]["fields"]["D3"]["status"] == "unspecified"
+    assert {"field": "D3", "from_status": "specified", "basis": "narrated_example"} in r["demotions"]
+    # class reflects the demotion: a required field is now missing => no longer Class A
+    assert r["completeness"]["class"] != "A"
+    assert "D3" in r["completeness"]["required_missing"]
+
+
+def test_missing_basis_retries_with_named_error_then_ok(monkeypatch):
+    bad = _grounded_template()
+    del bad["fields"]["D3"]["basis"]        # required, specified+grounded, but no basis declared
+    seq = [bad, _grounded_template()]
+    calls = {"n": 0}
+    seen = []
+
+    def fake(s, u, *, model, api_key=None):
+        seen.append(u)
+        t = seq[calls["n"]]
+        calls["n"] += 1
+        return _ret(copy.deepcopy(t))
+
+    monkeypatch.setattr(provider, "extract_once", fake)
+    r = extract.extract_template(FAKE_TX, {}, max_retries=1)
+    assert r["status"] == "ok"
+    assert calls["n"] == 2
+    assert "fields.D3 is specified but declares no basis" in seen[1]
+
+
+def test_basis_stated_rule_untouched_demotions_empty(monkeypatch):
+    monkeypatch.setattr(provider, "extract_once",
+                        lambda s, u, *, model, api_key=None: _ret(_grounded_template()))
+    r = extract.extract_template(FAKE_TX, {}, max_retries=0)
+    assert r["status"] == "ok"
+    assert r["demotions"] == []                         # stated_rule supports the status
+    assert r["template"]["fields"]["D3"]["status"] == "specified"
+
+
+def test_invalid_basis_value_is_validation_error_and_retries(monkeypatch):
+    bad = _grounded_template()
+    bad["fields"]["D3"]["basis"] = "charitable"         # not in the enum -> schema error
+    seq = [bad, _grounded_template()]
+    calls = {"n": 0}
+    seen = []
+
+    def fake(s, u, *, model, api_key=None):
+        seen.append(u)
+        t = seq[calls["n"]]
+        calls["n"] += 1
+        return _ret(copy.deepcopy(t))
+
+    monkeypatch.setattr(provider, "extract_once", fake)
+    r = extract.extract_template(FAKE_TX, {}, max_retries=1)
+    assert r["status"] == "ok"
+    assert calls["n"] == 2
+    assert "basis must be one of" in seen[1]
+
+
+def test_claim_paraphrase_retries_naming_claim_then_ok(monkeypatch):
+    bad = _grounded_template()
+    bad["claims"] = [_claim(PARAPHRASE)]                # claim quote NOT grounded in FAKE_TX
+    good = _grounded_template()
+    good["claims"] = [_claim(GROUNDED)]                 # exact substring on retry
+    seq = [bad, good]
+    calls = {"n": 0}
+    seen = []
+
+    def fake(s, u, *, model, api_key=None):
+        seen.append(u)
+        t = seq[calls["n"]]
+        calls["n"] += 1
+        return _ret(copy.deepcopy(t))
+
+    monkeypatch.setattr(provider, "extract_once", fake)
+    r = extract.extract_template(FAKE_TX, {}, max_retries=1)
+    assert r["status"] == "ok"
+    assert calls["n"] == 2
+    assert "is not a verbatim substring of the transcript" in seen[1]
+    assert "Made $1000 in a day" in seen[1]             # the retry error names the claim
+
+
+def test_claim_always_paraphrased_fails_terminally(monkeypatch):
+    def fake(s, u, *, model, api_key=None):
+        t = _grounded_template()
+        t["claims"] = [_claim(PARAPHRASE)]
+        return _ret(t)
+
+    monkeypatch.setattr(provider, "extract_once", fake)
+    r = extract.extract_template(FAKE_TX, {}, max_retries=2)
+    assert r["status"] == "extraction_failed"           # ungrounded claim can never pass
+    assert any("verbatim substring of the transcript" in e for e in r["errors"])
+    assert any("Made $1000 in a day" in e for e in r["errors"])

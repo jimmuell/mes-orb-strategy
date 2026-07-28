@@ -11,9 +11,10 @@ validate_template() in the orchestrator.
 """
 from __future__ import annotations
 
+import copy
 import os
 
-from wit.extraction.schema import load_schema
+from wit.extraction.schema import load_schema, _BASIS_ENUM
 
 TOOL_NAME = "emit_strategy_template"
 # API input_schema is standard JSON Schema; strip the meta keys the Messages API rejects while
@@ -23,7 +24,22 @@ _MAX_OUTPUT_TOKENS = 8192
 
 
 def build_tool() -> dict:
-    schema = {k: v for k, v in load_schema().items() if k not in _STRIP_META}
+    # DEEP copy: the field $def is mutated below to offer `basis`, and load_schema() is
+    # lru_cached — a shallow copy would corrupt the shared schema used by validate_template.
+    schema = copy.deepcopy({k: v for k, v in load_schema().items() if k not in _STRIP_META})
+    # WIT-P3e-5: offer the optional evidence declaration. The field $def has
+    # additionalProperties:false, so the model can only emit `basis` if it is declared here.
+    # It stays OUT of the $def's `required`, so omitting it is schema-valid (the orchestrator's
+    # missing-basis check — not the tool schema — enforces it on REQUIRED fields).
+    field_def = schema.get("$defs", {}).get("field")
+    if isinstance(field_def, dict) and isinstance(field_def.get("properties"), dict):
+        field_def["properties"]["basis"] = {
+            "type": "string",
+            "enum": sorted(_BASIS_ENUM),
+            "description": "WIT-P3e-5 evidence declaration for REQUIRED specified/implied fields "
+                           "(BASIS DISCIPLINE). narrated_example / tendency_or_claim do NOT "
+                           "support specified/implied and are demoted to unspecified.",
+        }
     return {
         "name": TOOL_NAME,
         "description": "Emit the filled WIT-02 strategy template as structured JSON. Fill every "

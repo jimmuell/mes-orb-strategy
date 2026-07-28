@@ -98,8 +98,11 @@ def test_system_prompt_offers_no_unsupported_token():
     # the 5 distinctive underscore-tokens appear NOWHERE (not modes, not params, not prose)
     for t in ("orb_break", "opening_range", "orb_high_low", "market_next_open", "fixed_time"):
         assert t not in p, f"unsupported token leaked into prompt: {t}"
-    # `structure` never appears (it's not a supported mode nor a param key anywhere)
-    assert "structure" not in p
+    # `structure` never appears as a mode token or param key. (P3e-5 rule 9 legitimately uses
+    # the English word "structure" — "executable within this template's own structure" — so the
+    # check is scoped to the mode-VOCABULARY block, which is where a leaked token would surface.)
+    vocab = p[p.index("CONFIG-RELEVANT MODE VOCABULARY"):]
+    assert "structure" not in vocab
 
 
 def test_vocab_block_names_field_ids_and_param_keys():
@@ -128,6 +131,19 @@ def test_system_prompt_encodes_grounding_and_status_discipline():
                    "CHOOSE 'unspecified'",
                    "the honest gap IS the product"):
         assert phrase in p, f"P3e-4 rule phrase missing: {phrase!r}"
+
+
+def test_system_prompt_encodes_basis_discipline_rule9():
+    # WIT-P3e-5: rule 9 phrases present AND rules 1-8's pinned phrases still present (additive)
+    p = build_system_prompt()
+    for phrase in ("BASIS DISCIPLINE", "narrated_example", "generalized_practice",
+                   "stated_rule", "tendency_or_claim", "does NOT support"):
+        assert phrase in p, f"P3e-5 rule 9 phrase missing: {phrase!r}"
+    # rules 1-8 pinned phrases must survive the additive change
+    for phrase in ("charitably complete", "VERBATIM SUBSTRING", "a setup is not an entry trigger",
+                   "CLASS IS AN OUTPUT, NOT AN INPUT", "CHARACTER-FOR-CHARACTER",
+                   "is NOT a rule", "CHOOSE 'unspecified'"):
+        assert phrase in p, f"pre-P3e-5 rule phrase lost: {phrase!r}"
 
 
 def test_system_prompt_references_all_27_fields():

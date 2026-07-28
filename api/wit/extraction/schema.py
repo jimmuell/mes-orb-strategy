@@ -25,9 +25,15 @@ _STATUS_ENUM = {"specified", "implied", "unspecified"}
 _CLASS_ENUM = {"A", "B", "C"}
 # Every field object MUST carry these four (WIT-02 §1).
 _FIELD_KEYS = {"value", "status", "source_quote", "assumption"}
-# Plus two OPTIONAL machine-param keys (WIT-P3c-1): mode (string|null), params (object|null).
-_FIELD_OPTIONAL_KEYS = {"mode", "params"}
+# Plus OPTIONAL keys: machine-param channel (WIT-P3c-1) mode (string|null) / params
+# (object|null), and the evidence declaration (WIT-P3e-5) basis (enum|null). basis is
+# OPTIONAL here so the ratified fixtures stay valid WITHOUT it; it is required only of MODEL
+# output, enforced by the orchestrator's missing-basis check on REQUIRED fields.
+_FIELD_OPTIONAL_KEYS = {"mode", "params", "basis"}
 _FIELD_ALLOWED_KEYS = _FIELD_KEYS | _FIELD_OPTIONAL_KEYS
+# WIT-P3e-5 evidence bases. narrated_example / tendency_or_claim cannot support a
+# specified/implied status — the orchestrator deterministically demotes those.
+_BASIS_ENUM = {"stated_rule", "generalized_practice", "narrated_example", "tendency_or_claim"}
 # WIT-02 §J: the validation plan (J1/J2) is authored by WIT, not extracted from the
 # guru, so a specified J field legitimately has no transcript source_quote. Every
 # other section carries the §4.1 quote-for-specified/implied requirement.
@@ -150,6 +156,9 @@ def _validate_field(fid: str, obj) -> list[str]:
         errs.append(f"fields.{fid}.mode must be a string or null")
     if "params" in obj and obj["params"] is not None and not isinstance(obj["params"], dict):
         errs.append(f"fields.{fid}.params must be an object or null")
+    # WIT-P3e-5: optional evidence declaration; when present (non-null) must be a valid basis.
+    if "basis" in obj and obj["basis"] is not None and obj["basis"] not in _BASIS_ENUM:
+        errs.append(f"fields.{fid}.basis must be one of {sorted(_BASIS_ENUM)} (got {obj['basis']!r})")
     status = obj.get("status")
     if status not in _STATUS_ENUM:
         errs.append(f"fields.{fid}.status must be one of {sorted(_STATUS_ENUM)} (got {status!r})")

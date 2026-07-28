@@ -65,13 +65,13 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
 
 ## Current state (verify on open, don't assume)
 
-* main = the WIT-P3o commit (anchor adjudication: fixtures ratified, claims rubric to
-  coverage, prose ratios aligned); prior 3b2456e (P3n close-out). No open branch (wit-phase3 deleted at
+* main = the WIT-P3e-5 commit (basis discipline: evidence gate + deterministic demotion +
+  claims grounding); prior 059e297 (P3o). No open branch (wit-phase3 deleted at
   P3j, fully merged). Suite **212 passed / 0 failed / 2 skipped** (the 2 skips are the
   network+cost-gated live extraction tier — correct in CI). CI green (run 30359775950).
 * Session-3 arc on main: P3e-1 prompt builder → P3e-2 extraction core → P3f sweep runner →
   P3j checkpoint merge → P3k close-out → P3l docs alignment → P3e-4 grounding + status rules → P3m process hardening →
-  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication.
+  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline.
   Sessions 1–2 (scorer, schema, mapper vertical, /wit/v1 router, hardening) stand as described in
   the P3i handoff; see `docs/wit/log/`.
 * Extraction layer (`api/wit/extraction/`): prompt builder generates the supported mode vocabulary
@@ -93,32 +93,27 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
   sequentially under the shared remaining budget; `result.sweep.skipped` ALWAYS discloses what
   didn't run. `sweep=false` byte-identical to P3d.
 
-▶ RESUME HERE — adjudication DONE (P3o); choose the next slice
-The calibration-anchor adjudication is complete (record:
-docs/wit/log/WIT-P3o-adjudication.md). All nine disputed T-0002 statuses RATIFIED as
-committed; both fixtures byte-identical; the A-vs-B miss is MODEL behavior, and the
-anchors are now safe to tune toward. Codified rule for any status mechanism: `implied`
-on a required field needs BOTH (i) the practice generalized beyond a single worked
-example (habitual/imperative framing or an explicit general justification) AND (ii) a
-referent executable within the template's own structure — F1 passes both; D3 fails
-(ii) ("that high" exists only inside a discretionary H&S exhibit). `specified`
-additionally requires executability AS STATED. Claims rubric: count tolerance replaced
-by COVERAGE (fixture list = required core; extras fine, all grounded) — golden T-0001
-expected to pass end-to-end now; T-0002 still expected-fail on class until the
-mechanism ships. Two candidate next slices, either order:
-1. P3e-5 (lead recommends FIRST): per-required-field "stated executable rule vs
-   narrated example" mechanism encoding the two-part test (candidates: second-pass
-   status critic, or per-field justification in the tool schema); also extend RUNTIME
-   grounding to claims[] quotes (the golden now checks them; extract.py does not yet).
-   Success = live T-0002 classes B with >=75% status match to the ratified fixture.
-2. POST /wit/v1/extract (architecture DECIDED at P3m-a, superseding WIT-03 §4: the
-   ENGINE exposes extraction; Supabase merely calls it — one implementation of the
-   product's core trick). Auth + budget like the other /wit/v1 routes; returns
-   {template, completeness, raw_meta}; anthropic moves from requirements-dev.txt to
-   the SHIPPED runtime lock and must pass the ADR-050 audit gate.
-Still open in Jim's lane: confirm the engine is actually deployed on Railway and set
-WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1 (P3a could
-not verify live deploy state from the repo).
+▶ RESUME HERE — P3e-5 basis discipline shipped; live golden result: T-0001 PASSED
+(class A, grounding + new claims-coverage rubric all green). T-0002 STILL MISGRADED,
+but far closer than P3e-4 and no longer product-critical: the graded pytest run reached
+class B AND required_missing == fixture [B1,D1,D3,D4,F2|F4], failing only the exact
+required-field status assert F1 (extracted specified vs fixture implied); an independent
+re-extraction (diagnostic) drifted to class C (F1 then correct=implied, but B2
+under-credited to unspecified and D2 over-demoted), status match 23/27 (~85%). Demotions
+fired CORRECTLY both runs (narrated_example → unspecified). Diagnosis: the deterministic
+mechanism works; the residual gap is MODEL run-to-run variance on 1–3 boundary required
+fields (F1/B2/D2) landing on either side of the ratified fixture — retries 0 both runs.
+If both cases passed: next slice = POST /wit/v1/extract (decided at P3m-a, superseding
+WIT-03 §4 — the ENGINE exposes extraction, Supabase merely calls it; auth + budget like
+the other /wit/v1 routes; returns {template, completeness, raw_meta}; anthropic moves
+from requirements-dev.txt to the SHIPPED runtime lock and must pass the ADR-050 audit
+gate). If T-0002 is still misgraded: STOP — next step is a lead-engineer review of the
+live diagnostic in Cowork chat before ANY further hardening; the anchors are ratified
+(P3o) and are not the lever. [ACTIVE BRANCH: T-0002 is still misgraded → STOP; the P3e-5
+27-row diagnostic is in docs/wit/log/WIT-P3e-5-report.md for that lead review.]
+Jim's lane unchanged: Railway deploy confirm + WIT_ENGINE_SERVICE_KEY,
+WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1; FirstRateData confirmation email
+(draft in the Notion tracker row).
 
 ## Open items (carried + new; none blocking the adjudication)
 
