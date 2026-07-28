@@ -65,13 +65,13 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
 
 ## Current state (verify on open, don't assume)
 
-* main = the WIT-P3e-7 commit (k=3 extraction ensemble — majority vote per field, conservative
-  ties, medoid merge); prior 7d9be1d (P3e-6). No open branch (wit-phase3 deleted at
+* main = the WIT-P3e-8 commit (prompt aligned to the P3o standard: narrated-vs-generalized fixed,
+  quote-selection rule, testable defined); prior 9be0284 (P3e-7). No open branch (wit-phase3 deleted at
   P3j, fully merged). Suite **212 passed / 0 failed / 2 skipped** (the 2 skips are the
   network+cost-gated live extraction tier — correct in CI). CI green (run 30359775950).
 * Session-3 arc on main: P3e-1 prompt builder → P3e-2 extraction core → P3f sweep runner →
   P3j checkpoint merge → P3k close-out → P3l docs alignment → P3e-4 grounding + status rules → P3m process hardening →
-  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline → P3e-6 determinism + coherence → P3e-7 ensemble vote.
+  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline → P3e-6 determinism + coherence → P3e-7 ensemble vote → P3e-8 prompt-spec alignment.
   Sessions 1–2 (scorer, schema, mapper vertical, /wit/v1 router, hardening) stand as described in
   the P3i handoff; see `docs/wit/log/`.
 * Extraction layer (`api/wit/extraction/`): prompt builder generates the supported mode vocabulary
@@ -93,34 +93,36 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
   sequentially under the shared remaining budget; `result.sweep.skipped` ALWAYS discloses what
   didn't run. `sweep=false` byte-identical to P3d.
 
-▶ RESUME HERE — P3e-7 k=3 ensemble shipped; live golden x2 BOTH cases STILL FAILED — but the
-finding has SHARPENED from "sampling noise" to a concrete MODEL-vs-ADJUDICATION disagreement
-the lead must rule on. The ensemble mechanism is sound and stable (voted-template diagnostic:
-unanimous 23/27, majority 4/27, TIE 0/27; ok_runs 3/3; per-run demotions/downgrades fired
-correctly). Results: T-0001 FAILED BOTH runs on the SAME assert — the P3o claims-COVERAGE
-`testable` flag for 'Profitable over a 10-year backtest' (fixture True; the model's MAJORITY
-across runs marks it False, and the ensemble collapses each claim group to one majority-voted
-claim, so the occasional True variant no longer survives). T-0002 FAILED both runs (run-1
-class C; run-2 + diagnostic class B with required_missing extra {D2, F1}); the two runs
-DISAGREED (C vs B), so cross-triple variance is reduced but not gone. ROOT CAUSE (from the
-voted diagnostic): D2 and F1 vote `unspecified` because the model's MAJORITY basis for them is
-`narrated_example` — i.e. the model genuinely reads D2 (the head-and-shoulders setup) and F1
-(the stop rule) as narration of one example, which DISAGREES with the P3o-ratified fixture
-(D2=implied, F1=implied). This is no longer noise: it is the model's central judgment vs the
-human adjudication. WHAT'S SOLID: B2 stable specified/stated_rule; ensemble deterministic given
-its k samples; unanimous on 23/27. → STOP for lead review in Cowork chat with the 27-row voted
-diagnostic in docs/wit/log/WIT-P3e-7-report.md. The DECISION is now the lead's and is a
-JUDGMENT call, not a mechanism to improvise: (a) accept that the model's honest majority reading
-of this particular vague video differs from the adjudication and decide whether that is a
-product-acceptable outcome (the whole thesis is "the honest gap IS the product"); (b) if the
-fixture must be met, steer the model harder on generalized_practice vs narrated_example for
-setup/stop fields (prompt work — risky, diminishing returns); (c) reconsider whether the
-claims `testable` flag belongs as a HARD golden assert at all. Do NOT add more mechanisms
-without a lead decision. Only after extraction quality is settled: POST /wit/v1/extract (decided
-at P3m-a; the endpoint calls extract_template_ensemble(k=3), NOT single-shot; auth + budget like
-other /wit/v1 routes; returns {template, completeness, raw_meta incl. ensemble_meta}; anthropic
-moves from requirements-dev.txt to the SHIPPED runtime lock and must pass the ADR-050 audit
-gate; per-call cost is 3 extractions).
+▶ RESUME HERE — P3e-8 prompt-spec alignment shipped; live golden x2 BOTH cases STILL FAILED, so
+the PRE-COMMITTED ENDGAME is now triggered: the next slice is a formal LEAD RE-ADJUDICATION (P3q)
+in Cowork chat — NO further prompt-hardening slices are authorized. P3e-8 fixed the two errors it
+targeted but exposed a third, and confirmed the residual is genuinely FIXTURE-vs-MODEL. What P3e-8
+FIXED: (1) F1 now stably reads implied/generalized_practice = fixture (the "however habitual it
+sounds" contradiction is gone); (2) the 'Profitable over a 10-year backtest' claim now votes
+testable=True = fixture (rule-4 testable definition working). What still MISSES, both runs:
+T-0001 fails on a DIFFERENT claim now — 'Consistent profits in less than 90 minutes per day'
+(fixture testable=True; model votes False, reading it as a promise/goal not a data-testable
+behavior claim). T-0002 fails, and the two runs DISAGREED and in OPPOSITE directions: run-1
+under-credited D2 (extra in required_missing); run-2 + the diagnostic OVER-credited B1 (and D1
+in run-2) — i.e. the new "generalization rescues a once-shown practice" language now sometimes
+credits the EXHIBIT-instrument B1 ('the NASDAQ here pushed higher') as stated_rule, which P3o
+ratified as unspecified ("an exhibit's instrument is not the method's"). Voted diagnostic (3rd
+sample): B1 specified/stated_rule (fixture unspecified — OVER), D1 unspecified (=fixture), D2
+implied/generalized_practice (=fixture), F1 implied/generalized_practice (=fixture); reconstructed
+required_missing {D1,D3,D4,F2|F4} vs fixture {B1,D1,D3,D4,F2|F4}. So the three borderline entries
+now in genuine dispute are: T-0002 B1 (exhibit instrument), T-0002 D2 (setup, boundary), and the
+T-0001 'Consistent profits <90min' claim testable flag. These are JUDGMENT calls a prompt cannot
+settle without over/under-shooting the next field. → P3q LEAD RE-ADJUDICATION (Cowork chat): read
+each of those exact fixture entries against the transcript and either (a) RE-RATIFY with a
+prompt-independent argument (accept the model's honest reading differs — "the honest gap IS the
+product" — and decide the golden should encode the human standard regardless), or (b) AMEND the
+fixture with a full documented record (a due-process key revision under the P3o adjudication log,
+NOT tuning). Also on the table for P3q: whether the claims `testable` flag belongs as a HARD golden
+assert at all. Only after extraction quality is SETTLED: POST /wit/v1/extract (decided at P3m-a;
+the endpoint calls extract_template_ensemble(k=3), NOT single-shot; auth + budget like other
+/wit/v1 routes; returns {template, completeness, raw_meta incl. ensemble_meta}; anthropic moves
+from requirements-dev.txt to the SHIPPED runtime lock and must pass the ADR-050 audit gate;
+per-call cost = 3 extractions).
 Jim's lane unchanged: Railway deploy confirm + WIT_ENGINE_SERVICE_KEY,
 WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1; FirstRateData confirmation email
 (draft in the Notion tracker row).

@@ -167,6 +167,11 @@ EXTRACTION RULES (WIT-02 §1/§4) — follow exactly:
 4. Capture EVERY performance claim verbatim into claims[] (including unfalsifiable/anecdotal
    ones). Record internal contradictions (e.g. risk:reward arithmetic, timeframe) into
    consistency_flags[].
+   testable=true iff the claim can be tested against historical price data (a claim
+   about how a strategy or a market itself behaves). testable=false for personal results
+   and anecdotes, unverifiable live-performance stories, and promises about the
+   viewer's future results. Whether the source's OWN evidence can be verified is
+   irrelevant — what matters is whether WIT can test the claim on data.
 5. CLASS IS AN OUTPUT, NOT AN INPUT: do NOT decide A/B/C and do NOT set completeness.class —
    just fill the fields honestly; a deterministic scorer assigns the class afterward.
 6. Record genuine alternate readings of an ambiguous rule in interpretations[] rather than
@@ -188,8 +193,14 @@ EXTRACTION RULES (WIT-02 §1/§4) — follow exactly:
                               beyond it (habitual framing or an explicit general
                               justification) AND its referent is executable within this
                               template's own structure;
-     "narrated_example"     — narration of one specific trade/chart, however habitual it
-                              sounds, or a referent that exists only inside that exhibit;
+     "narrated_example"     — narration of one specific trade/chart WITH NO generalization
+                              beyond it anywhere in the source, or a referent that exists
+                              only inside that exhibit. If the narration is accompanied by a
+                              generalized statement of the practice or a general
+                              justification ("I always ...", "because these ... tend to
+                              hold"), AND the referent is executable within this template,
+                              the basis is "generalized_practice" — the generalization, not
+                              the demonstration, earns the credit;
      "tendency_or_claim"    — what price tends to do, or a performance claim.
    A basis of "narrated_example" or "tendency_or_claim" does NOT support "specified" or
    "implied" — set status "unspecified" and let value describe the honest gap. The
@@ -203,6 +214,13 @@ EXTRACTION RULES (WIT-02 §1/§4) — follow exactly:
    A capability or scope fact the source states outright (e.g. which markets or
    timeframes it works on) is a STATED fact for B-section fields — basis 'stated_rule'
    — even if that very sentence also belongs in claims[] as a claim.
+   When several passages could support a field, source_quote the MOST GENERAL one
+   (the stated rule or the general justification), not the worked-example narration —
+   the quote should carry the field's basis.
+   A general justification may itself be phrased as a tendency ('these tend to
+   hold'); that does not make the FIELD a tendency claim — basis classifies the
+   PRACTICE we credit. This applies only where a stated practice exists; a
+   tendency with no accompanying practice remains tendency_or_claim.
 Field conventions: each field object is {value, status, source_quote, assumption[, mode, params, basis]};
 status ∈ {specified, implied, unspecified}."""
 

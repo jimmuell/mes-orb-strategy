@@ -158,6 +158,21 @@ def test_system_prompt_encodes_p3e6_pairing_and_capability_clarifiers():
         assert phrase in p, f"prior rule-9 phrase lost: {phrase!r}"
 
 
+def test_system_prompt_encodes_p3e8_spec_alignment():
+    # WIT-P3e-8: narrated-vs-generalized fixed, quote-selection rule, testable defined
+    p = build_system_prompt()
+    for phrase in ("WITH NO generalization", "the generalization, not",
+                   "the demonstration, earns the credit", "MOST GENERAL",
+                   "testable=true iff", "testable=false"):
+        assert phrase in p, f"P3e-8 phrase missing: {phrase!r}"
+    # the contradicting phrase is GONE
+    assert "however habitual it" not in p, "removed narrated_example phrase still present"
+    # prior pinned rule-9 phrases intact
+    for phrase in ("BASIS DISCIPLINE", "narrated_example", "generalized_practice",
+                   "does NOT support", "Status/basis pairing"):
+        assert phrase in p, f"prior rule phrase lost: {phrase!r}"
+
+
 def test_system_prompt_references_all_27_fields():
     p = build_system_prompt()
     assert len(FIELD_IDS) == 27

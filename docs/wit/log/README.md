@@ -44,5 +44,6 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P3e-5-report.md | Build (basis discipline) | Per-required-field evidence gate + deterministic demotion + claims grounding; live: T-0001 pass, T-0002 class B, F1 status miss |
 | WIT-P3e-6-report.md | Build (determinism + coherence) | temperature-0 UNAVAILABLE on opus-4-8 (deprecated); coherence downgrade + B-fact clarifier; live x2 both fail (D2/claims-testable variance) |
 | WIT-P3e-7-report.md | Build (k=3 ensemble) | Per-field majority vote + conservative ties + medoid merge; live x2 both fail — model-vs-adjudication on D2/F1 basis (narrated_example) + claims-testable |
+| WIT-P3e-8-report.md | Build (prompt-spec alignment) | narrated-vs-generalized fixed + quote-selection + testable defined; F1 fixed, D2 + claims-testable still miss → pre-committed endgame (P3q re-adjudication) |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.
