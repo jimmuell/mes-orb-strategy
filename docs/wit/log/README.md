@@ -34,5 +34,7 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P3f-report.md | Build (sweep runner) | Engine-owned grids, sweep flag, shared wall budget |
 | WIT-P3j-report.md | Merge Phase 3 ckpt 2 | Checkpoint merge to main (206 green, CI success) |
 | WIT-P3k-report.md | Session close (Phase 3) | Handoff rewrite + prompt-log index |
+| WIT-P3l-report.md | Docs alignment | Doc-to-code pass: field count 25→27, WIT-03 aligned to shipped sweep/extraction |
+| WIT-P3e-4-report.md | Build (grounding + status) | Grounding retry loop + status-discipline prompt; first live grading + 27-row diagnostic |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.

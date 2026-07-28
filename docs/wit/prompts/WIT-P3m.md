@@ -1,3 +1,43 @@
+Platform:    Claude Code (paste this code into this platform)
+Project:     WillItTrade (WIT) — engine repo
+Repo:        jimmuell/mes-orb-strategy
+Prompt:      WIT-P3m — process hardening: handoff refresh to true current state + prompt-archive convention + standing continuity rules
+Local path:  /Users/jameslmueller/Projects/mes-orb-strategy
+
+STEP 0 — gate
+  git remote -v && pwd — confirm repo/path as above; if not, STOP.
+  git checkout main && git pull --ff-only origin main
+  git log --oneline -1 → must be b4041a1 (WIT-P3e-4). If not, STOP and report.
+  git status → clean except the known untracked pine/mes_net_pnl_v2.pine (and any uncommitted
+  scratchpad/ diagnostic, which stays uncommitted). If other tracked changes, STOP.
+
+TASK — docs only. No code, no tests, no contract/ or schema files.
+
+  1) Create docs/wit/prompts/README.md with exactly this:
+
+---BEGIN prompts/README.md---
+# WIT prompt archive
+
+Every Claude Code prompt the lead engineer authors is saved here as
+`WIT-<id>.md` (verbatim, the same single plaintext code box that is pasted into Claude Code)
+**before or at the time it is run**.
+
+Why this exists: the report in `../log/` proves a prompt *ran*. Nothing proved a prompt was
+*authored and pending* — so an authored-but-not-yet-run prompt lived only in a chat window and
+was invisible to the repo. On 2026-07-28 that gap caused a second lead session, reading only the
+repo, to re-issue a task Jim had already completed. The archive closes it: `prompts/` = intended,
+`log/` = happened. A prompt in `prompts/` with no matching `log/` report is a PENDING slice.
+
+Rules:
+- Filename matches the prompt id exactly (`WIT-P3e-4.md`, `WIT-P3m.md`).
+- Verbatim. If a prompt is reissued with a changed gate, append a dated note at the bottom rather
+  than silently editing history.
+- NEVER paste a secret into a prompt file. Keys are passed via the environment only.
+---END prompts/README.md---
+
+  2) REPLACE the entire contents of docs/wit/SESSION-HANDOFF.md with exactly this:
+
+---BEGIN SESSION-HANDOFF.md---
 # WIT Session Handoff
 
 Read this first, then RECONCILE against git before assigning any work (see Continuity rules).
@@ -138,3 +178,34 @@ the extraction layer and why the SDK is dev-only; P3e-4 = the first live grading
 diagnostic; P3f = the sweep design and the cap decision; P3l = doc-to-code alignment). Trust the
 repo over memory, and git over this file. Verified, not inferred — every number in a WIT artifact
 traces to a committed file.
+---END SESSION-HANDOFF.md---
+
+  3) docs/wit/log/README.md — add index rows for WIT-P3l and WIT-P3e-4 (one line each, same
+     File | Prompt | Content style), so the index matches the directory.
+
+  4) Copy the two prompts from this session into the new archive, VERBATIM as Jim pasted them
+     (they are reproduced in full inside their own report files' context sections only in part —
+     so reconstruct each from the prompt text you actually received in this session's transcript;
+     if any prompt text is not available to you verbatim, create the file with a one-line note
+     "verbatim text not recoverable from this session; see log/<id>-report.md" rather than
+     inventing it):
+       docs/wit/prompts/WIT-P3e-4.md
+       docs/wit/prompts/WIT-P3m.md   (this prompt)
+
+  Commit (explicit paths only — never git add -A):
+    git add docs/wit/SESSION-HANDOFF.md docs/wit/prompts/README.md docs/wit/prompts/WIT-P3m.md \
+            docs/wit/log/README.md docs/wit/log/WIT-P3m-report.md
+    (add docs/wit/prompts/WIT-P3e-4.md too if you produced it)
+    git commit -m "WIT-P3m: process hardening — handoff refresh, prompt archive, continuity rules"
+    git push origin main
+    Confirm CI green (gh run list/watch) or report "not checkable".
+
+REPORT BACK (exactly this):
+  1. STEP 0 (HEAD b4041a1 y/n; tree clean y/n).
+  2. Handoff replaced verbatim (y/n); prompts/README.md created (y/n); which prompt files were
+     archived, and whether any were noted as not-recoverable.
+  3. log/README.md rows added (y/n); commit hash on main; CI status.
+  4. Anything unexpected.
+  Write this report-back verbatim to docs/wit/log/WIT-P3m-report.md, staged in the same commit.
+  Final line, exactly: WIT-P3m — Completed
+  (or WIT-P3m — Partial: <what's left> — never a bare "Completed".)
