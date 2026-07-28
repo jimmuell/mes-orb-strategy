@@ -42,7 +42,7 @@ Sweep runs extend the idempotency key internally (`config_hash + ":sweep"`, neve
 **Progress stages are real pipeline stages.** Never invent theater steps (TradeVerdict lesson).
 
 ### 3.3 Callback — `POST {callback_url}`
-Body: same shape as 3.2 terminal state. Retries: 5× exponential backoff; poll fallback covers missed callbacks.
+Body: same shape as 3.2 terminal state. SHIPPED behavior (P3d): ONE best-effort POST at terminal state (failures swallowed); `GET /wit/v1/runs/{run_id}` is the source of truth — receivers MUST poll (WIT-04 §5 `poll-runs`).
 
 ### 3.4 `StrategyConfig` (Class A) — the template→engine mapping
 Derived deterministically from a filled WIT-02 template by the **mapper** (engine-side module, so mapping bugs are engine bugs with tests):
@@ -108,6 +108,9 @@ For sweep runs, skipped cells are ALWAYS disclosed in `sweep.skipped` (never sil
 
 ## 6. Supabase schema (Handoff-1 anchor; Lovable + edge functions build against this)
 
+> **SUPERSEDED by WIT-04 §4 (2026-07-28, Phase 4 slice 0).** Kept for history;
+> Lovable + edge functions build against WIT-04.
+
 - `evaluations` — id, user_id, source_url, transcript_hash, status (`extracting|scored|running|complete|failed`), class, visibility (`public|private`), created_at.
 - `templates` — evaluation_id, template_version, template_json, completeness_score, class.
 - `runs` — evaluation_id, engine_run_id, kind, config_hash, status, result_json, trades_csv_path, provenance.
@@ -122,6 +125,10 @@ For sweep runs, skipped cells are ALWAYS disclosed in `sweep.skipped` (never sil
 - Contract changes: PR against `contract/` + this doc, approved by lead engineer before either builder implements. Fixtures for Lovable regenerate from the OpenAPI examples at each version.
 
 ### Change log
+- **WIT-P4a (2026-07-28):** Phase 4 slice-0 design pass. WIT-04 created (front-office
+  architecture; supersedes §6). §3.3 corrected to shipped single-attempt callback + mandatory
+  poll. Deltas D1–D7 recorded in WIT-04 §2. One additive engine endpoint decided: `POST
+  /wit/v1/map` (WIT-04 §6, slice P4b). No wire-shape change; `config_version` stays `1.0`.
 - **WIT-P3r (2026-07-28):** §4 updated — engine-owned extraction endpoint `POST /wit/v1/extract` (k=3 ensemble) supersedes the Supabase edge-function placement (decided P3m-a). §8 item 8 added (✓). `anthropic` moved from `requirements-dev.txt` into the shipped runtime lock with its transitive closure (distro, docstring-parser, httpx, httpcore, jiter, sniffio), pinned; ADR-050 audit gate clean. No wire-shape change to §3; `config_version` stays `1.0`.
 - **WIT-P3l (2026-07-28):** WIT-02 §2 field count corrected 25→27. §3.1/§3.6 aligned to the shipped sweep surface (boolean `sweep` flag, engine-owned grids, `sensitivity`/`sweep` result blocks). Extraction layer shipped engine-side per §4 (P3e-1/2): forced `emit_strategy_template` tool call with the template schema, ≤2-retry validation loop, scorer owns class; anthropic SDK dev-only — audited runtime lock untouched. Doc-to-implementation alignment only; wire `config_version` stays `1.0`.
 - **WIT-P3d (2026-07-27):** (a) §3.4 `session.trade_window` semantics pinned — *entry-eligibility window* `[first_eligible_bar_start, last_eligible_bar_start]`, ET wall-clock; illustrative example updated to `["09:45","10:55"]` to match what real VP-ORB configs carry (the mapper emits from `C1.params`, P3c-2). (b) `contract/modes.md` — every token the engine cannot yet realize marked `†` ("declared, not engine-supported in v1 → UNSUPPORTED_CONSTRUCT") so the vocabulary never over-promises (P3e's extraction prompt is generated from it). No wire-shape change; `config_version` stays `1.0`.
