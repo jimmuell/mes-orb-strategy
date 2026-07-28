@@ -15,7 +15,10 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
   pending) — id 6e5983e8-cf92-4fa6-bf7e-cf416ae2d2d9, editor
   https://lovable.dev/projects/6e5983e8-cf92-4fa6-bf7e-cf416ae2d2d9 — front-end-only v1 (no
   auth/DB/payments), all figures from a typed fixtures module mirroring the eventual API shape;
-  seeded with the REAL published WIT-0001 numbers. Supabase not yet created.
+  seeded with the REAL published WIT-0001 numbers. Supabase not yet created. Business/decision
+  lane + glanceable status: the Notion board **WillItTrade (WIT) — Project Tracker** →
+  https://app.notion.com/p/6ccf5af452cc41768441d7dae1a3aca3 (structure mirrors the TradingGym
+  tracker; each row's Ref column points back to the repo file or spec section behind it).
 
 ## Team & process (do not improvise around these)
 
@@ -42,6 +45,12 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
      `git log --oneline -15` + `ls docs/wit/log/` to see what landed AFTER this file was written,
      and only then present Jim a task list. This file can be stale by design; git cannot.
      On 2026-07-28 a second lead session skipped this and handed Jim an already-completed task.
+  4. **The Notion tracker is READ on session open and UPDATED on session close.** The repo
+     stays the engineering source of truth; the tracker owns Jim's lane (data licensing, legal,
+     domains, pricing, launch prep) plus cross-cutting status. Reading it on open is the ONLY
+     way a session learns what Jim did between sessions — git cannot know that. Updating it on
+     close is the LEAD ENGINEER's job (Cowork chat has Notion access; Claude Code does not), so
+     a close-out is not complete until both the handoff and the tracker are current.
 * Checkpoint-merge pattern (P3h/P3j): merge the VERIFIED remote ref (`origin/<branch>`), never the
   bare local branch name; the merge report is a follow-on commit, never an amend of a pushed merge.
   Small reviewed doc/fix slices may commit directly to main (P3l, P3e-4, P3m) — the local full
@@ -56,11 +65,12 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
 
 ## Current state (verify on open, don't assume)
 
-* main = **b4041a1** (WIT-P3e-4) + this P3m docs commit. No open branch (wit-phase3 deleted at
+* main = the WIT-P3n session-3 close-out commit. No open branch (wit-phase3 deleted at
   P3j, fully merged). Suite **212 passed / 0 failed / 2 skipped** (the 2 skips are the
   network+cost-gated live extraction tier — correct in CI). CI green (run 30359775950).
 * Session-3 arc on main: P3e-1 prompt builder → P3e-2 extraction core → P3f sweep runner →
-  P3j checkpoint merge → P3k close-out → P3l docs alignment → P3e-4 grounding + status rules.
+  P3j checkpoint merge → P3k close-out → P3l docs alignment → P3e-4 grounding + status rules → P3m process hardening →
+  P3m-a extraction-endpoint decision → P3n close-out.
   Sessions 1–2 (scorer, schema, mapper vertical, /wit/v1 router, hardening) stand as described in
   the P3i handoff; see `docs/wit/log/`.
 * Extraction layer (`api/wit/extraction/`): prompt builder generates the supported mode vocabulary
