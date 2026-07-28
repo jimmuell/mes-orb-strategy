@@ -60,6 +60,12 @@ def extract_once(system_prompt: str, user_prompt: str, *, model: str,
 
     client = anthropic.Anthropic(api_key=key)
     tool = build_tool()
+    # WIT-P3e-6: a grader wants determinism over creativity, but claude-opus-4-8 DEPRECATES a
+    # user-set temperature below its default — the Messages API returns 400 "temperature is
+    # deprecated for this model" for temperature=0 (temperature=1 / unset are accepted). So the
+    # temperature=0 lever is UNAVAILABLE on the deployed model; it is intentionally NOT sent.
+    # Determinism is instead enforced downstream by the extract.py coherence rules (demotion +
+    # downgrade). See WIT-P3e-6-report.md.
     resp = client.messages.create(
         model=model,
         max_tokens=_MAX_OUTPUT_TOKENS,

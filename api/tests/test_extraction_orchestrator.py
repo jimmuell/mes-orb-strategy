@@ -324,3 +324,41 @@ def test_claim_always_paraphrased_fails_terminally(monkeypatch):
     assert r["status"] == "extraction_failed"           # ungrounded claim can never pass
     assert any("verbatim substring of the transcript" in e for e in r["errors"])
     assert any("Made $1000 in a day" in e for e in r["errors"])
+
+
+# ── WIT-P3e-6: coherence downgrade (specified + generalized_practice => implied) ──
+
+
+def test_generalized_practice_downgrades_specified_to_implied(monkeypatch):
+    t = _grounded_template()
+    t["fields"]["F1"]["basis"] = "generalized_practice"   # required field, currently specified
+    monkeypatch.setattr(provider, "extract_once",
+                        lambda s, u, *, model, api_key=None: _ret(copy.deepcopy(t)))
+    r = extract.extract_template(FAKE_TX, {}, max_retries=0)
+    assert r["status"] == "ok"
+    assert r["template"]["fields"]["F1"]["status"] == "implied"   # downgraded before scoring
+    assert {"field": "F1", "from_status": "specified", "to_status": "implied",
+            "basis": "generalized_practice"} in r["downgrades"]
+    # class unchanged — implied still SATISFIES the required field (only the exact status moved)
+    assert r["completeness"]["class"] == "A"
+
+
+def test_specified_stated_rule_not_downgraded(monkeypatch):
+    monkeypatch.setattr(provider, "extract_once",
+                        lambda s, u, *, model, api_key=None: _ret(_grounded_template()))
+    r = extract.extract_template(FAKE_TX, {}, max_retries=0)
+    assert r["status"] == "ok"
+    assert r["downgrades"] == []                          # stated_rule legitimately supports specified
+    assert r["template"]["fields"]["F1"]["status"] == "specified"
+
+
+def test_implied_generalized_practice_untouched(monkeypatch):
+    t = _grounded_template()
+    t["fields"]["F1"]["status"] = "implied"
+    t["fields"]["F1"]["basis"] = "generalized_practice"   # already implied — nothing to downgrade
+    monkeypatch.setattr(provider, "extract_once",
+                        lambda s, u, *, model, api_key=None: _ret(copy.deepcopy(t)))
+    r = extract.extract_template(FAKE_TX, {}, max_retries=0)
+    assert r["status"] == "ok"
+    assert r["template"]["fields"]["F1"]["status"] == "implied"
+    assert r["downgrades"] == []

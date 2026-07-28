@@ -65,13 +65,14 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
 
 ## Current state (verify on open, don't assume)
 
-* main = the WIT-P3e-5 commit (basis discipline: evidence gate + deterministic demotion +
-  claims grounding); prior 059e297 (P3o). No open branch (wit-phase3 deleted at
+* main = the WIT-P3e-6 commit (temperature-0 pin UNAVAILABLE on claude-opus-4-8 — the model
+  deprecates it; specified/generalized_practice coherence downgrade + B-fact clarifier shipped);
+  prior 20b8976 (P3e-5). No open branch (wit-phase3 deleted at
   P3j, fully merged). Suite **212 passed / 0 failed / 2 skipped** (the 2 skips are the
   network+cost-gated live extraction tier — correct in CI). CI green (run 30359775950).
 * Session-3 arc on main: P3e-1 prompt builder → P3e-2 extraction core → P3f sweep runner →
   P3j checkpoint merge → P3k close-out → P3l docs alignment → P3e-4 grounding + status rules → P3m process hardening →
-  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline.
+  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline → P3e-6 determinism + coherence.
   Sessions 1–2 (scorer, schema, mapper vertical, /wit/v1 router, hardening) stand as described in
   the P3i handoff; see `docs/wit/log/`.
 * Extraction layer (`api/wit/extraction/`): prompt builder generates the supported mode vocabulary
@@ -93,24 +94,30 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
   sequentially under the shared remaining budget; `result.sweep.skipped` ALWAYS discloses what
   didn't run. `sweep=false` byte-identical to P3d.
 
-▶ RESUME HERE — P3e-5 basis discipline shipped; live golden result: T-0001 PASSED
-(class A, grounding + new claims-coverage rubric all green). T-0002 STILL MISGRADED,
-but far closer than P3e-4 and no longer product-critical: the graded pytest run reached
-class B AND required_missing == fixture [B1,D1,D3,D4,F2|F4], failing only the exact
-required-field status assert F1 (extracted specified vs fixture implied); an independent
-re-extraction (diagnostic) drifted to class C (F1 then correct=implied, but B2
-under-credited to unspecified and D2 over-demoted), status match 23/27 (~85%). Demotions
-fired CORRECTLY both runs (narrated_example → unspecified). Diagnosis: the deterministic
-mechanism works; the residual gap is MODEL run-to-run variance on 1–3 boundary required
-fields (F1/B2/D2) landing on either side of the ratified fixture — retries 0 both runs.
-If both cases passed: next slice = POST /wit/v1/extract (decided at P3m-a, superseding
-WIT-03 §4 — the ENGINE exposes extraction, Supabase merely calls it; auth + budget like
-the other /wit/v1 routes; returns {template, completeness, raw_meta}; anthropic moves
-from requirements-dev.txt to the SHIPPED runtime lock and must pass the ADR-050 audit
-gate). If T-0002 is still misgraded: STOP — next step is a lead-engineer review of the
-live diagnostic in Cowork chat before ANY further hardening; the anchors are ratified
-(P3o) and are not the lever. [ACTIVE BRANCH: T-0002 is still misgraded → STOP; the P3e-5
-27-row diagnostic is in docs/wit/log/WIT-P3e-5-report.md for that lead review.]
+▶ RESUME HERE — P3e-6 shipped; live golden x2 BOTH FAILED and the two runs DISAGREED —
+the headline is a BLOCKER: temperature=0 (the P3e-6 primary lever) is REJECTED by
+claude-opus-4-8 (400 "temperature is deprecated for this model"; temperature=1/unset are
+accepted), so grader determinism CANNOT be pinned via temperature on the deployed model.
+Left unset (documented in provider.py); T2 coherence downgrade + T3 clarifiers still
+shipped. Live results (no temperature control): T-0001 FAILED both runs (run-2 on the P3o
+claims-COVERAGE testable-flag for 'Profitable over a 10-year backtest' — a REGRESSION from
+P3e-5's lucky pass, pure sampling variance); T-0002 FAILED both runs but DIFFERENTLY (run-1
+class C; run-2 class B with required_missing extra D2), and a 3rd extraction (diagnostic)
+was class C with D2 the miss. WHAT WORKED: the P3e-6 B-fact clarifier fixed B2 (now
+specified/stated_rule, matching fixture) and F1 reads implied/generalized_practice — the two
+identified P3e-5 problems. WHAT REMAINS: D2 flip-flops (fixture implied; model declares it
+unspecified or narrated_example→demoted run-to-run) and claims-testable flags vary — both
+are MODEL sampling variance that only a determinism lever or a vote can tame. retries 0
+throughout; demotions/downgrades fired correctly. → STOP for lead review in Cowork chat with
+the 27-row diagnostic in docs/wit/log/WIT-P3e-6-report.md. Candidate next levers (LEAD
+decides, do not improvise): (a) k-sample majority vote on required-field statuses (the
+handoff-named lever — now the leading option since temperature is out); (b) switch the grader
+to a model that honors temperature=0; (c) reconsider whether the claims-testable flag should
+be a HARD assert given inherent model variance. Only after extraction quality is stable:
+POST /wit/v1/extract (decided at P3m-a, superseding WIT-03 §4 — the ENGINE exposes
+extraction, Supabase merely calls it; auth + budget like the other /wit/v1 routes; returns
+{template, completeness, raw_meta}; anthropic moves from requirements-dev.txt to the SHIPPED
+runtime lock and must pass the ADR-050 audit gate).
 Jim's lane unchanged: Railway deploy confirm + WIT_ENGINE_SERVICE_KEY,
 WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1; FirstRateData confirmation email
 (draft in the Notion tracker row).

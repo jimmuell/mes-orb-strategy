@@ -198,6 +198,11 @@ EXTRACTION RULES (WIT-02 §1/§4) — follow exactly:
    recap of one past trade => narrated_example => unspecified. "I always put my stop just
    below the signal candle — that level being defended is why the trade works" =>
    generalized_practice => implied, IF the signal candle is defined in this template.
+   Status/basis pairing: 'specified' pairs only with basis 'stated_rule';
+   'generalized_practice' supports at most 'implied'. The engine enforces this.
+   A capability or scope fact the source states outright (e.g. which markets or
+   timeframes it works on) is a STATED fact for B-section fields — basis 'stated_rule'
+   — even if that very sentence also belongs in claims[] as a claim.
 Field conventions: each field object is {value, status, source_quote, assumption[, mode, params, basis]};
 status ∈ {specified, implied, unspecified}."""
 

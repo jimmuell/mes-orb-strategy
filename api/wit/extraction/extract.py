@@ -132,6 +132,28 @@ def apply_demotions(template: dict) -> list[dict]:
     return demotions
 
 
+def apply_downgrades(template: dict) -> list[dict]:
+    """WIT-P3e-6 coherence downgrade: by the P3o definitions, basis generalized_practice can
+    support at most 'implied' — 'specified' requires executability AS STATED (basis
+    stated_rule). A REQUIRED field claiming 'specified' on a generalized_practice basis is
+    downgraded to 'implied' BEFORE scoring — deterministic, never blocked, never retried
+    (both statuses still satisfy the field; only the exact status the golden grades changes).
+    Returns downgrades [{field, from_status, to_status, basis}] in FIELD_IDS order."""
+    downgrades: list[dict] = []
+    fields = template.get("fields")
+    if not isinstance(fields, dict):
+        return downgrades
+    for fid in _REQUIRED_BASIS_FIELDS:
+        f = fields.get(fid)
+        if not isinstance(f, dict):
+            continue
+        if f.get("status") == "specified" and f.get("basis") == "generalized_practice":
+            downgrades.append({"field": fid, "from_status": "specified",
+                               "to_status": "implied", "basis": "generalized_practice"})
+            f["status"] = "implied"
+    return downgrades
+
+
 def _finalize_source(template: dict, source_meta: dict, transcript: str) -> None:
     sm = source_meta or {}
     thash = sm.get("transcript_hash") or hashlib.sha256(
@@ -173,14 +195,16 @@ def extract_template(transcript: str, source_meta: dict, *, model: str | None = 
             if not errors:
                 errors = missing_basis_errors(template)
             if not errors:
-                # Deterministic demotion runs AFTER all retry gates pass and BEFORE scoring:
-                # a satisfied field whose basis cannot support it becomes unspecified, so
-                # over-crediting a narrated example cannot survive to the class.
+                # Deterministic enforcement runs AFTER all retry gates pass and BEFORE
+                # scoring: demotion voids a status its basis cannot support; the coherence
+                # downgrade fixes the specified/generalized_practice mismatch (P3e-6). Both
+                # only ever soften a status, so over-crediting cannot survive to the class.
                 demotions = apply_demotions(template)
+                downgrades = apply_downgrades(template)
                 template["completeness"] = score_completeness(template)
                 return {"status": "ok", "template": template,
                         "completeness": template["completeness"],
-                        "demotions": demotions,
+                        "demotions": demotions, "downgrades": downgrades,
                         "raw_meta": {"model": model, "retries": attempt,
                                      "usage": res.get("usage")}}
         # retry: feed the validation/grounding errors back into the user turn

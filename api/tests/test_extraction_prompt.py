@@ -146,6 +146,18 @@ def test_system_prompt_encodes_basis_discipline_rule9():
         assert phrase in p, f"pre-P3e-5 rule phrase lost: {phrase!r}"
 
 
+def test_system_prompt_encodes_p3e6_pairing_and_capability_clarifiers():
+    # WIT-P3e-6: additive pairing + capability-fact clarifiers present, prior phrases intact
+    p = build_system_prompt()
+    for phrase in ("Status/basis pairing", "pairs only with basis 'stated_rule'",
+                   "supports at most 'implied'", "capability or scope fact",
+                   "STATED fact for B-section fields"):
+        assert phrase in p, f"P3e-6 clarifier phrase missing: {phrase!r}"
+    for phrase in ("BASIS DISCIPLINE", "narrated_example", "generalized_practice",
+                   "does NOT support"):
+        assert phrase in p, f"prior rule-9 phrase lost: {phrase!r}"
+
+
 def test_system_prompt_references_all_27_fields():
     p = build_system_prompt()
     assert len(FIELD_IDS) == 27
