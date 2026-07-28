@@ -11,7 +11,11 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
 * Where things live: everything WIT is in `docs/wit/` of the mes-orb-strategy repo (the engine
   repo). Machine contracts: `schema/strategy-template.v1.json` + `contract/`. WIT engine code:
   `api/wit/`. Authored prompts: `docs/wit/prompts/`. Run reports: `docs/wit/log/`. The Lovable
-  app and its repo do not exist yet, by design.
+  app and its repo do not exist yet, by design. Front end: Lovable project `Audit Lab` (rename
+  pending) — id 6e5983e8-cf92-4fa6-bf7e-cf416ae2d2d9, editor
+  https://lovable.dev/projects/6e5983e8-cf92-4fa6-bf7e-cf416ae2d2d9 — front-end-only v1 (no
+  auth/DB/payments), all figures from a typed fixtures module mirroring the eventual API shape;
+  seeded with the REAL published WIT-0001 numbers. Supabase not yet created.
 
 ## Team & process (do not improvise around these)
 
@@ -97,14 +101,27 @@ So the next slice is a LEAD-ENGINEER ADJUDICATION (design/decision, done in Cowo
 both transcripts against both fixtures field by field): ratify or correct each disputed field
 status, restate the T-file prose ratios to match the fixtures, and decide the claims-count
 tolerance. ONLY THEN decide whether the model needs a stronger status mechanism. After that: the
-phase-end Lovable app stage (app repo + Supabase `wit-extract` — `provider.py`/`extract.py` is the
-approved reference implementation; DB per WIT-03 §6; engine prereqs on Railway:
-WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1).
+app stage, ALREADY STARTED (2026-07-28). LEAD-ENGINEER ARCHITECTURE DECISION,
+superseding WIT-03 §4's original placement of the LLM call inside the Supabase `wit-extract`
+edge function: the ENGINE exposes `POST /wit/v1/extract` and Supabase merely calls it. Rationale
+— porting the extraction layer (prompt builder, runtime mode-vocabulary parsing from
+contract/modes.md, forced tool call, retry loop, grounding check) to TypeScript would create two
+implementations of the product's core trick that must stay in lockstep, and the vocabulary is
+generated at runtime from a file that lives in THIS repo. P3a already flagged engine-owned
+extraction as preferred; now that the layer is built and graded, it is decided. Pending slice:
+`POST /wit/v1/extract` (auth + budget like the other /wit/v1 routes; returns
+{template, completeness, raw_meta}; anthropic must move from requirements-dev.txt to the SHIPPED
+runtime lock in that slice and pass the ADR-050 audit gate — the one real cost of this decision).
+Also open in Jim's lane: confirm the engine is actually deployed on Railway and set
+WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1 (P3a could not verify
+live deploy state from the repo).
 
 ## Open items (carried + new; none blocking the adjudication)
 
 * NEW — calibration anchors: see RESUME HERE. Includes the T-file prose ratios (17/25 → 18/27,
   ~7/25 → 9/27) and the ±1 claims-count tolerance in the golden rubric.
+* NEW — `POST /wit/v1/extract` slice pending (see RESUME HERE); moving anthropic into the shipped
+  runtime lock is part of it.
 * NEW — WIT-03 §8 item 7 ("disable code-execution endpoints for WIT traffic") shipped in P3g via
   DISABLE_EXEC_ENDPOINTS but was left unannotated in P3l (its instruction scoped annotations to
   items 1/2/4/5). Mark it ✓ in the next docs pass. Items 3 and 6 remain genuinely open.
