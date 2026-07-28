@@ -65,14 +65,13 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
 
 ## Current state (verify on open, don't assume)
 
-* main = the WIT-P3e-6 commit (temperature-0 pin UNAVAILABLE on claude-opus-4-8 — the model
-  deprecates it; specified/generalized_practice coherence downgrade + B-fact clarifier shipped);
-  prior 20b8976 (P3e-5). No open branch (wit-phase3 deleted at
+* main = the WIT-P3e-7 commit (k=3 extraction ensemble — majority vote per field, conservative
+  ties, medoid merge); prior 7d9be1d (P3e-6). No open branch (wit-phase3 deleted at
   P3j, fully merged). Suite **212 passed / 0 failed / 2 skipped** (the 2 skips are the
   network+cost-gated live extraction tier — correct in CI). CI green (run 30359775950).
 * Session-3 arc on main: P3e-1 prompt builder → P3e-2 extraction core → P3f sweep runner →
   P3j checkpoint merge → P3k close-out → P3l docs alignment → P3e-4 grounding + status rules → P3m process hardening →
-  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline → P3e-6 determinism + coherence.
+  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline → P3e-6 determinism + coherence → P3e-7 ensemble vote.
   Sessions 1–2 (scorer, schema, mapper vertical, /wit/v1 router, hardening) stand as described in
   the P3i handoff; see `docs/wit/log/`.
 * Extraction layer (`api/wit/extraction/`): prompt builder generates the supported mode vocabulary
@@ -94,30 +93,34 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
   sequentially under the shared remaining budget; `result.sweep.skipped` ALWAYS discloses what
   didn't run. `sweep=false` byte-identical to P3d.
 
-▶ RESUME HERE — P3e-6 shipped; live golden x2 BOTH FAILED and the two runs DISAGREED —
-the headline is a BLOCKER: temperature=0 (the P3e-6 primary lever) is REJECTED by
-claude-opus-4-8 (400 "temperature is deprecated for this model"; temperature=1/unset are
-accepted), so grader determinism CANNOT be pinned via temperature on the deployed model.
-Left unset (documented in provider.py); T2 coherence downgrade + T3 clarifiers still
-shipped. Live results (no temperature control): T-0001 FAILED both runs (run-2 on the P3o
-claims-COVERAGE testable-flag for 'Profitable over a 10-year backtest' — a REGRESSION from
-P3e-5's lucky pass, pure sampling variance); T-0002 FAILED both runs but DIFFERENTLY (run-1
-class C; run-2 class B with required_missing extra D2), and a 3rd extraction (diagnostic)
-was class C with D2 the miss. WHAT WORKED: the P3e-6 B-fact clarifier fixed B2 (now
-specified/stated_rule, matching fixture) and F1 reads implied/generalized_practice — the two
-identified P3e-5 problems. WHAT REMAINS: D2 flip-flops (fixture implied; model declares it
-unspecified or narrated_example→demoted run-to-run) and claims-testable flags vary — both
-are MODEL sampling variance that only a determinism lever or a vote can tame. retries 0
-throughout; demotions/downgrades fired correctly. → STOP for lead review in Cowork chat with
-the 27-row diagnostic in docs/wit/log/WIT-P3e-6-report.md. Candidate next levers (LEAD
-decides, do not improvise): (a) k-sample majority vote on required-field statuses (the
-handoff-named lever — now the leading option since temperature is out); (b) switch the grader
-to a model that honors temperature=0; (c) reconsider whether the claims-testable flag should
-be a HARD assert given inherent model variance. Only after extraction quality is stable:
-POST /wit/v1/extract (decided at P3m-a, superseding WIT-03 §4 — the ENGINE exposes
-extraction, Supabase merely calls it; auth + budget like the other /wit/v1 routes; returns
-{template, completeness, raw_meta}; anthropic moves from requirements-dev.txt to the SHIPPED
-runtime lock and must pass the ADR-050 audit gate).
+▶ RESUME HERE — P3e-7 k=3 ensemble shipped; live golden x2 BOTH cases STILL FAILED — but the
+finding has SHARPENED from "sampling noise" to a concrete MODEL-vs-ADJUDICATION disagreement
+the lead must rule on. The ensemble mechanism is sound and stable (voted-template diagnostic:
+unanimous 23/27, majority 4/27, TIE 0/27; ok_runs 3/3; per-run demotions/downgrades fired
+correctly). Results: T-0001 FAILED BOTH runs on the SAME assert — the P3o claims-COVERAGE
+`testable` flag for 'Profitable over a 10-year backtest' (fixture True; the model's MAJORITY
+across runs marks it False, and the ensemble collapses each claim group to one majority-voted
+claim, so the occasional True variant no longer survives). T-0002 FAILED both runs (run-1
+class C; run-2 + diagnostic class B with required_missing extra {D2, F1}); the two runs
+DISAGREED (C vs B), so cross-triple variance is reduced but not gone. ROOT CAUSE (from the
+voted diagnostic): D2 and F1 vote `unspecified` because the model's MAJORITY basis for them is
+`narrated_example` — i.e. the model genuinely reads D2 (the head-and-shoulders setup) and F1
+(the stop rule) as narration of one example, which DISAGREES with the P3o-ratified fixture
+(D2=implied, F1=implied). This is no longer noise: it is the model's central judgment vs the
+human adjudication. WHAT'S SOLID: B2 stable specified/stated_rule; ensemble deterministic given
+its k samples; unanimous on 23/27. → STOP for lead review in Cowork chat with the 27-row voted
+diagnostic in docs/wit/log/WIT-P3e-7-report.md. The DECISION is now the lead's and is a
+JUDGMENT call, not a mechanism to improvise: (a) accept that the model's honest majority reading
+of this particular vague video differs from the adjudication and decide whether that is a
+product-acceptable outcome (the whole thesis is "the honest gap IS the product"); (b) if the
+fixture must be met, steer the model harder on generalized_practice vs narrated_example for
+setup/stop fields (prompt work — risky, diminishing returns); (c) reconsider whether the
+claims `testable` flag belongs as a HARD golden assert at all. Do NOT add more mechanisms
+without a lead decision. Only after extraction quality is settled: POST /wit/v1/extract (decided
+at P3m-a; the endpoint calls extract_template_ensemble(k=3), NOT single-shot; auth + budget like
+other /wit/v1 routes; returns {template, completeness, raw_meta incl. ensemble_meta}; anthropic
+moves from requirements-dev.txt to the SHIPPED runtime lock and must pass the ADR-050 audit
+gate; per-call cost is 3 extractions).
 Jim's lane unchanged: Railway deploy confirm + WIT_ENGINE_SERVICE_KEY,
 WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1; FirstRateData confirmation email
 (draft in the Notion tracker row).

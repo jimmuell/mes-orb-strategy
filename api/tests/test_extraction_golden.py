@@ -31,7 +31,7 @@ pytestmark = pytest.mark.skipif(
     not os.getenv("WIT_RUN_LLM_TESTS") or not os.getenv("ANTHROPIC_API_KEY"),
     reason="LLM/network/cost gated; set WIT_RUN_LLM_TESTS=1 and ANTHROPIC_API_KEY to run")
 
-from wit.extraction.extract import extract_template
+from wit.extraction.ensemble import extract_template_ensemble
 from wit.extraction.schema import FIELD_IDS
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -62,7 +62,7 @@ def test_golden_extraction(src, fixname, expected_class):
     transcript = open(os.path.join(_SOURCES, src), encoding="utf-8").read()
     fixture = json.load(open(os.path.join(_FIX, fixname), encoding="utf-8"))
 
-    r = extract_template(transcript, {"title": src, "url": None, "channel": None})
+    r = extract_template_ensemble(transcript, {"title": src, "url": None, "channel": None}, k=3)
     assert r["status"] == "ok", f"extraction failed: {r.get('errors')}"
     tpl = r["template"]
 

@@ -74,6 +74,28 @@ def grounding_errors(template: dict, transcript: str) -> list[str]:
     return errs
 
 
+def claim_quote_fragments(q: str) -> list[str]:
+    """Split a claim quote into fragments on an ellipsis (fixture quotes join non-contiguous
+    spans with '...'/'…'), keeping only fragments whose normalized form is >=12 chars. Mirrors
+    the golden test's `_fragments` EXACTLY so the runtime and the grader share one definition
+    (WIT-P3e-7 factored this out of inline duplication)."""
+    return [f for f in re.split(r"\.\.\.|…", q or "") if len(_norm(f)) >= 12]
+
+
+def claims_quotes_match(qa: str, qb: str) -> bool:
+    """Whether two claim quotes refer to the same claim: any >=12-char fragment of one is a
+    normalized substring of the other (either direction) — the same _norm + ellipsis-fragment
+    overlap the golden's coverage check uses, made symmetric for grouping (WIT-P3e-7)."""
+    na, nb = _norm(qa), _norm(qb)
+    if not na or not nb:
+        return False
+    if any(_norm(fr) in nb or nb in _norm(fr) for fr in (claim_quote_fragments(qa) or [qa])):
+        return True
+    if any(_norm(fr) in na or na in _norm(fr) for fr in (claim_quote_fragments(qb) or [qb])):
+        return True
+    return False
+
+
 def claims_grounding_errors(template: dict, transcript: str) -> list[str]:
     """Every claims[] entry must carry a non-empty quote that, after normalization, is a
     verbatim substring of the transcript (WIT-P3o flagged this gap: fields were grounded at
