@@ -32,10 +32,37 @@ def _ret(template):
     return {"template": template, "usage": {"input_tokens": 10, "output_tokens": 20}}
 
 
+# A fake transcript we fully control; the grounded phrase is a verbatim substring of it,
+# the paraphrase deliberately is not (even after whitespace/case normalization). Since
+# WIT-P3e-4 grounding is a success gate, a template is only "valid" if its non-J
+# specified/implied quotes are grounded in the transcript passed to extract_template.
+FAKE_TX = ("Wait for a break of our value area high. The very next 5-minute candle closes "
+           "beyond the level. Just click market buy and let the market work.")
+GROUNDED = "a break of our value area high"            # verbatim substring of FAKE_TX
+PARAPHRASE = "a breakout above the value-area top zone"  # NOT a substring — hallucinated
+
+
+def _regrounded(template, quote):
+    """Copy the valid template, overwriting every NON-J specified/implied source_quote with
+    `quote`. Statuses (hence class + schema validity) are untouched — only grounding changes."""
+    t = copy.deepcopy(template)
+    for fid, f in t["fields"].items():
+        if fid[0] == "J":
+            continue
+        if f.get("status") in ("specified", "implied"):
+            f["source_quote"] = quote
+    return t
+
+
+def _grounded_template():
+    """A schema-valid Class-A template whose quotes are all grounded in FAKE_TX."""
+    return _regrounded(_valid_template(), GROUNDED)
+
+
 def test_valid_first_try(monkeypatch):
     monkeypatch.setattr(provider, "extract_once",
-                        lambda s, u, *, model, api_key=None: _ret(_valid_template()))
-    r = extract.extract_template("some transcript text", {"title": "Vid #2"})
+                        lambda s, u, *, model, api_key=None: _ret(_grounded_template()))
+    r = extract.extract_template(FAKE_TX, {"title": "Vid #2"})
     assert r["status"] == "ok"
     # class is assigned by the deterministic scorer, not the model
     assert r["completeness"]["class"] == "A"
@@ -49,7 +76,7 @@ def test_valid_first_try(monkeypatch):
 
 
 def test_invalid_then_valid_retries(monkeypatch):
-    seq = [_invalid_template(), _valid_template()]
+    seq = [_invalid_template(), _grounded_template()]
     calls = {"n": 0}
 
     def fake(s, u, *, model, api_key=None):
@@ -58,7 +85,7 @@ def test_invalid_then_valid_retries(monkeypatch):
         return _ret(t)
 
     monkeypatch.setattr(provider, "extract_once", fake)
-    r = extract.extract_template("tx", {}, max_retries=2)
+    r = extract.extract_template(FAKE_TX, {}, max_retries=2)
     assert r["status"] == "ok"
     assert calls["n"] == 2                 # repaired on the 2nd attempt
     assert r["raw_meta"]["retries"] == 1   # retry count surfaced (0-indexed attempt that succeeded)
@@ -101,3 +128,68 @@ def test_non_dict_tool_output_is_handled(monkeypatch):
     r = extract.extract_template("tx", {}, max_retries=1)
     assert r["status"] == "extraction_failed"
     assert r["errors"]
+
+
+# ── WIT-P3e-4: grounding retry loop (schema-valid but hallucinated quote must retry/fail) ──
+
+
+def test_grounding_paraphrase_retries_and_names_field(monkeypatch):
+    seen = []
+
+    def fake(s, u, *, model, api_key=None):
+        seen.append(u)
+        return _ret(_regrounded(_valid_template(), PARAPHRASE))  # schema-valid, ungrounded
+
+    monkeypatch.setattr(provider, "extract_once", fake)
+    r = extract.extract_template(FAKE_TX, {}, max_retries=1)
+    assert r["status"] == "extraction_failed"
+    assert len(seen) == 2                                   # grounding failure fired a retry
+    # the retry user turn carries the grounding error text AND names an offending field
+    assert "is not a verbatim substring of the transcript" in seen[1]
+    assert "fields.B1.source_quote" in seen[1]
+
+
+def test_grounding_paraphrase_then_exact_succeeds(monkeypatch):
+    seq = [_regrounded(_valid_template(), PARAPHRASE),
+           _regrounded(_valid_template(), GROUNDED)]
+    calls = {"n": 0}
+
+    def fake(s, u, *, model, api_key=None):
+        t = seq[calls["n"]]
+        calls["n"] += 1
+        return _ret(t)
+
+    monkeypatch.setattr(provider, "extract_once", fake)
+    r = extract.extract_template(FAKE_TX, {}, max_retries=2)
+    assert r["status"] == "ok"
+    assert calls["n"] == 2                 # grounded on the 2nd attempt
+    assert r["raw_meta"]["retries"] == 1   # the grounding retry is surfaced
+
+
+def test_grounding_always_paraphrased_fails_terminally(monkeypatch):
+    monkeypatch.setattr(provider, "extract_once",
+                        lambda s, u, *, model, api_key=None: _ret(
+                            _regrounded(_valid_template(), PARAPHRASE)))
+    r = extract.extract_template(FAKE_TX, {}, max_retries=2)
+    assert r["status"] == "extraction_failed"    # never a silent pass on a hallucinated quote
+    assert any("verbatim substring of the transcript" in e for e in r["errors"])
+
+
+def test_grounding_tolerates_whitespace_and_case(monkeypatch):
+    # differs from the transcript ONLY by whitespace runs and case — normalization must tolerate it
+    wonky = "  A  BREAK   of Our\nVALUE Area High "
+    monkeypatch.setattr(provider, "extract_once",
+                        lambda s, u, *, model, api_key=None: _ret(
+                            _regrounded(_valid_template(), wonky)))
+    r = extract.extract_template(FAKE_TX, {}, max_retries=0)
+    assert r["status"] == "ok"             # no grounding error despite the messy whitespace/case
+
+
+def test_grounding_never_checks_j_fields(monkeypatch):
+    t = _regrounded(_valid_template(), GROUNDED)   # every non-J field grounded
+    t["fields"]["J1"]["status"] = "specified"
+    t["fields"]["J1"]["source_quote"] = PARAPHRASE  # ungrounded — but J is WIT-authored, exempt
+    monkeypatch.setattr(provider, "extract_once",
+                        lambda s, u, *, model, api_key=None: _ret(copy.deepcopy(t)))
+    r = extract.extract_template(FAKE_TX, {}, max_retries=0)
+    assert r["status"] == "ok"             # an ungrounded J quote does NOT block success

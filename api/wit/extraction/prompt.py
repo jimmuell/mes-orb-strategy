@@ -171,6 +171,16 @@ EXTRACTION RULES (WIT-02 §1/§4) — follow exactly:
    just fill the fields honestly; a deterministic scorer assigns the class afterward.
 6. Record genuine alternate readings of an ambiguous rule in interpretations[] rather than
    silently choosing one.
+7. QUOTE DISCIPLINE: source_quote must be copied CHARACTER-FOR-CHARACTER from the transcript,
+   including caption errors and typos. Never paraphrase, never fix spelling, punctuation, or
+   numbers (if the captions say '945', write '945', not '9:45'). If you cannot locate an exact
+   sentence, quote a shorter exact span.
+8. STATUS DISCIPLINE: A description of what price TENDS to do — a claim, tendency, or
+   illustration — is NOT a rule. An entry trigger (D3) must be a stated executable instruction
+   (when exactly to enter); exits (F1/F2/F4) must be stated exit rules. Do not upgrade
+   motivational or illustrative language to 'implied'. 'implied' requires a direct, specific
+   inference the quote forces — not a charitable reconstruction. WHEN IN DOUBT BETWEEN 'implied'
+   AND 'unspecified', CHOOSE 'unspecified' — the honest gap IS the product.
 Field conventions: each field object is {value, status, source_quote, assumption[, mode, params]};
 status ∈ {specified, implied, unspecified}."""
 

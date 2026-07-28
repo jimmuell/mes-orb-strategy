@@ -119,6 +119,17 @@ def test_system_prompt_encodes_key_rules():
         assert phrase in p, f"rule phrase missing: {phrase!r}"
 
 
+def test_system_prompt_encodes_grounding_and_status_discipline():
+    # WIT-P3e-4: the quote-discipline + status-discipline rules must be present as testable text
+    p = build_system_prompt()
+    for phrase in ("CHARACTER-FOR-CHARACTER",       # QUOTE DISCIPLINE
+                   "including caption errors and typos",
+                   "is NOT a rule",                  # STATUS DISCIPLINE (Class-B guard)
+                   "CHOOSE 'unspecified'",
+                   "the honest gap IS the product"):
+        assert phrase in p, f"P3e-4 rule phrase missing: {phrase!r}"
+
+
 def test_system_prompt_references_all_27_fields():
     p = build_system_prompt()
     assert len(FIELD_IDS) == 27

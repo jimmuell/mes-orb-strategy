@@ -23,3 +23,5 @@ Safe structural checks (no key fragment revealed): the key is **well-formed cons
 No code, fixtures, thresholds, or engine were changed (per the STOP-and-report rule). No dependency touched.
 
 WIT-P3e-3 — Partial: live rubric ungraded — the ANTHROPIC_API_KEY visible to the test process (from ~/.zshrc) is rejected 401 by the API, and Claude Code's Bash cannot see Jim's interactive export; awaiting a valid key in ~/.zshrc or a `!`-run in Jim's own shell.
+
+Addendum: live baseline completed manually in Jim's terminal 2026-07-27 (D2 grounding fail on T-0001; class A-vs-B fail on T-0002); graded results + fixes in WIT-P3e-4.
