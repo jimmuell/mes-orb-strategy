@@ -80,4 +80,4 @@ Live chart-reading coaching ("watch how candles print"), the $200k anecdote, "th
 
 ## Completeness verdict
 
-**Class A — mechanically testable.** All execution-required fields specified or defensibly implied. Assumptions applied: 6 (sizing, time-exit, same-bar policy, re-entry, short-stop mirror, costs) — at the Class A limit, each disclosed and 3 of them sensitivity-swept. Completeness score: **17/25 fields specified or implied (~68%)** — *high* for the genre; this is the calibration anchor for Class A.
+**Class A — mechanically testable.** All execution-required fields specified or defensibly implied. Assumptions applied: 6 (sizing, time-exit, same-bar policy, re-entry, short-stop mirror, costs) — at the Class A limit, each disclosed and 3 of them sensitivity-swept. Completeness score: **18/27 fields specified or implied (~67%)** — *high* for the genre; this is the calibration anchor for Class A.

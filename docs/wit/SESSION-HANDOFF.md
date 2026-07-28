@@ -65,12 +65,13 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
 
 ## Current state (verify on open, don't assume)
 
-* main = the WIT-P3n session-3 close-out commit. No open branch (wit-phase3 deleted at
+* main = the WIT-P3o commit (anchor adjudication: fixtures ratified, claims rubric to
+  coverage, prose ratios aligned); prior 3b2456e (P3n close-out). No open branch (wit-phase3 deleted at
   P3j, fully merged). Suite **212 passed / 0 failed / 2 skipped** (the 2 skips are the
   network+cost-gated live extraction tier — correct in CI). CI green (run 30359775950).
 * Session-3 arc on main: P3e-1 prompt builder → P3e-2 extraction core → P3f sweep runner →
   P3j checkpoint merge → P3k close-out → P3l docs alignment → P3e-4 grounding + status rules → P3m process hardening →
-  P3m-a extraction-endpoint decision → P3n close-out.
+  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication.
   Sessions 1–2 (scorer, schema, mapper vertical, /wit/v1 router, hardening) stand as described in
   the P3i handoff; see `docs/wit/log/`.
 * Extraction layer (`api/wit/extraction/`): prompt builder generates the supported mode vocabulary
@@ -92,49 +93,40 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
   sequentially under the shared remaining budget; `result.sweep.skipped` ALWAYS discloses what
   didn't run. `sweep=false` byte-identical to P3d.
 
-▶ RESUME HERE — LEAD-ENGINEER DECISION FIRST: adjudicate the calibration anchors
-The live graded run (P3e-4, first-ever real grading — see that report for the full 27-row table)
-produced ONE fixed problem and ONE open question:
-* FIXED: T-0001 grounding now passes on the first attempt (0 retries) — quotes are verbatim.
-* OPEN: T-0002 still scores Class **A** where the fixture says **B**, because the extractor
-  credits required fields (B1, D1, D3, D4) from *grounded narration of one example trade*. NOT
-  hallucination — every quote is a real substring — so grounding cannot catch it.
-DO NOT reflexively add a status-critic pass or harden the prompt again. THREE independent signals
-now point at the ANCHORS, not only the model: (a) claims count 10 extracted vs 5 in the T-0001
-fixture; (b) the T-file prose says "17/25" and "~7/25" filled while the committed machine fixtures
-carry **18/27** and **9/27** (the old hand-counts were made against the pre-correction 25-field
-header — P3l measured this and correctly changed nothing); (c) several T-0002 field calls are
-genuinely debatable — e.g. D3's quote "I look to jump in as it breaks that high" reads as a stated
-executable trigger in isolation, and is only *narration* in context. Tuning the model toward a
-debatable anchor would encode the wrong target and corrupt every future accuracy number.
-So the next slice is a LEAD-ENGINEER ADJUDICATION (design/decision, done in Cowork chat by reading
-both transcripts against both fixtures field by field): ratify or correct each disputed field
-status, restate the T-file prose ratios to match the fixtures, and decide the claims-count
-tolerance. ONLY THEN decide whether the model needs a stronger status mechanism. After that: the
-app stage, ALREADY STARTED (2026-07-28). LEAD-ENGINEER ARCHITECTURE DECISION,
-superseding WIT-03 §4's original placement of the LLM call inside the Supabase `wit-extract`
-edge function: the ENGINE exposes `POST /wit/v1/extract` and Supabase merely calls it. Rationale
-— porting the extraction layer (prompt builder, runtime mode-vocabulary parsing from
-contract/modes.md, forced tool call, retry loop, grounding check) to TypeScript would create two
-implementations of the product's core trick that must stay in lockstep, and the vocabulary is
-generated at runtime from a file that lives in THIS repo. P3a already flagged engine-owned
-extraction as preferred; now that the layer is built and graded, it is decided. Pending slice:
-`POST /wit/v1/extract` (auth + budget like the other /wit/v1 routes; returns
-{template, completeness, raw_meta}; anthropic must move from requirements-dev.txt to the SHIPPED
-runtime lock in that slice and pass the ADR-050 audit gate — the one real cost of this decision).
-Also open in Jim's lane: confirm the engine is actually deployed on Railway and set
-WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1 (P3a could not verify
-live deploy state from the repo).
+▶ RESUME HERE — adjudication DONE (P3o); choose the next slice
+The calibration-anchor adjudication is complete (record:
+docs/wit/log/WIT-P3o-adjudication.md). All nine disputed T-0002 statuses RATIFIED as
+committed; both fixtures byte-identical; the A-vs-B miss is MODEL behavior, and the
+anchors are now safe to tune toward. Codified rule for any status mechanism: `implied`
+on a required field needs BOTH (i) the practice generalized beyond a single worked
+example (habitual/imperative framing or an explicit general justification) AND (ii) a
+referent executable within the template's own structure — F1 passes both; D3 fails
+(ii) ("that high" exists only inside a discretionary H&S exhibit). `specified`
+additionally requires executability AS STATED. Claims rubric: count tolerance replaced
+by COVERAGE (fixture list = required core; extras fine, all grounded) — golden T-0001
+expected to pass end-to-end now; T-0002 still expected-fail on class until the
+mechanism ships. Two candidate next slices, either order:
+1. P3e-5 (lead recommends FIRST): per-required-field "stated executable rule vs
+   narrated example" mechanism encoding the two-part test (candidates: second-pass
+   status critic, or per-field justification in the tool schema); also extend RUNTIME
+   grounding to claims[] quotes (the golden now checks them; extract.py does not yet).
+   Success = live T-0002 classes B with >=75% status match to the ratified fixture.
+2. POST /wit/v1/extract (architecture DECIDED at P3m-a, superseding WIT-03 §4: the
+   ENGINE exposes extraction; Supabase merely calls it — one implementation of the
+   product's core trick). Auth + budget like the other /wit/v1 routes; returns
+   {template, completeness, raw_meta}; anthropic moves from requirements-dev.txt to
+   the SHIPPED runtime lock and must pass the ADR-050 audit gate.
+Still open in Jim's lane: confirm the engine is actually deployed on Railway and set
+WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET, DISABLE_EXEC_ENDPOINTS=1 (P3a could
+not verify live deploy state from the repo).
 
 ## Open items (carried + new; none blocking the adjudication)
 
-* NEW — calibration anchors: see RESUME HERE. Includes the T-file prose ratios (17/25 → 18/27,
-  ~7/25 → 9/27) and the ±1 claims-count tolerance in the golden rubric.
+* DONE P3o — calibration anchors adjudicated: fixtures ratified 9/9, T-file ratios
+  restated (18/27, 9/27), claims rubric now coverage-based.
 * NEW — `POST /wit/v1/extract` slice pending (see RESUME HERE); moving anthropic into the shipped
   runtime lock is part of it.
-* NEW — WIT-03 §8 item 7 ("disable code-execution endpoints for WIT traffic") shipped in P3g via
-  DISABLE_EXEC_ENDPOINTS but was left unannotated in P3l (its instruction scoped annotations to
-  items 1/2/4/5). Mark it ✓ in the next docs pass. Items 3 and 6 remain genuinely open.
+* WIT-03 §8: items 3 and 6 remain genuinely open (item 7 annotated ✓ in P3o).
 * NEW — sweep disclosure granularity: `skipped[]` conflates errored cells with not-run cells (the
   count always discloses; the nature doesn't). Later slice: split "errored" from "skipped".
   Sensitivity cells carry the PRIMARY's config_hash (variant name is the discriminator) — fine

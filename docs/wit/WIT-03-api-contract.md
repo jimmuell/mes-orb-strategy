@@ -132,4 +132,4 @@ Edge function `wit-extract`: input `{transcript, source_meta}` → LLM (structur
 4. Event-study runner (intrabar path features composed from finer bars). **✓ shipped P3c-3.**
 5. Sensitivity sweep runner (bounded variants, shared queue budget). **✓ shipped P3f.**
 6. Retire `backtest/` duplicate engine; `api/engine` is the single computational truth.
-7. Disable code-execution endpoints for WIT traffic.
+7. Disable code-execution endpoints for WIT traffic. **✓ shipped P3g (`DISABLE_EXEC_ENDPOINTS=1` kill switch; left unannotated in P3l).**

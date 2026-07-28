@@ -12,7 +12,8 @@ the two hand-filled fixtures with a SCORED RUBRIC (never byte-equality — LLM p
       substring of the transcript (J section exempt — WIT-authored, no quote)
   TOLERANT:
     - value/source_quote by overlap, not exact string
-    - claims[] count within +/-1 of the fixture
+    - claims[] COVERAGE (P3o): every fixture claim matched by quote-fragment overlap
+      with an agreeing testable flag; extras allowed, every extracted claim quote grounded
     - consistency_flags[] present where the fixture has them
     - a per-field status-match score must clear a threshold
 
@@ -92,8 +93,25 @@ def test_golden_extraction(src, fixname, expected_class):
             assert q, f"{fid} is {f['status']} but has no source_quote"
             assert _norm(q) in ntx, f"{fid} source_quote not grounded in transcript: {q!r}"
 
-    # ── TOLERANT ──
-    assert abs(len(tpl["claims"]) - len(fixture["claims"])) <= 1, "claims count off by >1"
+    # ── TOLERANT: claims coverage (P3o adjudication) — the fixture list is the
+    # REQUIRED CORE, not a cap. Rule 4 asks for EVERY claim, so extras are correct
+    # behavior; what matters is (a) no fixture claim missed, (b) every extracted
+    # claim grounded. Fixture quotes may join non-contiguous spans with an ellipsis —
+    # match per fragment.
+    def _fragments(q):
+        return [f for f in re.split(r"\.\.\.|…", q or "") if len(_norm(f)) >= 12]
+
+    ex_quotes = [_norm(c.get("quote") or "") for c in tpl["claims"]]
+    for fc in fixture["claims"]:
+        frags = _fragments(fc["quote"]) or [fc["quote"]]
+        hit = [i for i, eq in enumerate(ex_quotes)
+               if eq and any(_norm(fr) in eq or eq in _norm(fr) for fr in frags)]
+        assert hit, f"fixture claim not covered: {fc['claim']!r}"
+        assert any(tpl["claims"][i].get("testable") == fc["testable"] for i in hit), \
+            f"claim covered but testable flag differs: {fc['claim']!r}"
+    for c in tpl["claims"]:
+        q = c.get("quote")
+        assert q and _norm(q) in ntx, f"claim quote not grounded: {q!r}"
     if fixture["consistency_flags"]:
         assert len(tpl["consistency_flags"]) >= 1, "expected a consistency flag"
 

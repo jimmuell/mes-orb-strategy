@@ -31,7 +31,7 @@
 | Component | Status |
 |---|---|
 | Session rules (C1) | `unspecified` → WIT restricts to RTH 09:30–16:00 ET for regime comparability |
-| Regime/trend filters (C2) | `implied concept, no rule` — "choppy" vs. bigger-picture trend, never defined numerically |
+| Regime/trend filters (C2) | `unspecified` — "choppy" vs. bigger-picture trend invoked as a concept, never defined numerically; no executable rule |
 | Directional bias (D1) | `unspecified` |
 | Setup (D2) | `partial` — "big" bullish/bearish candle; size never quantified |
 | Entry trigger (D3) | `unspecified` — the shown trade uses a discretionary H&S + break of a high |
@@ -43,7 +43,7 @@
 | Risk controls (G) | `unspecified` |
 | Costs (H) | `unspecified` — moot; no strategy to cost |
 
-**Required-to-execute fields missing: D1, D3, F2 (+E1, F4).** Not defensibly assumable — inventing them would test *our* strategy, not his claim.
+**Required-to-execute fields missing (scorer set): B1, D1, D3, D4, F2|F4.** (E1 is not in the required set and carries a §5 default; D4/F4 defaults are entry-conditional and earn no credit here because no entry trigger is stated.) Not defensibly assumable — inventing them would test *our* strategy, not his claim.
 
 ## I. Optimization surface (of the claim codification, WIT-chosen — all disclosed)
 `big_candle_k` (body vs. rolling baseline) · `path_efficiency_threshold` · `retrace_pct_threshold` · `regime_measure + threshold` · `forward_horizons`.
@@ -67,4 +67,4 @@ The discretionary trading system around the claim (head-and-shoulders reads, "ar
 
 ## Completeness verdict
 
-**Class B — testable claim inside a discretionary framework.** Completeness ~7/25 fields specified or implied (~28%) — far below Class A; required execution fields absent and not assumable. Routed to event study per WIT-02 §3. This file is the Class B calibration anchor.
+**Class B — testable claim inside a discretionary framework.** Completeness 9/27 fields specified or implied (~33%) — far below Class A; required execution fields absent and not assumable. Routed to event study per WIT-02 §3. This file is the Class B calibration anchor.

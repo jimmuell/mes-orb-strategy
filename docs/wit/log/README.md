@@ -36,5 +36,8 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P3k-report.md | Session close (Phase 3) | Handoff rewrite + prompt-log index |
 | WIT-P3l-report.md | Docs alignment | Doc-to-code pass: field count 25→27, WIT-03 aligned to shipped sweep/extraction |
 | WIT-P3e-4-report.md | Build (grounding + status) | Grounding retry loop + status-discipline prompt; first live grading + 27-row diagnostic |
+| WIT-P3n-report.md | Session close (Phase 3) | Notion tracker read-on-open/update-on-close added to continuity rules |
+| WIT-P3o-adjudication.md | Adjudication (anchors) | Field-by-field ratification of both fixtures; two-part `implied` test; claims→coverage |
+| WIT-P3o-report.md | Docs (adjudication) | Anchor adjudication commit: prose ratios aligned (18/27, 9/27), claims rubric to coverage |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.
