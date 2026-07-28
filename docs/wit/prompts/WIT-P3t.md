@@ -1,3 +1,19 @@
+Platform   : Claude Code (VS Code, MacBook Air)
+Project    : WillItTrade (WIT)
+Repo       : github.com/jimmuell/mes-orb-strategy   (branch: main)
+Prompt     : WIT-P3t
+Local path : ~/Projects/mes-orb-strategy
+
+STEP 0 — GATE (any failure => STOP and report)
+  1. git checkout main && git pull --ff-only
+  2. git log --oneline -1 must show e70a44c (WIT-P3s). Otherwise STOP, report HEAD.
+  3. Tree clean (known untracked pine file fine); origin/path match. DOCS ONLY — nothing
+     under api/ touched; no LLM calls.
+
+TASK
+T1. REPLACE docs/wit/SESSION-HANDOFF.md in full with EXACTLY the content between the
+    markers (exclusive):
+----BEGIN FILE docs/wit/SESSION-HANDOFF.md----
 # WIT Session Handoff
 
 Read this first, then RECONCILE against git before assigning any work (see Continuity rules).
@@ -134,3 +150,18 @@ grading), P3e-7/e-8 reports (why the ensemble + where prompt text hit its limit)
 endpoint), P3s (why api/_shipped exists — do NOT delete it or its drift test). Trust the repo
 over memory, git over this file, and VERIFY deployment state in the Railway dashboard, not
 from the repo.
+----END FILE----
+T2. Archive this prompt verbatim to docs/wit/prompts/WIT-P3t.md; add rows for
+    WIT-P3t-report.md to docs/wit/log/README.md.
+T3. Suite (unchanged expected): cd api && BACKTEST_API_KEY=k python -m pytest -q →
+    258 passed / 0 failed / 2 skipped. Anything else => STOP.
+T4. Single commit DIRECTLY to main, subject:
+      WIT-P3t: session-4 close-out — engine live+keyed, extraction closed (R1-R3), Phase 4 front office queued
+    Explicit paths only. Push; record CI.
+
+REPORT BACK — docs/wit/log/WIT-P3t-report.md, staged with the commit:
+  1. STEP 0. 2. Handoff replaced (grep proof: new RESUME-HERE line present, old absent).
+  3. Suite counts. 4. Commit hash; CI. 5. Anything unexpected.
+Final line, exactly one of:
+WIT-P3t — Completed
+WIT-P3t — Partial: <one-line reason>
