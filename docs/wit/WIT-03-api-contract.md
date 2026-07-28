@@ -26,15 +26,16 @@ Request:
 ```json
 {
   "evaluation_id": "uuid",            // Supabase-side key; idempotency token
-  "kind": "backtest | event_study | sensitivity_sweep",
+  "kind": "backtest | event_study",
   "callback_url": "https://<supabase>/functions/v1/wit-run-callback",
   "config": { /* StrategyConfig (3.4) or EventStudyConfig (3.5) */ },
-  "sweep": { "vary": [ {"field": "entry_trigger.mode", "values": ["close", "touch"]} ] },  // sensitivity only
+  "sweep": true,  // optional; variant grids are ENGINE-OWNED (backtest 5 cells, event_study 17, cap MAX_SWEEP_CELLS=18) — clients never specify variants
   "budget": { "max_wall_seconds": 600 }
 }
 ```
 Response `202`: `{ "run_id": "wr_...", "status": "queued", "estimated_seconds": 90 }`
 Idempotent on `evaluation_id` + config hash: resubmission returns the existing run.
+Sweep runs extend the idempotency key internally (`config_hash + ":sweep"`, never echoed); provenance carries the plain wire hash.
 
 ### 3.2 `GET /wit/v1/runs/{run_id}` — status/result (poll fallback)
 `{ "run_id": "", "status": "queued|running|succeeded|failed", "progress": {"stage": "loading_data|simulating|validating"}, "result": { ... }, "error": { ... } }`
@@ -81,11 +82,13 @@ Derived deterministically from a filled WIT-02 template by the **mapper** (engin
   "regimes": { "scheme": {"per_regime": {"label": {"n": 0, "expectancy": 0, "win_rate": 0}}} },
   "equity_curve": [ {"t": "date", "equity": 0} ],
   "trades_url": "signed URL, CSV, 24h expiry — Supabase stores a copy",
-  "sweep_results": [ {"variant": {}, "metrics": {}} ],
+  "sensitivity": { "<variant_name>": { /* metrics… — same shape as a single-run result */ } },  // sweep runs only
+  "sweep": { "requested": 0, "completed": 0, "skipped": [] },  // sweep runs only
   "provenance": { "engine_version": "", "dataset_version": "", "config_hash": "", "completed_at": "" }
 }
 ```
 Event-study results replace `metrics` with per-condition conditional distributions + CIs.
+For sweep runs, skipped cells are ALWAYS disclosed in `sweep.skipped` (never silent); the primary runs first and if it exceeds the wall budget the whole run fails `BUDGET_EXCEEDED` exactly like a single run.
 
 ### 3.7 Errors
 `{"error": {"code": "", "message": "", "detail": {}}}` — codes: `INVALID_CONFIG`, `UNSUPPORTED_CONSTRUCT`, `DATA_UNAVAILABLE`, `BUDGET_EXCEEDED`, `INTERNAL`. `UNSUPPORTED_CONSTRUCT` and `BUDGET_EXCEEDED` are *user-visible product states* ("this strategy needs a feature our lab doesn't support yet"), not silent failures.
@@ -117,15 +120,16 @@ Edge function `wit-extract`: input `{transcript, source_meta}` → LLM (structur
 - Contract changes: PR against `contract/` + this doc, approved by lead engineer before either builder implements. Fixtures for Lovable regenerate from the OpenAPI examples at each version.
 
 ### Change log
+- **WIT-P3l (2026-07-28):** WIT-02 §2 field count corrected 25→27. §3.1/§3.6 aligned to the shipped sweep surface (boolean `sweep` flag, engine-owned grids, `sensitivity`/`sweep` result blocks). Extraction layer shipped engine-side per §4 (P3e-1/2): forced `emit_strategy_template` tool call with the template schema, ≤2-retry validation loop, scorer owns class; anthropic SDK dev-only — audited runtime lock untouched. Doc-to-implementation alignment only; wire `config_version` stays `1.0`.
 - **WIT-P3d (2026-07-27):** (a) §3.4 `session.trade_window` semantics pinned — *entry-eligibility window* `[first_eligible_bar_start, last_eligible_bar_start]`, ET wall-clock; illustrative example updated to `["09:45","10:55"]` to match what real VP-ORB configs carry (the mapper emits from `C1.params`, P3c-2). (b) `contract/modes.md` — every token the engine cannot yet realize marked `†` ("declared, not engine-supported in v1 → UNSUPPORTED_CONSTRUCT") so the vocabulary never over-promises (P3e's extraction prompt is generated from it). No wire-shape change; `config_version` stays `1.0`.
 - **WIT-P3c-1 (2026-07-27):** corrected the §3.4/§3.5 examples to match the engine — §3.5 event `k*ATR` → `k * trailing-median body` with the three path thresholds (`spike_eff`/`spike_giveback_cap`/`pullback_p`); §3.4 `session` re-expressed in ET wall-clock (`America/New_York`, `09:30`/`11:00`/`15:55`) — **same instants** as the prior CT example (representation alignment, not a time change). Wire shapes unchanged; `config_version` stays `1.0`. Machine copies added at `contract/{modes,strategy-config.v1,event-study-config.v1}`.
 
 ## 8. Engine-side work implied (Claude Code backlog seed)
 
-1. `/wit/v1/*` router + job queue + callback writer (patterns exist: ADR-037 async, callback_writer.py).
-2. Config mapper (template → StrategyConfig) with golden-file tests from the two calibration videos.
+1. `/wit/v1/*` router + job queue + callback writer (patterns exist: ADR-037 async, callback_writer.py). **✓ shipped P3d.**
+2. Config mapper (template → StrategyConfig) with golden-file tests from the two calibration videos. **✓ shipped P3c-2.**
 3. Mode vocabulary v1 incl. **volume-profile levels (POC/VAH/VAL) from 1-min composition** — the one genuinely new computational feature (approximation disclosure per WIT-02 B3).
-4. Event-study runner (intrabar path features composed from finer bars).
-5. Sensitivity sweep runner (bounded variants, shared queue budget).
+4. Event-study runner (intrabar path features composed from finer bars). **✓ shipped P3c-3.**
+5. Sensitivity sweep runner (bounded variants, shared queue budget). **✓ shipped P3f.**
 6. Retire `backtest/` duplicate engine; `api/engine` is the single computational truth.
 7. Disable code-execution endpoints for WIT traffic.

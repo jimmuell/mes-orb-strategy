@@ -17,7 +17,7 @@ Every field carries:
 - `source_quote` — verbatim transcript snippet justifying `specified`/`implied` (auditability; the report links each rule to what the guru actually said).
 - `assumption` — if `unspecified` and required for testing: the default applied, from the **Default Assumption Policy** (§5).
 
-## 2. The template (11 sections, 25 fields)
+## 2. The template (11 sections, 27 fields)
 
 ### A. Identity & Claims
 | # | Field | Notes |
