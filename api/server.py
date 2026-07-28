@@ -1738,7 +1738,7 @@ import json as _json
 import math as _math
 
 from wit.mapper import (strategy_config_to_vporb, event_study_config_to_engine,
-                        UnsupportedConstruct, UntestableStrategy)
+                        map_template, UnsupportedConstruct, UntestableStrategy)
 from wit.config_hash import config_hash as _wit_config_hash
 from wit.run_store import WITRunStore
 from wit.vp_orb_runner import run_vp_orb, PARQUET_5MIN as _VPORB_PARQUET
@@ -2046,6 +2046,31 @@ async def wit_get_run(run_id: str):
     elif state.get("status") == "failed":
         body["error"] = state.get("error")
     return body
+
+
+# ── POST /wit/v1/map (WIT-P4b) — filled template → wire config, SYNC ──
+# The mapper (map_template) gets an HTTP surface so Supabase never re-implements
+# template→config mapping (WIT-04 §6; WIT-03 §1: one implementation). Pure pass-through — no
+# run store, no callback, no background task, no budget, no idempotency.
+class WitMapRequest(BaseModel):
+    template: dict
+
+
+@app.post("/wit/v1/map", dependencies=[Depends(verify_wit_key)])
+async def wit_map_template(req: WitMapRequest):
+    try:
+        return map_template(req.template)              # 200; body = mapper output VERBATIM
+    except UnsupportedConstruct as e:
+        return _wit_error(400, "UNSUPPORTED_CONSTRUCT", str(e),
+                          {"field": e.field, "mode": e.mode})
+    except UntestableStrategy as e:
+        # Class C is a PRODUCT OUTCOME, not a 4xx (WIT-04 §6).
+        return {"kind": None, "class": e.cls, "untestable": True}
+    except (KeyError, TypeError, ValueError, AttributeError) as e:
+        # WIT-P4b: AttributeError added to the spec's (KeyError,TypeError,ValueError) tuple so a
+        # structurally-malformed template (e.g. a non-dict `fields`) returns a clean 400 instead of
+        # a 500 — case-d's stated intent ("malformed template -> INVALID_CONFIG"). Reported.
+        return _wit_error(400, "INVALID_CONFIG", f"malformed template: {e}", {})
 
 
 # ── POST /wit/v1/extract (WIT-P3r) — engine-owned extraction via the k=3 ensemble ──

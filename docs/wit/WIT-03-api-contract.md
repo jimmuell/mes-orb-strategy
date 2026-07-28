@@ -93,6 +93,9 @@ For sweep runs, skipped cells are ALWAYS disclosed in `sweep.skipped` (never sil
 ### 3.7 Errors
 `{"error": {"code": "", "message": "", "detail": {}}}` — codes: `INVALID_CONFIG`, `UNSUPPORTED_CONSTRUCT`, `DATA_UNAVAILABLE`, `BUDGET_EXCEEDED`, `INTERNAL`. `UNSUPPORTED_CONSTRUCT` and `BUDGET_EXCEEDED` are *user-visible product states* ("this strategy needs a feature our lab doesn't support yet"), not silent failures.
 
+### 3.8 `POST /wit/v1/map` — filled template → wire config (sync)
+Request `{"template": { /* filled WIT-02 template */ }}`. Runs the engine-side mapper (`map_template`) so mapping has exactly ONE implementation (§1). Success `200 {kind, config, assumptions_applied}` — the exact mapper output. Class C returns `200 {"kind": null, "class": "C", "untestable": true}` (a product state, not an error). Unsupported vocabulary returns `400 UNSUPPORTED_CONSTRUCT` with `{field, mode}`; malformed input `400 INVALID_CONFIG`. Same bearer auth as the rest of `/wit/v1/*`. Synchronous, deterministic, no LLM, no run store, no callback.
+
 ## 4. Extraction contract (Supabase-internal, documented here for one-source-of-truth)
 
 **Updated WIT-P3r (2026-07-28) — the ENGINE owns extraction; this supersedes the Supabase edge-function placement below.** The LLM call and the whole extraction stack live in the engine repo (one implementation of the product's core trick, and the mode vocabulary is generated at runtime from `contract/modes.md` in *this* repo — P3m-a). Supabase's `wit-extract` merely calls the engine and stores the result. Route: `POST /wit/v1/extract` — input `{evaluation_id, callback_url, transcript, source_meta{title,url,channel}[, budget]}`; same bearer auth, run store, idempotency (internal content-hash of transcript+source_meta), heartbeat + guaranteed-terminal-state, and signed callback as `/wit/v1/runs`. It runs the **k=3 ensemble** (`extract_template_ensemble`, env `WIT_EXTRACT_K`) and the terminal callback carries `{template, completeness, raw_meta}` where `raw_meta.ensemble_meta` holds the unanimous/majority/tie counts + per-run demotions/downgrades; failure carries the `extraction_failed` errors. Kill switch: `WIT_DISABLE_EXTRACT` (503s the route). Transcript cap 200 KB (`WIT_EXTRACT_MAX_CHARS`). Per-call cost = 3 extractions.
@@ -125,6 +128,9 @@ For sweep runs, skipped cells are ALWAYS disclosed in `sweep.skipped` (never sil
 - Contract changes: PR against `contract/` + this doc, approved by lead engineer before either builder implements. Fixtures for Lovable regenerate from the OpenAPI examples at each version.
 
 ### Change log
+- **WIT-P4b (2026-07-28):** `POST /wit/v1/map` shipped (WIT-04 §6) — the mapper gets an HTTP
+  surface so Supabase never re-implements template→config mapping. Additive; no existing wire
+  shape changed; `config_version` stays `1.0`.
 - **WIT-P4a (2026-07-28):** Phase 4 slice-0 design pass. WIT-04 created (front-office
   architecture; supersedes §6). §3.3 corrected to shipped single-attempt callback + mandatory
   poll. Deltas D1–D7 recorded in WIT-04 §2. One additive engine endpoint decided: `POST
