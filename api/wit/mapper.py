@@ -22,10 +22,11 @@ from wit.config import VPORBConfig
 from wit.event_study import EventStudyConfig
 from wit.extraction.completeness import score_completeness
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-_STRATEGY_CONFIG_SCHEMA = os.path.join(_REPO, "contract", "strategy-config.v1.json")
-_EVENT_STUDY_SCHEMA = os.path.join(_REPO, "contract", "event-study-config.v1.json")
+from wit.data_paths import data_path
+
+# WIT-P3s: resolved via the shared data-root resolver (env -> repo walk-up -> api/_shipped).
+_STRATEGY_CONFIG_SCHEMA = data_path("contract", "strategy-config.v1.json")
+_EVENT_STUDY_SCHEMA = data_path("contract", "event-study-config.v1.json")
 
 # Per-template-field DECLARED mode vocabulary (contract/modes.md, Class A). map_template
 # rejects any token not declared for the dimension (UnsupportedConstruct). Tokens that are

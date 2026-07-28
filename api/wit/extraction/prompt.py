@@ -14,10 +14,10 @@ from functools import lru_cache
 
 from wit.extraction.schema import FIELD_IDS
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_API = os.path.dirname(os.path.dirname(_HERE))
-_REPO = os.path.dirname(_API)
-MODES_PATH = os.path.join(_REPO, "contract", "modes.md")
+from wit.data_paths import data_path
+
+# WIT-P3s: resolved via the shared data-root resolver (env -> repo walk-up -> api/_shipped).
+MODES_PATH = data_path("contract", "modes.md")
 
 _DAGGER = "†"  # † — "declared, not engine-supported in v1"
 # a backtick-wrapped token, capturing whether a † immediately follows the closing backtick
@@ -26,7 +26,7 @@ _TOKEN_RE = re.compile(r"`([^`]+)`(" + _DAGGER + r"?)")
 
 @lru_cache(maxsize=1)
 def _read_modes() -> str:
-    with open(MODES_PATH, encoding="utf-8") as fh:
+    with open(data_path("contract", "modes.md"), encoding="utf-8") as fh:  # re-resolve (WIT-P3s)
         return fh.read()
 
 

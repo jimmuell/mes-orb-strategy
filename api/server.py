@@ -1751,8 +1751,13 @@ _WIT_RUNS = WITRunStore()
 _WIT_STAGES = ("loading_data", "simulating", "validating")
 
 # required top-level keys of each wire contract (structural hygiene on inbound configs)
+# WIT-P3s: contract files resolved via the shared data-root resolver (env -> repo walk-up ->
+# api/_shipped) so the /api-rooted Railway container finds them at import, not just the checkout.
+from wit.data_paths import data_path as _wit_data_path
+
+
 def _load_required(rel):
-    with open(os.path.join(os.path.dirname(__file__), "..", "contract", rel)) as fh:
+    with open(_wit_data_path("contract", rel)) as fh:
         return _json.load(fh)["required"]
 _WIT_WIRE_REQUIRED = {
     "backtest": _load_required("strategy-config.v1.json"),

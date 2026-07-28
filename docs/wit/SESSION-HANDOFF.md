@@ -65,13 +65,13 @@ the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-28, sess
 
 ## Current state (verify on open, don't assume)
 
-* main = the WIT-P3r commit (POST /wit/v1/extract shipped — engine-owned extraction via the k=3
-  ensemble; anthropic promoted to the shipped runtime lock, ADR-050 green); prior 83456fb (P3q). No open branch (wit-phase3 deleted at
+* main = the WIT-P3s commit (deploy-layout fix: runtime data shipped under api/_shipped with drift
+  gate; resolution env->repo->shipped); prior d601e19 (P3r). No open branch (wit-phase3 deleted at
   P3j, fully merged). Suite **212 passed / 0 failed / 2 skipped** (the 2 skips are the
   network+cost-gated live extraction tier — correct in CI). CI green (run 30359775950).
 * Session-3 arc on main: P3e-1 prompt builder → P3e-2 extraction core → P3f sweep runner →
   P3j checkpoint merge → P3k close-out → P3l docs alignment → P3e-4 grounding + status rules → P3m process hardening →
-  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline → P3e-6 determinism + coherence → P3e-7 ensemble vote → P3e-8 prompt-spec alignment → P3q final ruling → P3r extract endpoint.
+  P3m-a extraction-endpoint decision → P3n close-out → P3o anchor adjudication → P3e-5 basis discipline → P3e-6 determinism + coherence → P3e-7 ensemble vote → P3e-8 prompt-spec alignment → P3q final ruling → P3r extract endpoint → P3s deploy-layout fix.
   Sessions 1–2 (scorer, schema, mapper vertical, /wit/v1 router, hardening) stand as described in
   the P3i handoff; see `docs/wit/log/`.
 * Extraction layer (`api/wit/extraction/`): prompt builder generates the supported mode vocabulary
@@ -98,9 +98,11 @@ feature-complete for v1 (read + grade + test + sweep, all behind /wit/v1). Next
 candidates, lead to sequence with Jim: (1) Supabase front office (WIT-03 §6: auth,
 tables, edge function calling the engine); (2) front-end integration of live engine
 results (Lovable app currently on fixtures); (3) library seeding workflow (curated,
-human-reviewed per P3q §4). Jim's lane: Railway deploy confirm + env vars incl. the
-new extract kill switch; FirstRateData confirmation email (draft in the Notion
-tracker row).
+human-reviewed per P3q §4). Jim's lane: after this deploys GREEN on Railway (auto-deploy on
+push; healthcheck was the blocker), set the env vars in the dashboard with the lead driving —
+WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET (secrets Jim generates+pastes),
+DISABLE_EXEC_ENDPOINTS=1; leave WIT_DISABLE_EXTRACT unset; FirstRateData email (draft in the
+Notion tracker).
 
 ## Open items (carried + new; none blocking the adjudication)
 

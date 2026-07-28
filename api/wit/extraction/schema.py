@@ -16,10 +16,11 @@ import json
 import os
 from functools import lru_cache
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_API = os.path.dirname(os.path.dirname(_HERE))
-_REPO = os.path.dirname(_API)
-SCHEMA_PATH = os.path.join(_REPO, "schema", "strategy-template.v1.json")
+from wit.data_paths import data_path
+
+# WIT-P3s: resolved via the shared data-root resolver (env -> repo walk-up -> api/_shipped) so
+# the /api-rooted Railway container finds the schema, not just the dev checkout.
+SCHEMA_PATH = data_path("schema", "strategy-template.v1.json")
 
 _STATUS_ENUM = {"specified", "implied", "unspecified"}
 _CLASS_ENUM = {"A", "B", "C"}
@@ -42,7 +43,9 @@ _WIT_AUTHORED_SECTIONS = {"J"}
 
 @lru_cache(maxsize=1)
 def load_schema() -> dict:
-    with open(SCHEMA_PATH) as fh:
+    # Re-resolve at call time (WIT-P3s) so the root is picked up from the current environment;
+    # SCHEMA_PATH above resolves at import so a missing root fails the healthcheck loudly.
+    with open(data_path("schema", "strategy-template.v1.json")) as fh:
         return json.load(fh)
 
 
