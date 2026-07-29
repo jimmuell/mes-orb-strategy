@@ -1810,6 +1810,53 @@ def _provenance(config_hash: str, dataset: str) -> dict:
             "completed_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}
 
 
+# WIT-P4o: the engine appends ONE equity point per BAR (engine.py:958). At 5-min resolution over
+# the full window that is ~1e6 points — tens of MB of JSON — which broke the front-office write at
+# the Cloudflare edge (520/522) before it ever reached Postgres. A report never needs per-bar
+# equity. This reduces the curve that LEAVES the engine to a daily, hard-bounded series. It does
+# NOT touch any KPI: max_drawdown et al. are computed inside the engine from the FULL per-bar
+# series and read from `kpis` directly; only the emitted `equity_curve` list is shrunk here.
+_EQUITY_CURVE_CAP = 5000
+
+
+def _daily_bounded_equity_curve(raw: list) -> tuple[list, str]:
+    """Reduce a per-bar engine equity curve to a daily, capped series for the payload.
+
+    Returns (points, resolution) where points is a list of {"t","equity"} and resolution is
+    "daily" or "daily_downsampled":
+      1. one point per CALENDAR DATE, keeping the LAST equity recorded that date, chronological
+         order preserved (the raw curve is already in bar order);
+      2. if the daily series still exceeds the cap, downsample evenly to EXACTLY the cap, always
+         retaining the first and last points.
+    """
+    # 1) daily reduction — last-write-wins per date; dict preserves first-seen (chronological) order.
+    by_date: dict[str, float] = {}
+    for p in raw or []:
+        by_date[str(p.get("date"))[:10]] = _finite(p.get("equity"))   # 'YYYY-MM-DD' from the bar ts
+    daily = [{"t": t, "equity": e} for t, e in by_date.items()]
+
+    if len(daily) <= _EQUITY_CURVE_CAP:
+        return daily, "daily"
+
+    # 2) hard bound: evenly-spaced indices across [0, n-1], first & last always included, EXACTLY cap.
+    n = len(daily)
+    idxs = [round(i * (n - 1) / (_EQUITY_CURVE_CAP - 1)) for i in range(_EQUITY_CURVE_CAP)]
+    seen, keep = set(), []
+    for j in idxs:                       # dedupe (rounding can collide only when n≈cap)
+        if j not in seen:
+            seen.add(j)
+            keep.append(j)
+    if len(keep) < _EQUITY_CURVE_CAP:    # backfill unused indices to guarantee exactly cap
+        for j in range(n):
+            if len(keep) >= _EQUITY_CURVE_CAP:
+                break
+            if j not in seen:
+                seen.add(j)
+                keep.append(j)
+        keep.sort()
+    return [daily[j] for j in keep], "daily_downsampled"
+
+
 # ── result builders — populate ONLY what the runners actually return (§3.6) ──
 def _backtest_result(res, config_hash: str) -> dict:
     kpis = res.kpis
@@ -1822,11 +1869,12 @@ def _backtest_result(res, config_hash: str) -> dict:
         "avg_trade": _finite(kpis.get("avg_trade")),
         "expectancy_r": None,   # GAP: run_vp_orb does not compute R-expectancy
     }
-    equity = [{"t": str(p.get("date")), "equity": _finite(p.get("equity"))}
-              for p in (kpis.get("equity_curve") or [])]
+    # WIT-P4o: emit a DAILY, hard-bounded curve — never the full per-bar series (payload-size fix).
+    equity, equity_resolution = _daily_bounded_equity_curve(kpis.get("equity_curve"))
     # OMITTED (not computed by run_vp_orb): confidence.bootstrap, confidence.edge_vs_luck,
     # regimes, sweep_results. trades_url null (no signed-URL infra; Supabase-side).
     return {"kind": "backtest", "metrics": metrics, "equity_curve": equity,
+            "equity_curve_resolution": equity_resolution,
             "trades_url": None,
             "provenance": _provenance(config_hash, os.path.basename(_VPORB_PARQUET))}
 
