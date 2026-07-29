@@ -211,6 +211,12 @@ def test_offered_field_modes_conform_to_mapper():
                     f"(FIELD_MODE_VOCAB[{fid}] = {sorted(FIELD_MODE_VOCAB[fid])})")
 
 
+def test_P4k_vocab_block_requires_mode_for_credited_fields():
+    # WIT-P4k: the single instruction added to the vocabulary block (no other prompt text changed)
+    p = build_system_prompt()
+    assert "you MUST also set its `mode` to one of that field's listed tokens" in p
+
+
 # ── user prompt ──
 def test_user_prompt_includes_transcript_and_meta():
     u = build_user_prompt("BIG GREEN CANDLE at 9:45",

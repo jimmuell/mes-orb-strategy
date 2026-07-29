@@ -28,23 +28,10 @@ from wit.data_paths import data_path
 _STRATEGY_CONFIG_SCHEMA = data_path("contract", "strategy-config.v1.json")
 _EVENT_STUDY_SCHEMA = data_path("contract", "event-study-config.v1.json")
 
-# Per-template-field DECLARED mode vocabulary (contract/modes.md, Class A). map_template
-# rejects any token not declared for the dimension (UnsupportedConstruct). Tokens that are
-# declared-but-not-engine-v1 (e.g. orb_break, market_next_open) pass the vocabulary gate
-# here and are caught by the adapter's baked-constant/capability checks.
-FIELD_MODE_VOCAB = {
-    "B1": {"futures_proxy", "direct"},                     # instrument
-    "D1": {"vp_value_area_break", "orb_break", "none"},    # bias
-    "D2": {"volume_profile_range", "opening_range"},       # setup
-    "D3": {"bar_close_beyond_level", "bar_body_beyond_level"},  # entry trigger
-    "D4": {"market_on_close", "market_next_open"},         # order
-    "E1": {"fixed_contracts"},                             # sizing
-    "F1": {"level_offset", "structure"},                   # stop
-    "F2": {"r_multiple", "level", "none"},                 # target
-    "F4": {"force_flat", "fixed_time", "none"},            # time exit
-    "F5": {"stop_first", "target_first"},                  # same-bar
-    "C1": {"rth_window"},                                  # session
-}
+# Per-template-field DECLARED mode vocabulary (contract/modes.md, Class A). WIT-P4k moved the ONE
+# definition to wit.vocab so the extraction schema validator and the mapper share it; re-exported
+# here so existing `from wit.mapper import FIELD_MODE_VOCAB` callers are unchanged.
+from wit.vocab import FIELD_MODE_VOCAB
 _ET_TZ = "America/New_York"
 
 # Class B (event study) dimension vocabularies (contract/modes.md). The mode tokens live

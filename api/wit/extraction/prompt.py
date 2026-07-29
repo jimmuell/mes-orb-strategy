@@ -256,6 +256,9 @@ def _vocab_block() -> str:
         "supported tokens and fill the typed `params` keys. If the strategy needs a construct not",
         "listed here, leave mode null and describe it in `value` — do NOT invent a mode token, and",
         "NEVER use a token not listed.",
+        "When you mark a config-relevant field specified or implied, you MUST also set its `mode` to "
+        "one of that field's listed tokens; if no listed token matches what the source describes, "
+        "leave mode null and describe the construct in `value` — never invent a token.",
     ]
     # WIT-P4h: never offer a dimension whose Field cell names no real template field — a mode with
     # no carrier field is a contract defect, not a placement the extractor can make.

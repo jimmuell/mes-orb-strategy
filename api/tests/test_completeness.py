@@ -135,3 +135,37 @@ def test_class_C_when_no_testable_claim_and_missing_required(t0002):
     for c in t0002["claims"]:
         c["testable"] = False
     assert score_completeness(t0002)["class"] == "C"
+
+
+# ── WIT-P4k — machine-channel conformance validated at extraction time ──
+def test_P4k_off_vocab_mode_fails_validation(t0001):
+    t0001["fields"]["D1"]["mode"] = "va_high_low"        # not a declared D1 token
+    errs = validate_template(t0001)
+    assert any("D1.mode 'va_high_low' is not a declared mode" in e for e in errs)
+
+
+def test_P4k_class_A_specified_field_with_null_mode_fails(t0001):
+    t0001["fields"]["D1"]["mode"] = None                 # credited bias, machine channel left empty
+    errs = validate_template(t0001)
+    assert any("fields.D1 is specified but has no mode" in e for e in errs)
+
+
+def test_P4k_unspecified_field_with_null_mode_passes(t0001):
+    # an unspecified config-relevant field may carry a null mode — that is the §5 default's job
+    t0001["fields"]["E1"] = {"value": None, "status": "unspecified", "source_quote": None,
+                             "assumption": None, "mode": None, "params": None}
+    assert validate_template(t0001) == []
+
+
+def test_P4k_class_B_implied_field_null_mode_still_valid(t0002):
+    # Class B's machine channel lives in J1.params, so implied D2/F1 with a null field.mode is
+    # legitimate — the class-scoped rule must NOT flag it (the ratified fixture must stay clean).
+    assert validate_template(t0002) == []
+
+
+def test_P4k_one_shared_vocabulary_definition():
+    import wit.vocab
+    import wit.mapper
+    from wit.extraction import schema as sch
+    assert wit.mapper.FIELD_MODE_VOCAB is wit.vocab.FIELD_MODE_VOCAB     # mapper re-exports the one
+    assert sch.FIELD_MODE_VOCAB is wit.vocab.FIELD_MODE_VOCAB            # schema reads the same one

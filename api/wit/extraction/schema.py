@@ -17,6 +17,7 @@ import os
 from functools import lru_cache
 
 from wit.data_paths import data_path
+from wit.vocab import FIELD_MODE_VOCAB   # WIT-P4k: the ONE shared field.mode vocabulary
 
 # WIT-P3s: resolved via the shared data-root resolver (env -> repo walk-up -> api/_shipped) so
 # the /api-rooted Railway container finds the schema, not just the dev checkout.
@@ -141,6 +142,28 @@ def validate_template(template: dict) -> list[str]:
             elif not isinstance(it.get("readings"), list):
                 errs.append(f"interpretations[{i}].readings must be an array")
 
+    # WIT-P4k (b)/(c): CLASS-SCOPED machine-channel completeness. For a CLASS A template the field
+    # .mode channel IS the config channel, so a CREDITED config-relevant field (status specified /
+    # implied) MUST carry a non-null mode — crediting a construct while leaving the machine field
+    # empty is incomplete output (the live D1-null bug). An unspecified field may be null (that is
+    # the §5 default's job, WIT-P4i). Class B's machine channel lives in J1.params, so its
+    # field.modes are legitimately null even when implied — scope by the DETERMINISTIC class, the
+    # same class the mapper branches on. Never invents a token: a null just routes to the retry.
+    if isinstance(fields, dict):
+        from wit.extraction.completeness import score_completeness   # lazy: avoid any import cycle
+        try:
+            cls = score_completeness(template).get("class")
+        except Exception:
+            cls = None                       # a malformed template already has structural errors
+        if cls == "A":
+            for fid in FIELD_MODE_VOCAB:
+                f = fields.get(fid)
+                if (isinstance(f, dict) and f.get("mode") is None
+                        and f.get("status") in ("specified", "implied")):
+                    errs.append(f"fields.{fid} is {f.get('status')} but has no mode — a credited "
+                                f"config-relevant field must set mode to one of "
+                                f"{sorted(FIELD_MODE_VOCAB[fid])} (WIT-P4k)")
+
     return errs
 
 
@@ -157,6 +180,12 @@ def _validate_field(fid: str, obj) -> list[str]:
     # Optional machine-param keys (WIT-P3c-1): mode string|null, params object|null.
     if "mode" in obj and obj["mode"] is not None and not isinstance(obj["mode"], str):
         errs.append(f"fields.{fid}.mode must be a string or null")
+    # WIT-P4k (a): a non-null mode on a config-relevant field MUST be a declared token for that
+    # field — an off-vocabulary token is an invalid extraction, caught here (not 3 min later at map).
+    if fid in FIELD_MODE_VOCAB and isinstance(obj.get("mode"), str) \
+            and obj["mode"] not in FIELD_MODE_VOCAB[fid]:
+        errs.append(f"fields.{fid}.mode {obj['mode']!r} is not a declared mode for this field "
+                    f"(one of {sorted(FIELD_MODE_VOCAB[fid])}, or null)")
     if "params" in obj and obj["params"] is not None and not isinstance(obj["params"], dict):
         errs.append(f"fields.{fid}.params must be an object or null")
     # WIT-P3e-5: optional evidence declaration; when present (non-null) must be a valid basis.
