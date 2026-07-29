@@ -1742,7 +1742,7 @@ from wit.mapper import (strategy_config_to_vporb, event_study_config_to_engine,
 from wit.config_hash import config_hash as _wit_config_hash
 from wit.run_store import WITRunStore
 from wit.vp_orb_runner import run_vp_orb, PARQUET_5MIN as _VPORB_PARQUET
-from wit.event_study import run_config, load_1min_rth, build_candles, RAW_1MIN as _ES_RAW_1MIN
+from wit.event_study import run_config, load_1min_rth, build_candles, PARQUET_1MIN as _ES_PARQUET_1MIN
 from wit.sweeps import build_backtest_sweep, build_event_study_sweep
 from wit.extraction.ensemble import extract_template_ensemble
 from callback_writer import get_wit_callback_writer
@@ -1835,7 +1835,7 @@ def _event_study_result(d: dict, config_hash: str) -> dict:
     # The event-study runner natively returns per-cell conditional stats + day-clustered
     # CIs (§3.6: "event-study results replace metrics with conditional distributions+CIs").
     return {"kind": "event_study", "event_study": d,
-            "provenance": _provenance(config_hash, os.path.basename(_ES_RAW_1MIN))}
+            "provenance": _provenance(config_hash, os.path.basename(_ES_PARQUET_1MIN))}
 
 
 def _load_and_build_candles(engine_cfg):

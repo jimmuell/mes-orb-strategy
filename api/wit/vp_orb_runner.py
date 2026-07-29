@@ -33,13 +33,17 @@ import pandas as pd
 
 from engine import BacktestConfig, run_backtest_long_short
 from wit.config import VPORBConfig, TICK_SIZE
+from wit.data_paths import engine_data_path
 from wit.volume_profile import build_volume_profile
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_API = os.path.dirname(_HERE)
-_REPO = os.path.dirname(_API)
-PARQUET_5MIN = os.path.join(_API, "data", "ES_full_5min_continuous_UNadjusted.parquet")
-RAW_1MIN = os.path.join(_REPO, "data", "raw", "ES_full_1min_continuous_UNadjusted.txt")
+# WIT-P4m: both market-data files ship at api/data/ and are resolved through the shared
+# engine-data resolver (env override → api/data), NEVER a _REPO-rooted path. The 1-min source is
+# now the derived, RTH-only parquet (built by tools/build_1min_rth_parquet.py) — it ships in the
+# image, unlike the raw LFS text that lived outside api/ and never reached production.
+_NAME_5MIN = "ES_full_5min_continuous_UNadjusted.parquet"
+_NAME_1MIN = "ES_full_1min_rth.parquet"
+PARQUET_5MIN = engine_data_path(_NAME_5MIN)   # import-time resolution (messages / back-compat)
+PARQUET_1MIN = engine_data_path(_NAME_1MIN)
 
 _RTH_START = dt.time(9, 30)
 _RTH_LAST_START = dt.time(15, 55)   # last RTH 5-min bar start (closes 16:00)
@@ -89,13 +93,13 @@ def dataset_date_range() -> tuple[str, str]:
     """The FULL [start, end] date range of the ES 5-min dataset as YYYY-MM-DD strings, read from the
     actual data (never a hardcoded pair) so the v1 default test window self-updates as data extends
     (WIT-P4j). Reads only the parquet index (no data columns); cached once per process."""
-    idx = pd.read_parquet(PARQUET_5MIN, columns=[]).index
+    idx = pd.read_parquet(engine_data_path(_NAME_5MIN), columns=[]).index
     return (idx.min().strftime("%Y-%m-%d"), idx.max().strftime("%Y-%m-%d"))
 
 
 def load_5min(start: str, end: str) -> pd.DataFrame:
     """5-min RTH bars [09:30,15:55] ET, tz-naive index (ET wall-clock)."""
-    df = pd.read_parquet(PARQUET_5MIN)
+    df = pd.read_parquet(engine_data_path(_NAME_5MIN))
     df = df.loc[(df.index >= pd.Timestamp(start)) & (df.index <= pd.Timestamp(end) + pd.Timedelta(days=1))]
     t = df.index.time
     df = df[(t >= _RTH_START) & (t <= _RTH_LAST_START)]
@@ -103,10 +107,13 @@ def load_5min(start: str, end: str) -> pd.DataFrame:
 
 
 def load_1min_opening(start: str, end: str, range_start: str, range_end: str) -> pd.DataFrame:
-    """1-min bars inside the opening [range_start,range_end) window, all days."""
-    df = pd.read_csv(RAW_1MIN, header=None,
-                     names=["timestamp", "Open", "High", "Low", "Close", "Volume"],
-                     parse_dates=["timestamp"]).set_index("timestamp")
+    """1-min bars inside the opening [range_start,range_end) window, all days.
+
+    WIT-P4m: sourced from the shipped RTH parquet (was the raw LFS text). The opening window
+    [range_start,range_end) is a strict subset of the parquet's RTH [09:30,15:59] coverage, so the
+    same filter yields a frame identical to the old text path (proven in test_shipped_1min_data.py).
+    """
+    df = pd.read_parquet(engine_data_path(_NAME_1MIN))
     df = df.loc[(df.index >= pd.Timestamp(start)) & (df.index <= pd.Timestamp(end) + pd.Timedelta(days=1))]
     t = df.index.time
     rs, re = _parse_hm(range_start), _parse_hm(range_end)
@@ -280,7 +287,7 @@ def run_vp_orb(cfg: VPORBConfig, five: pd.DataFrame | None = None,
         # WIT-P4l: the 1-min path indexes by timestamp (`.index.normalize()`); an empty or
         # non-DatetimeIndex frame is a typed data error, never a pandas AttributeError.
         if len(one_min_open) == 0 or not isinstance(one_min_open.index, pd.DatetimeIndex):
-            raise EmptyOpeningData(cfg.start_date, cfg.end_date, os.path.basename(RAW_1MIN))
+            raise EmptyOpeningData(cfg.start_date, cfg.end_date, _NAME_1MIN)
     else:  # "5min" — the 1-min frame is never used; a stable empty placeholder keeps the type
         if one_min_open is None:
             one_min_open = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
@@ -289,7 +296,7 @@ def run_vp_orb(cfg: VPORBConfig, five: pd.DataFrame | None = None,
     # engine error naming the window + dataset — never reach run_backtest_long_short's df.index[0]
     # and crash with a pandas IndexError.
     if len(five) == 0:
-        raise EmptyDataWindow(cfg.start_date, cfg.end_date, os.path.basename(PARQUET_5MIN))
+        raise EmptyDataWindow(cfg.start_date, cfg.end_date, _NAME_5MIN)
 
     df = five.copy()
     for c in ("long_entry", "long_exit", "short_entry", "short_exit"):

@@ -262,7 +262,7 @@ def build_all() -> dict:
     out["provenance"] = {
         "engine_version": engine.__version__,
         "dataset": os.path.basename(R.PARQUET_5MIN),
-        "vp_source": os.path.basename(R.RAW_1MIN),
+        "vp_source": os.path.basename(R.PARQUET_1MIN),
         "seed": _VC.seed, "bootstrap_iters": _VC.mc_iterations,
         "commission_per_side": primary.commission_per_side,
         "slippage_ticks": primary.slippage_ticks, "point_value": POINT_VALUE,

@@ -33,9 +33,11 @@ TICK = 0.25
 _ET_RTH_START = dt.time(9, 30)
 _ET_RTH_LAST_1MIN = dt.time(15, 59)
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-RAW_1MIN = os.path.join(_REPO, "data", "raw", "ES_full_1min_continuous_UNadjusted.txt")
+# WIT-P4m: 1-min bars now come from the shipped RTH parquet via the shared engine-data resolver
+# (env override → api/data), never a _REPO-rooted raw-text path that could not reach the image.
+from wit.data_paths import engine_data_path
+_NAME_1MIN = "ES_full_1min_rth.parquet"
+PARQUET_1MIN = engine_data_path(_NAME_1MIN)   # public: server provenance imports this
 
 HORIZONS = (1, 3, 5, 10)
 _SEED = 42
@@ -69,9 +71,9 @@ class EventStudyConfig:
 # data + candle construction (cached per timeframe)
 # ---------------------------------------------------------------------------
 def load_1min_rth(start: str, end: str) -> pd.DataFrame:
-    df = pd.read_csv(RAW_1MIN, header=None,
-                     names=["timestamp", "Open", "High", "Low", "Close", "Volume"],
-                     parse_dates=["timestamp"]).set_index("timestamp")
+    # WIT-P4m: the parquet already holds exactly RTH [09:30,15:59], so the RTH filter below is
+    # idempotent and the returned frame is identical to the old raw-text path.
+    df = pd.read_parquet(engine_data_path(_NAME_1MIN))
     df = df.loc[(df.index >= pd.Timestamp(start)) &
                 (df.index <= pd.Timestamp(end) + pd.Timedelta(days=1))]
     t = df.index.time

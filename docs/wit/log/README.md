@@ -60,5 +60,6 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P4j-report.md | Fix (lab-owned fields + guard) | WIT supplies J1 window (full dataset range, self-updating) + normalizes B1 to ES/MES with source as proxy; empty frame → typed DATA_UNAVAILABLE error, never IndexError |
 | WIT-P4k-report.md | Fix (machine-channel conformance) | Field.mode validated at extraction (off-vocab + credited-null, class-scoped) → routes to existing retry; FIELD_MODE_VOCAB moved to shared wit/vocab.py; one prompt line added |
 | WIT-P4l-report.md | Fix (§5 granularity + typed guard) | D2 granularity is a §5 lab default (unrecognised→"1min", B3 disclosed); runner raises UNSUPPORTED_CONSTRUCT for bad vp_granularity + DATA_UNAVAILABLE for empty 1-min frame, never AttributeError on a RangeIndex |
+| WIT-P4m-report.md | Fix (ship 1-min data + path resolution) | Derived RTH 1-min parquet (28.3 MB regular blob) built from raw text + shipped in image; loaders read it via engine_data_path (env→api/data), no data path is _REPO-rooted; raw-vs-parquet KPIs identical to the digit (both compute paths could now run in prod) |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.
