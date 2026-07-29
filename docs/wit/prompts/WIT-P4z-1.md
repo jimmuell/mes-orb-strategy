@@ -1,3 +1,27 @@
+Platform:    Claude Code (paste this code into this platform)
+
+Project:     WillItTrade (WIT)
+
+Repo:        jimmuell/mes-orb-strategy
+
+Prompt:      WIT-P4z-1
+
+Local path:  /Users/jameslmueller/Projects/mes-orb-strategy
+
+STEP 0 — gate
+  git remote -v && pwd
+  Confirm remote is jimmuell/mes-orb-strategy at the path above. If not, STOP and report.
+  git checkout main && git pull --ff-only origin main
+  HEAD must be 6f7798f (WIT-P4z). Anything else => STOP, report HEAD.
+  Tree clean (known untracked pine file fine). DOCS ONLY — nothing under api/, contract/, or
+  schema/ is touched; no LLM calls. This is the one close-out task that did not land in P4z:
+  the handoff already ASSERTS that docs/PROMPT_STANDARD.md carries the WIT header blocks, and
+  it does not yet. This prompt makes that true.
+
+TASK — align the engine prompt-standard pointer to the canonical doc
+  REPLACE docs/PROMPT_STANDARD.md in full with EXACTLY the content between the markers
+  (exclusive):
+----BEGIN FILE docs/PROMPT_STANDARD.md----
 # Prompt Standard (engine — pointer)
 
 The canonical prompt standard lives in **jimmuell/tradinggym → docs/PROMPT_STANDARD.md**,
@@ -97,3 +121,19 @@ else in the canonical doc governs unchanged.
    record; the three-line summary is what the lead relays to Jim in chat.
 4. **Authored prompts are archived to `docs/wit/prompts/<Prompt>.md`** at authoring time. A
    prompt in `prompts/` with no matching report in `log/` is a PENDING slice.
+----END FILE----
+  Archive this prompt verbatim to docs/wit/prompts/WIT-P4z-1.md; add a row for
+  WIT-P4z-1-report.md to docs/wit/log/README.md.
+  Suite (docs only): cd api && BACKTEST_API_KEY=k python -m pytest -q
+  Expect 268 passed / 0 failed / 2 skipped. Anything else => STOP.
+  Stage explicit paths only — never git add -A.
+  Commit subject MUST be exactly:
+    WIT-P4z-1: prompt standard aligned to canonical — WIT header blocks, Lovable rules, ratified exceptions
+  Push directly to main; record CI.
+
+REPORT BACK — docs/wit/log/WIT-P4z-1-report.md, staged with the commit:
+  1. STEP 0 result and the HEAD you started from.
+  2. Grep proof: both WIT header blocks present; the access-control-SQL line present; all four
+     ratified exceptions present; the old "Engine essentials:" line absent.
+  3. Suite counts; commit hash; CI status.
+  Final line, exactly: WIT-P4z-1 — Completed
