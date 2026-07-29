@@ -142,6 +142,25 @@ def _normalize_instrument(b1: dict) -> dict:
     return {"symbol": "ES", "tick_size": 0.25, "tick_value": 1.25, "proxy_for": proxy_for}
 
 
+# The DATA resolutions engine v1 can build a volume profile from. Which one WIT uses is a
+# methodological LAB choice (WIT-02 §5), not the source's — the D2 granularity is only advisory.
+_VP_GRANULARITIES = ("1min", "5min")
+
+
+def _profile_granularity(d2: dict) -> tuple[str, bool]:
+    """WIT-02 §5: volume-profile features are computed from the finest licensed data; the choice is
+    WIT's, not the guru's (WIT-P4l). Honor the template's D2 granularity ONLY when it is one the
+    runner supports; for anything else — null, absent, or a category error like 'ticks_per_row_1'
+    (that names the profile's PRICE-row size, which the engine FIXES at TICK_SIZE and which this
+    function never touches, not a DATA time-resolution) — default to '1min' (finest data) and
+    disclose. Returns (granularity, was_defaulted). Not a silent substitution of strategy semantics:
+    the price-row size is unchanged; only the disclosed data resolution is defaulted."""
+    g = d2.get("granularity")
+    if g in _VP_GRANULARITIES:
+        return g, False
+    return "1min", True
+
+
 # ---------------------------------------------------------------------------
 # map_template
 # ---------------------------------------------------------------------------
@@ -182,18 +201,25 @@ def map_template(template: dict) -> dict:
         from wit.vp_orb_runner import dataset_date_range
         win_start, win_end = dataset_date_range()
 
+    # WIT-P4l: the profile DATA resolution is a §5 lab choice — honor D2 granularity only if the
+    # runner supports it, else default to the finest data ('1min') and disclose. (Price-row size
+    # untouched — that is TICK_SIZE, not this field.)
+    profile_gran, gran_assumed = _profile_granularity(d2)
+
     for fid in ("B3", "E1", "F4", "F5", "H1", "H2"):
         assumed(fid)
     assumptions.append("initial_capital")
     if window_assumed:
         assumptions.append("J1_window")           # lab default; no template source
+    if gran_assumed:
+        assumptions.append("B3_granularity")      # §5 finest-data default; source value not supported
 
     config = {
         "config_version": "1.0",
         "instrument": _normalize_instrument(b1),      # v1 always ES/MES; source market -> proxy_for
         "data": {
             "dataset": "ES_5min_continuous",
-            "granularity_needed": d2.get("granularity"),
+            "granularity_needed": profile_gran,      # §5 lab default (WIT-P4l)
             "window": {"start": win_start, "end": win_end},   # WIT-supplied when absent (WIT-P4j)
         },
         "session": {
@@ -209,7 +235,7 @@ def map_template(template: dict) -> dict:
             "order": _mode(template, "D4"),
             "params": {
                 "range_start": d2.get("range_start"), "range_end": d2.get("range_end"),
-                "value_area_pct": d2.get("value_area_pct"), "granularity": d2.get("granularity"),
+                "value_area_pct": d2.get("value_area_pct"), "granularity": profile_gran,
             },
         },
         # E1/F4/F5/H1/H2 apply the WIT-02 §5 defaults when unspecified+null (WIT-P4i).

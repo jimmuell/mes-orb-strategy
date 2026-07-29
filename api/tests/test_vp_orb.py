@@ -169,7 +169,28 @@ def test_runner_body_beyond_mode_stricter_than_close():
 def test_P4j_empty_frame_raises_typed_error_not_indexerror():
     empty = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
     empty.index = pd.DatetimeIndex([])
+    # a NON-empty 1-min frame so the WIT-P4l opening-data guard passes and this isolates the 5-min
+    # empty-window guard specifically (empty `five`).
+    one_min = pd.DataFrame({"Open": [1.0], "High": [1.0], "Low": [1.0], "Close": [1.0], "Volume": [1]},
+                           index=pd.DatetimeIndex(["2020-01-02 09:31"]))
     with pytest.raises(R.EmptyDataWindow) as ei:
-        R.run_vp_orb(VPORBConfig(), five=empty, one_min_open=empty)
+        R.run_vp_orb(VPORBConfig(), five=empty, one_min_open=one_min)
     assert ei.value.code == "DATA_UNAVAILABLE"     # a real WIT-03 §3.7 code, not an IndexError
     assert "empty" in str(ei.value).lower()        # clean message, not a pandas traceback
+
+
+# ── WIT-P4l — unrecognised / empty-frame granularity paths fail typed, never AttributeError ──
+def test_P4l_unrecognised_granularity_raises_typed_before_load():
+    cfg = VPORBConfig(vp_granularity="ticks_per_row_1")
+    with pytest.raises(R.UnsupportedGranularity) as ei:
+        R.run_vp_orb(cfg, five=None)        # raises at the top, before any data load
+    assert ei.value.code == "UNSUPPORTED_CONSTRUCT"
+
+
+def test_P4l_empty_1min_opening_raises_typed_not_attributeerror():
+    five = pd.DataFrame({"Open": [1.0], "High": [1.0], "Low": [1.0], "Close": [1.0], "Volume": [1]},
+                        index=pd.DatetimeIndex(["2020-01-02 09:30"]))
+    empty_1min = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+    with pytest.raises(R.EmptyOpeningData) as ei:
+        R.run_vp_orb(VPORBConfig(), five=five, one_min_open=empty_1min)   # 1-min path, empty frame
+    assert ei.value.code == "DATA_UNAVAILABLE"

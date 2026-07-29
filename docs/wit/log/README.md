@@ -59,5 +59,6 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P4i-report.md | Fix (§5 defaults + adapter) | Mapper applies WIT-02 §5 default assumptions (E1/H1/H2/F4/F5) per-key when unspecified+null; null entry trigger raises D3 instead of silently becoming a body entry |
 | WIT-P4j-report.md | Fix (lab-owned fields + guard) | WIT supplies J1 window (full dataset range, self-updating) + normalizes B1 to ES/MES with source as proxy; empty frame → typed DATA_UNAVAILABLE error, never IndexError |
 | WIT-P4k-report.md | Fix (machine-channel conformance) | Field.mode validated at extraction (off-vocab + credited-null, class-scoped) → routes to existing retry; FIELD_MODE_VOCAB moved to shared wit/vocab.py; one prompt line added |
+| WIT-P4l-report.md | Fix (§5 granularity + typed guard) | D2 granularity is a §5 lab default (unrecognised→"1min", B3 disclosed); runner raises UNSUPPORTED_CONSTRUCT for bad vp_granularity + DATA_UNAVAILABLE for empty 1-min frame, never AttributeError on a RangeIndex |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.

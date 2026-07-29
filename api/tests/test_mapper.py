@@ -236,3 +236,28 @@ def test_P4j_ES_source_emits_null_proxy():
                                    "tick_size": 0.25, "tick_value": 1.25}
     inst = map_template(t)["config"]["instrument"]
     assert inst["symbol"] == "ES" and inst["proxy_for"] is None
+
+
+# ── WIT-P4l — profile DATA granularity is a §5 lab default, not an unvalidated model string ──
+def test_P4l_unrecognised_granularity_defaults_to_1min_and_discloses():
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["D2"]["params"]["granularity"] = "ticks_per_row_1"   # category error from the model
+    cfg = map_template(t)["config"]
+    assert cfg["setup_entry"]["params"]["granularity"] == "1min"     # §5 finest-data default
+    assert cfg["data"]["granularity_needed"] == "1min"
+    assert "B3_granularity" in cfg["assumptions_applied"]            # disclosed
+
+
+def test_P4l_explicit_5min_honored_not_disclosed():
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["D2"]["params"]["granularity"] = "5min"
+    cfg = map_template(t)["config"]
+    assert cfg["setup_entry"]["params"]["granularity"] == "5min"     # honored verbatim
+    assert "B3_granularity" not in cfg["assumptions_applied"]        # a supported value => no default
+
+
+def test_P4l_explicit_1min_honored_not_disclosed():
+    t = _load("WIT-T-0001.template.json")                            # fixture already carries "1min"
+    cfg = map_template(t)["config"]
+    assert cfg["setup_entry"]["params"]["granularity"] == "1min"
+    assert "B3_granularity" not in cfg["assumptions_applied"]

@@ -60,6 +60,30 @@ class EmptyDataWindow(Exception):
                          f"{dataset!r} — the window is empty (nothing to backtest)")
 
 
+class UnsupportedGranularity(Exception):
+    """vp_granularity is not a DATA resolution engine v1 can build a profile from (WIT-P4l). Fails
+    typed at the TOP of the run, before any data load — never falls through to the 1-min path and
+    crashes on an empty placeholder frame. Same error style as EmptyDataWindow; UNSUPPORTED_CONSTRUCT
+    is the WIT-03 §3.7 code (an engine-capability limit, not a data-availability gap)."""
+    code = "UNSUPPORTED_CONSTRUCT"
+
+    def __init__(self, granularity):
+        self.granularity = granularity
+        super().__init__(f"vp_granularity {granularity!r} is not supported — engine v1 builds the "
+                         f"volume profile from '1min' or '5min' data only")
+
+
+class EmptyOpeningData(Exception):
+    """The 1-min opening frame required for the profile is empty or not timestamped (WIT-P4l). A
+    typed data error, never an AttributeError from `.index.normalize()` deep in the daily loop."""
+    code = "DATA_UNAVAILABLE"
+
+    def __init__(self, start, end, dataset: str):
+        self.start, self.end, self.dataset = start, end, dataset
+        super().__init__(f"no usable 1-min opening data in {start!r}..{end!r} for dataset "
+                         f"{dataset!r} — empty or non-timestamped frame (cannot build the profile)")
+
+
 @lru_cache(maxsize=1)
 def dataset_date_range() -> tuple[str, str]:
     """The FULL [start, end] date range of the ES 5-min dataset as YYYY-MM-DD strings, read from the
@@ -240,13 +264,26 @@ class RunResult:
 
 def run_vp_orb(cfg: VPORBConfig, five: pd.DataFrame | None = None,
                one_min_open: pd.DataFrame | None = None) -> RunResult:
+    # WIT-P4l: vp_granularity must be a resolution the runner can build a profile from. Fail typed
+    # at the TOP, BEFORE any data load — instead of falling through to the 1-min path with an empty
+    # placeholder frame and crashing on `.index.normalize()` (the 'ticks_per_row_1' bug). Both the
+    # loader branch below and _opening_profile now handle exactly {"1min","5min"} and nothing else.
+    if cfg.vp_granularity not in ("1min", "5min"):
+        raise UnsupportedGranularity(cfg.vp_granularity)
+
     if five is None:
         five = load_5min(cfg.start_date, cfg.end_date)
-    if one_min_open is None and cfg.vp_granularity == "1min":
-        one_min_open = load_1min_opening(cfg.start_date, cfg.end_date,
-                                         cfg.range_start, cfg.range_end)
-    if one_min_open is None:
-        one_min_open = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+    if cfg.vp_granularity == "1min":
+        if one_min_open is None:
+            one_min_open = load_1min_opening(cfg.start_date, cfg.end_date,
+                                             cfg.range_start, cfg.range_end)
+        # WIT-P4l: the 1-min path indexes by timestamp (`.index.normalize()`); an empty or
+        # non-DatetimeIndex frame is a typed data error, never a pandas AttributeError.
+        if len(one_min_open) == 0 or not isinstance(one_min_open.index, pd.DatetimeIndex):
+            raise EmptyOpeningData(cfg.start_date, cfg.end_date, os.path.basename(RAW_1MIN))
+    else:  # "5min" — the 1-min frame is never used; a stable empty placeholder keeps the type
+        if one_min_open is None:
+            one_min_open = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
 
     # WIT-P4j: an empty 5-min frame (e.g. a window outside the data) must fail with a clean, typed
     # engine error naming the window + dataset — never reach run_backtest_long_short's df.index[0]
