@@ -163,3 +163,13 @@ def test_runner_body_beyond_mode_stricter_than_close():
     s_body = R.build_signals_for_day(date, five, one_min, body_cfg)
     assert s_close["entry_bar"].strftime("%H:%M") == "09:45"   # first close beyond
     assert s_body["entry_bar"].strftime("%H:%M") == "09:50"    # first full body beyond
+
+
+# ── WIT-P4j — an empty data window fails with a typed, coded engine error, never a pandas IndexError ──
+def test_P4j_empty_frame_raises_typed_error_not_indexerror():
+    empty = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+    empty.index = pd.DatetimeIndex([])
+    with pytest.raises(R.EmptyDataWindow) as ei:
+        R.run_vp_orb(VPORBConfig(), five=empty, one_min_open=empty)
+    assert ei.value.code == "DATA_UNAVAILABLE"     # a real WIT-03 §3.7 code, not an IndexError
+    assert "empty" in str(ei.value).lower()        # clean message, not a pandas traceback

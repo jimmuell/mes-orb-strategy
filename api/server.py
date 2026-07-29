@@ -1880,6 +1880,13 @@ def _budget_error(budget_seconds: float) -> dict:
             "message": f"exceeded {budget_seconds}s wall budget", "detail": {}}
 
 
+def _engine_error_code(e: Exception) -> str:
+    """A typed engine error (e.g. vp_orb_runner.EmptyDataWindow) may carry a WIT-03 §3.7 `code`;
+    surface it so the callback reads as a real product state, not always INTERNAL (WIT-P4j)."""
+    code = getattr(e, "code", None)
+    return code if isinstance(code, str) and code else "INTERNAL"
+
+
 async def _compute_within_budget(kind: str, engine_cfg, run_id: str, config_hash: str,
                                  budget_left: float, loop) -> tuple[str, dict | None]:
     """Run ONE compute in a worker thread under a wall budget, with heartbeats. Returns
@@ -1920,7 +1927,7 @@ async def _run_wit_job(run_id: str, kind: str, engine_cfg, config_hash: str,
     except Exception as e:
         tb = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"[:2000]
         _wit_terminal(run_id, writer, "failed",
-                      error={"code": "INTERNAL", "message": str(e)[:500],
+                      error={"code": _engine_error_code(e), "message": str(e)[:500],
                              "detail": {"traceback": tb}})
 
 
@@ -1976,7 +1983,7 @@ async def _run_wit_sweep_job(run_id: str, kind: str, engine_cfg, config_hash: st
     except Exception as e:
         tb = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"[:2000]
         _wit_terminal(run_id, writer, "failed",
-                      error={"code": "INTERNAL", "message": str(e)[:500],
+                      error={"code": _engine_error_code(e), "message": str(e)[:500],
                              "detail": {"traceback": tb}})
 
 
@@ -2159,7 +2166,7 @@ async def _run_wit_extract_job(run_id: str, transcript: str, source_meta: dict,
     except Exception as e:
         tb = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"[:2000]
         _wit_terminal(run_id, writer, "failed",
-                      error={"code": "INTERNAL", "message": str(e)[:500],
+                      error={"code": _engine_error_code(e), "message": str(e)[:500],
                              "detail": {"traceback": tb}})
 
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Optional
 
 import numpy as np
@@ -47,6 +48,27 @@ _RTH_LAST_START = dt.time(15, 55)   # last RTH 5-min bar start (closes 16:00)
 # ---------------------------------------------------------------------------
 # Data loading (RTH slices only)
 # ---------------------------------------------------------------------------
+class EmptyDataWindow(Exception):
+    """The resolved test window contains no bars in the dataset (WIT-P4j). Carries the WIT-03 §3.7
+    error CODE so the run-job callback surfaces a real code + clean message, never a pandas
+    IndexError traceback. DATA_UNAVAILABLE is the exact existing vocabulary code for this."""
+    code = "DATA_UNAVAILABLE"
+
+    def __init__(self, start, end, dataset: str):
+        self.start, self.end, self.dataset = start, end, dataset
+        super().__init__(f"no data in the resolved window {start!r}..{end!r} for dataset "
+                         f"{dataset!r} — the window is empty (nothing to backtest)")
+
+
+@lru_cache(maxsize=1)
+def dataset_date_range() -> tuple[str, str]:
+    """The FULL [start, end] date range of the ES 5-min dataset as YYYY-MM-DD strings, read from the
+    actual data (never a hardcoded pair) so the v1 default test window self-updates as data extends
+    (WIT-P4j). Reads only the parquet index (no data columns); cached once per process."""
+    idx = pd.read_parquet(PARQUET_5MIN, columns=[]).index
+    return (idx.min().strftime("%Y-%m-%d"), idx.max().strftime("%Y-%m-%d"))
+
+
 def load_5min(start: str, end: str) -> pd.DataFrame:
     """5-min RTH bars [09:30,15:55] ET, tz-naive index (ET wall-clock)."""
     df = pd.read_parquet(PARQUET_5MIN)
@@ -225,6 +247,12 @@ def run_vp_orb(cfg: VPORBConfig, five: pd.DataFrame | None = None,
                                          cfg.range_start, cfg.range_end)
     if one_min_open is None:
         one_min_open = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+
+    # WIT-P4j: an empty 5-min frame (e.g. a window outside the data) must fail with a clean, typed
+    # engine error naming the window + dataset — never reach run_backtest_long_short's df.index[0]
+    # and crash with a pandas IndexError.
+    if len(five) == 0:
+        raise EmptyDataWindow(cfg.start_date, cfg.end_date, os.path.basename(PARQUET_5MIN))
 
     df = five.copy()
     for c in ("long_entry", "long_exit", "short_entry", "short_exit"):

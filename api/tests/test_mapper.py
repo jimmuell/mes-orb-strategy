@@ -192,3 +192,47 @@ def test_P4i_null_trigger_raises_not_body_entry():
         strategy_config_to_vporb(wire)
     assert exc.value.field == "D3"
     assert exc.value.mode is None
+
+
+# ── WIT-P4j — WIT supplies the J1 test window and the lab instrument (lab policy in code) ──
+def test_P4j_null_window_resolves_to_full_range_and_discloses():
+    from wit.vp_orb_runner import dataset_date_range
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["J1"]["params"]["window"] = {"start": None, "end": None}
+    cfg = map_template(t)["config"]
+    start, end = dataset_date_range()
+    assert cfg["data"]["window"] == {"start": start, "end": end}   # full dataset range, not hardcoded
+    assert "J1_window" in cfg["assumptions_applied"]                 # WIT supplied it -> disclosed
+
+
+def test_P4j_template_window_used_verbatim_not_disclosed():
+    t = _load("WIT-T-0001.template.json")
+    cfg = map_template(t)["config"]                                  # fixture carries a window
+    assert cfg["data"]["window"] == {"start": "2016-04-10", "end": "2026-04-09"}
+    assert "J1_window" not in cfg["assumptions_applied"]             # carried => not an assumption
+
+
+def test_P4j_non_ES_instrument_normalizes_to_ES_with_proxy():
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["B1"]["params"] = {"symbol": "NQ", "proxy_for": "NASDAQ",
+                                   "tick_size": 0.25, "tick_value": None}
+    inst = map_template(t)["config"]["instrument"]
+    assert inst["symbol"] == "ES"                  # never the source symbol
+    assert inst["tick_value"] == 1.25              # never null
+    assert inst["proxy_for"] == "NASDAQ"           # source market disclosed as proxy
+
+
+def test_P4j_non_ES_instrument_falls_back_to_symbol_as_proxy():
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["B1"]["params"] = {"symbol": "NQ", "proxy_for": None,
+                                   "tick_size": 0.25, "tick_value": None}
+    inst = map_template(t)["config"]["instrument"]
+    assert inst["symbol"] == "ES" and inst["proxy_for"] == "NQ"     # symbol used when proxy_for absent
+
+
+def test_P4j_ES_source_emits_null_proxy():
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["B1"]["params"] = {"symbol": "ES", "proxy_for": None,
+                                   "tick_size": 0.25, "tick_value": 1.25}
+    inst = map_template(t)["config"]["instrument"]
+    assert inst["symbol"] == "ES" and inst["proxy_for"] is None

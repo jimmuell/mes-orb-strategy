@@ -144,6 +144,17 @@ def _defaulted_param(template: dict, fid: str, key: str):
     return None
 
 
+def _normalize_instrument(b1: dict) -> dict:
+    """v1 ALWAYS tests ES with MES economics regardless of what the source traded (WIT-02 §B1;
+    WIT-P4j) — the source's own market is disclosed as `proxy_for`, never emitted as the tested
+    symbol (a report claiming it tested NQ when it ran ES bars is a false disclosure). tick_value
+    is never null. proxy_for = the source's market when it isn't ES (its `proxy_for`, else its
+    `symbol` when that names something other than ES); null when the source genuinely traded ES."""
+    src_symbol, src_proxy = b1.get("symbol"), b1.get("proxy_for")
+    proxy_for = src_proxy or (src_symbol if src_symbol not in (None, "ES") else None)
+    return {"symbol": "ES", "tick_size": 0.25, "tick_value": 1.25, "proxy_for": proxy_for}
+
+
 # ---------------------------------------------------------------------------
 # map_template
 # ---------------------------------------------------------------------------
@@ -174,20 +185,29 @@ def map_template(template: dict) -> dict:
     f2 = _params(template, "F2")
     window = _params(template, "J1").get("window", {})
 
+    # J1 test window is WIT's to fill, never the guru's (WIT-02 §J). When absent, resolve to the
+    # FULL available-data range (lead decision WIT-P4j: v1 tests ALL data, not a trailing window)
+    # read live from the dataset so it never goes stale — and disclose it as J1_window. A window the
+    # template already carries is used verbatim and is NOT disclosed.
+    win_start, win_end = window.get("start"), window.get("end")
+    window_assumed = win_start is None or win_end is None
+    if window_assumed:
+        from wit.vp_orb_runner import dataset_date_range
+        win_start, win_end = dataset_date_range()
+
     for fid in ("B3", "E1", "F4", "F5", "H1", "H2"):
         assumed(fid)
-    assumptions.append("initial_capital")           # lab default; no template source
+    assumptions.append("initial_capital")
+    if window_assumed:
+        assumptions.append("J1_window")           # lab default; no template source
 
     config = {
         "config_version": "1.0",
-        "instrument": {
-            "symbol": b1.get("symbol"), "tick_size": b1.get("tick_size"),
-            "tick_value": b1.get("tick_value"), "proxy_for": b1.get("proxy_for"),
-        },
+        "instrument": _normalize_instrument(b1),      # v1 always ES/MES; source market -> proxy_for
         "data": {
             "dataset": "ES_5min_continuous",
             "granularity_needed": d2.get("granularity"),
-            "window": {"start": window.get("start"), "end": window.get("end")},
+            "window": {"start": win_start, "end": win_end},   # WIT-supplied when absent (WIT-P4j)
         },
         "session": {
             "tz": c1.get("tz"),
