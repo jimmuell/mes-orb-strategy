@@ -11,7 +11,7 @@
 | `bias` | D1 | `vp_value_area_break` · `orb_break`† · `none`† | — | `build_signals_for_day` direction: close body through VAH→long / VAL→short (`vp_orb_runner.py`) |
 | `setup` | D2 | `volume_profile_range` · `opening_range`† | `{range_start, range_end, value_area_pct, granularity}` | `build_volume_profile` over the window (`vp_orb_runner.py:98,103`) |
 | `entry.trigger` | D3 | `bar_close_beyond_level` · `bar_body_beyond_level` | `{level}` | `_qualifies(row, dir, level, mode)` → `entry_mode` (`:135,138`) |
-| `entry.level` | D3/D1 | `va_high_low` · `orb_high_low`† | — | VAH/VAL from the profile |
+| `entry.level` | — | `va_high_low` · `orb_high_low`† | — | In v1 the entry level is derived from the D2 volume profile (VAH/VAL) and is not independently specified |
 | `order` | D4 | `market_on_close` · `market_next_open`† | — | `process_orders_on_close=True` (`:263`) |
 | `sizing` | E1 | `fixed_contracts` | `{value}` | `qty_type="fixed"`, `qty_value` (`:260`) |
 | `stop` | F1 | `level_offset` · `structure`† | `{ref: poc\|va\|orb, ticks}` | `sl_price = ref ∓ ticks·tick_size` (`:146`) |

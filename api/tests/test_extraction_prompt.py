@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import re
 
-from wit.extraction.prompt import (supported_modes, unsupported_modes,
+from wit.extraction.prompt import (supported_modes, unsupported_modes, _parse_modes,
                                    build_system_prompt, build_user_prompt)
 from wit.extraction.schema import FIELD_IDS
+from wit.mapper import FIELD_MODE_VOCAB
 
 # Never engine-supported in v1 (†-marked in modes.md). Must appear in NO dimension's
 # supported list (and — for the distinctive ones — nowhere in the system prompt).
@@ -23,7 +24,9 @@ EXPECTED_SUPPORTED = {
     "bias": ["vp_value_area_break"],
     "setup": ["volume_profile_range"],
     "entry.trigger": ["bar_close_beyond_level", "bar_body_beyond_level"],
-    "entry.level": ["va_high_low"],
+    # entry.level REMOVED in WIT-P4h: it advertised `va_high_low` with Field cell `D3/D1` but the
+    # mapper has no entry.level carrier (D1=bias, D3=trigger reject it). In v1 the entry level is
+    # derived from the D2 volume profile, so the dimension has no carrier field and is not offered.
     "order": ["market_on_close"],
     "sizing": ["fixed_contracts"],
     "stop": ["level_offset"],
@@ -178,6 +181,34 @@ def test_system_prompt_references_all_27_fields():
     assert len(FIELD_IDS) == 27
     for fid in FIELD_IDS:
         assert fid in p, f"field id missing from prompt: {fid}"
+
+
+# ── WIT-P4h: prompt/mapper conformance — the prompt may not offer an unmappable field.mode ──
+def test_offered_field_modes_conform_to_mapper():
+    """The extraction prompt must never advertise a field.mode placement the mapper rejects
+    (WIT-P4h: entry.level offered `va_high_low` with Field cell `D3/D1`, but neither D1 (bias) nor
+    D3 (trigger) accepts it — the first live end-to-end submission failed on exactly this).
+
+    FIELD_MODE_VOCAB is the mapper's Class-A field.mode surface. For every dimension that names a
+    template field validated there, EVERY field id it names must be such a carrier and EVERY
+    supported token it offers must be accepted by each. Dimensions whose modes live elsewhere
+    (Class B in J1.params; filters `none`) name no FIELD_MODE_VOCAB carrier and are validated by a
+    different path — out of this surface, correctly skipped."""
+    ids = set(FIELD_IDS)
+    for dim, r in _parse_modes().items():
+        if not r["supported"]:
+            continue
+        field_ids = [t for t in re.findall(r"[A-K]\d+", r["field"] or "") if t in ids]
+        carriers = [f for f in field_ids if f in FIELD_MODE_VOCAB]
+        if not carriers:
+            continue                          # not a field.mode-on-a-carrier dimension
+        for fid in field_ids:
+            assert fid in FIELD_MODE_VOCAB, (
+                f"{dim!r} names field {fid} but the mapper has no field.mode vocabulary for it")
+            for tok in r["supported"]:
+                assert tok in FIELD_MODE_VOCAB[fid], (
+                    f"{dim!r} offers mode {tok!r} on field {fid}, but the mapper rejects it "
+                    f"(FIELD_MODE_VOCAB[{fid}] = {sorted(FIELD_MODE_VOCAB[fid])})")
 
 
 # ── user prompt ──

@@ -101,10 +101,20 @@ def _parse_modes() -> dict[str, dict]:
     return out
 
 
+def _carrier_field_ids(field_cell: str) -> list[str]:
+    """The real template field ids (A1..K1) named in a modes.md Field cell. A dimension whose Field
+    cell names none of them has NO carrier template field — its mode can never be placed and must
+    not be offered to the extractor (WIT-P4h: `entry.level` advertised `va_high_low` with no carrier
+    field, which the mapper then rejected on the first live submission)."""
+    return [t for t in re.findall(r"[A-K]\d+", field_cell or "") if t in FIELD_IDS]
+
+
 def supported_modes() -> dict[str, list[str]]:
-    """dimension -> list of ENGINE-SUPPORTED v1 mode tokens (†-marked tokens excluded).
-    Only dimensions that have at least one supported token are returned."""
-    return {d: list(r["supported"]) for d, r in _parse_modes().items() if r["supported"]}
+    """dimension -> list of ENGINE-SUPPORTED v1 mode tokens (†-marked tokens excluded). Only
+    dimensions that have at least one supported token AND a carrier template field are returned —
+    a token with no field to carry it is a contract defect, never an offering (WIT-P4h)."""
+    return {d: list(r["supported"]) for d, r in _parse_modes().items()
+            if r["supported"] and _carrier_field_ids(r["field"])}
 
 
 def unsupported_modes() -> dict[str, list[str]]:
@@ -247,7 +257,10 @@ def _vocab_block() -> str:
         "listed here, leave mode null and describe it in `value` — do NOT invent a mode token, and",
         "NEVER use a token not listed.",
     ]
-    for dim in sorted(d for d, r in recs.items() if r["supported"]):
+    # WIT-P4h: never offer a dimension whose Field cell names no real template field — a mode with
+    # no carrier field is a contract defect, not a placement the extractor can make.
+    for dim in sorted(d for d, r in recs.items()
+                      if r["supported"] and _carrier_field_ids(r["field"])):
         r = recs[dim]
         params = f" params {{{', '.join(r['param_keys'])}}}" if r["param_keys"] else ""
         lines.append(f"    {dim} (field {r['field']}): mode ∈ {{{', '.join(r['supported'])}}}{params}")
