@@ -104,6 +104,46 @@ def _check_mode(template: dict, fid: str):
         raise UnsupportedConstruct(field=fid, mode=m)
 
 
+# WIT-02 §5 Default Assumption Policy (v1), transcribed by field (WIT-P4i). Defaults are
+# deterministic policy and belong in CODE, not in the model's output. A default is supplied ONLY
+# when BOTH hold: the field's status is "unspecified", AND the specific mode/param key is null or
+# absent — applied per KEY, never overwriting a value the source specified or the extractor implied,
+# and never on a specified/implied field. D3/D4 get NO default (Class A requires them; a null there
+# must fail loudly, not be guessed). B3 is a data-layer disclosure, not a wire value, and is untouched.
+_SECTION5_DEFAULTS = {
+    "E1": {"mode": "fixed_contracts", "params": {"value": 1}},
+    "H1": {"params": {"commission_per_side": 0.62}},
+    "H2": {"params": {"slippage_ticks": 1}},
+    "F4": {"mode": "force_flat"},
+    "F5": {"mode": "stop_first"},
+}
+
+
+def _defaulted_mode(template: dict, fid: str):
+    """Effective mode: the source's, or the §5 default IFF the field is unspecified AND mode is
+    null/absent. Never overrides a specified/implied mode; a genuinely-null mode with no §5 default
+    stays None (a required field with a null mode fails downstream — never silently defaulted)."""
+    src = _mode(template, fid)
+    if src is not None:
+        return src
+    d = _SECTION5_DEFAULTS.get(fid, {})
+    if "mode" in d and _field(template, fid).get("status") == "unspecified":
+        return d["mode"]
+    return None
+
+
+def _defaulted_param(template: dict, fid: str, key: str):
+    """Effective param value for `key`: the source's, or the §5 default IFF the field is unspecified
+    AND this key is null/absent. Per-key: an unspecified field that already carries this key keeps it."""
+    src = _params(template, fid).get(key)
+    if src is not None:
+        return src
+    d = _SECTION5_DEFAULTS.get(fid, {}).get("params", {})
+    if key in d and _field(template, fid).get("status") == "unspecified":
+        return d[key]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # map_template
 # ---------------------------------------------------------------------------
@@ -132,8 +172,6 @@ def map_template(template: dict) -> dict:
     b1 = _params(template, "B1")
     f1 = _params(template, "F1")
     f2 = _params(template, "F2")
-    h1 = _params(template, "H1")
-    h2 = _params(template, "H2")
     window = _params(template, "J1").get("window", {})
 
     for fid in ("B3", "E1", "F4", "F5", "H1", "H2"):
@@ -167,18 +205,20 @@ def map_template(template: dict) -> dict:
                 "value_area_pct": d2.get("value_area_pct"), "granularity": d2.get("granularity"),
             },
         },
-        "sizing": {"mode": _mode(template, "E1"), "value": _params(template, "E1").get("value")},
+        # E1/F4/F5/H1/H2 apply the WIT-02 §5 defaults when unspecified+null (WIT-P4i).
+        "sizing": {"mode": _defaulted_mode(template, "E1"),
+                   "value": _defaulted_param(template, "E1", "value")},
         "exits": {
             "stop": {"mode": _mode(template, "F1"), "ref": f1.get("ref"), "ticks": f1.get("ticks")},
             "target": {"mode": _mode(template, "F2"), "value": f2.get("value")},
             "management": [],
-            "time_exit": _mode(template, "F4"),
-            "same_bar_policy": _mode(template, "F5"),
+            "time_exit": _defaulted_mode(template, "F4"),
+            "same_bar_policy": _defaulted_mode(template, "F5"),
         },
         "risk_controls": {"max_trades_per_day": 1, "reentry": "none"},
         "costs": {
-            "commission_per_side": h1.get("commission_per_side"),
-            "slippage_ticks": h2.get("slippage_ticks"),
+            "commission_per_side": _defaulted_param(template, "H1", "commission_per_side"),
+            "slippage_ticks": _defaulted_param(template, "H2", "slippage_ticks"),
         },
         "assumptions_applied": assumptions,
     }
@@ -216,8 +256,15 @@ def strategy_config_to_vporb(wire: dict) -> VPORBConfig:
     if wire["exits"]["time_exit"] != "force_flat":
         raise UnsupportedConstruct(field="F4", mode=wire["exits"]["time_exit"])
 
+    # WIT-P4i: a NULL or unknown trigger must fail loudly — never silently become a body entry
+    # (that fabricates a backtest and presents it as real). Only the two declared D3 tokens pass.
     trigger = wire["setup_entry"]["trigger"]
-    entry_mode = "close" if trigger == "bar_close_beyond_level" else "body"
+    if trigger == "bar_close_beyond_level":
+        entry_mode = "close"
+    elif trigger == "bar_body_beyond_level":
+        entry_mode = "body"
+    else:
+        raise UnsupportedConstruct(field="D3", mode=trigger)
     sp = wire["setup_entry"]["params"]
     tw = session["trade_window"]
 

@@ -56,5 +56,6 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P4z-report.md | Session close (session 5) | Front office live on Lovable Cloud, seam proven end-to-end (2026-07-28 19:14Z), WIT-04 amended to as-built, P4b ratified |
 | WIT-P4z-1-report.md | Docs (prompt standard) | docs/PROMPT_STANDARD.md aligned to canonical: both WIT header blocks, Lovable rules, access-control-SQL line, four ratified exceptions |
 | WIT-P4h-report.md | Fix (contract conformance) | entry.level had no carrier field → prompt offered unmappable va_high_low (first live submission failed); Field→—, _vocab_block guard, new prompt/mapper conformance test |
+| WIT-P4i-report.md | Fix (§5 defaults + adapter) | Mapper applies WIT-02 §5 default assumptions (E1/H1/H2/F4/F5) per-key when unspecified+null; null entry trigger raises D3 instead of silently becoming a body entry |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.

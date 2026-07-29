@@ -133,3 +133,62 @@ def test_class_B_adapter_unmapped_regime_enum_raises():
     with pytest.raises(UnsupportedConstruct) as exc:
         event_study_config_to_engine(wire)
     assert exc.value.field == "regime"
+
+
+# ── WIT-P4i — §5 Default Assumption Policy applied in the mapper (deterministic, not model output) ──
+def _unspec(mode=None, params=None):
+    return {"value": None, "status": "unspecified", "source_quote": None,
+            "assumption": None, "mode": mode, "params": params}
+
+
+def test_P4i_unspecified_E1_defaults_to_one_contract():
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["E1"] = _unspec()                       # mode null, params null
+    cfg = map_template(t)["config"]
+    assert cfg["sizing"] == {"mode": "fixed_contracts", "value": 1}   # §5 default supplied
+    assert "E1" in cfg["assumptions_applied"]                          # disclosed as assumed
+
+
+def test_P4i_specified_E1_is_not_overwritten():
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["E1"] = {"value": "5 contracts", "status": "specified", "source_quote": "five",
+                         "assumption": None, "mode": "fixed_contracts", "params": {"value": 5}}
+    cfg = map_template(t)["config"]
+    assert cfg["sizing"] == {"mode": "fixed_contracts", "value": 5}   # source value kept, no default
+    assert "E1" not in cfg["assumptions_applied"]                      # specified => not an assumption
+
+
+def test_P4i_unspecified_costs_default_to_policy():
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["H1"] = _unspec()
+    t["fields"]["H2"] = _unspec()
+    cfg = map_template(t)["config"]
+    assert cfg["costs"] == {"commission_per_side": 0.62, "slippage_ticks": 1}
+    assert "H1" in cfg["assumptions_applied"] and "H2" in cfg["assumptions_applied"]
+
+
+def test_P4i_partially_filled_unspecified_H1_keeps_its_value():
+    t = _load("WIT-T-0001.template.json")
+    # unspecified, but the extractor carried a commission — per-KEY: keep it, do NOT default to 0.62
+    t["fields"]["H1"] = _unspec(params={"commission_per_side": 1.5})
+    cfg = map_template(t)["config"]
+    assert cfg["costs"]["commission_per_side"] == 1.5
+
+
+def test_P4i_unspecified_F4_F5_default_to_policy():
+    t = _load("WIT-T-0001.template.json")
+    t["fields"]["F4"] = _unspec()
+    t["fields"]["F5"] = _unspec()
+    cfg = map_template(t)["config"]
+    assert cfg["exits"]["time_exit"] == "force_flat"      # §5 default
+    assert cfg["exits"]["same_bar_policy"] == "stop_first"  # §5 default
+
+
+def test_P4i_null_trigger_raises_not_body_entry():
+    t = _load("WIT-T-0001.template.json")
+    wire = map_template(t)["config"]
+    wire["setup_entry"]["trigger"] = None                # the silent null->body-entry substitution
+    with pytest.raises(UnsupportedConstruct) as exc:
+        strategy_config_to_vporb(wire)
+    assert exc.value.field == "D3"
+    assert exc.value.mode is None
