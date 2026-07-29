@@ -128,6 +128,11 @@ Request `{"template": { /* filled WIT-02 template */ }}`. Runs the engine-side m
 - Contract changes: PR against `contract/` + this doc, approved by lead engineer before either builder implements. Fixtures for Lovable regenerate from the OpenAPI examples at each version.
 
 ### Change log
+- **WIT-P4z (2026-07-28):** session-5 close-out. Front office pinned to LOVABLE CLOUD (one
+  Lovable-provisioned Supabase, ref `mrlopewzlwsvsxzxdhci`); WIT-04 amended to as-built (D8,
+  §7 slice status); WIT-P4b ratified (empty template is 200-untestable; AttributeError catch
+  stands). ANTHROPIC_API_KEY recorded as a REQUIRED engine variable — it was missing and the
+  first live extraction caught it. Docs only; no wire-shape change; `config_version` stays `1.0`.
 - **WIT-P4b (2026-07-28):** `POST /wit/v1/map` shipped (WIT-04 §6) — the mapper gets an HTTP
   surface so Supabase never re-implements template→config mapping. Additive; no existing wire
   shape changed; `config_version` stays `1.0`.

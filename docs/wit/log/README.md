@@ -52,5 +52,7 @@ Archive of every WIT prompt's **report-back** — the recon findings, design wri
 | WIT-P3t-report.md | Session close (session 4) | Handoff rewrite: engine live+keyed on Railway, extraction CLOSED for v1 (R1–R3), Phase 4 front office queued |
 | WIT-P4a-report.md | Design (Phase 4 slice 0) | WIT-04 front-office architecture (Supabase↔engine↔Lovable); WIT-03 reconciled to shipped surfaces (D1–D7); POST /wit/v1/map decided |
 | WIT-P4b-report.md | Build (POST /wit/v1/map) | Mapper HTTP surface (sync); Class A/B goldens exact; malformed-input spec deltas reported (empty=untestable, non-dict fields→400) |
+| WIT-P4b-ratification.md | Adjudication | Lead ratifies P4b's two disclosed calls: empty template = 200-untestable; AttributeError catch stands; P4b CLOSED complete |
+| WIT-P4z-report.md | Session close (session 5) | Front office live on Lovable Cloud, seam proven end-to-end (2026-07-28 19:14Z), WIT-04 amended to as-built, P4b ratified |
 
 Backfilled from the working session of 2026-07-26 (lead-engineer chat archive); files from WIT-P2d onward are written by Claude Code at task time.

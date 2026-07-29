@@ -51,10 +51,23 @@
   YouTube link; nothing fetches transcripts from links yet, and the transcript IP policy
   (Jim's lane) is open. => v1 end-to-end runs on PASTED transcripts; link ingestion is a
   named open question for slice 3, not silently assumed.
+* **D8 — the front office is LOVABLE CLOUD, not a hand-rolled Supabase project.** (Founder
+  decision 2026-07-28, after Jim challenged introducing a second database into the stack.)
+  Lovable Cloud IS Supabase — provisioned and billed through the Lovable project, exposed at a
+  standard `*.supabase.co` host, with Auth, Postgres, Edge Functions, Secrets and scheduled Jobs.
+  VERIFIED: ref `mrlopewzlwsvsxzxdhci`, so the engine's `.supabase.co` SSRF allowlist needs NO
+  change and `CALLBACK_ALLOWED_HOST_SUFFIX` stays unset. The `service_role` key is held BY
+  LOVABLE — available inside an edge function, never outside (ADR-040) — which is precisely why
+  the engine writes results through `engine-callback` instead of touching the database directly.
+  Schema is applied by the Lovable agent; **access-control SQL is NOT** (prompt standard) — RLS
+  policies and grants are raw SQL Jim runs after joint review. `poll-runs` is a Cloud Job. Exactly
+  ONE database in the stack; a separate self-owned project was considered and rejected — revisit
+  only if leaving Lovable becomes a live question.
 
 ## 3. Architecture (decided)
 
-Browser (Lovable app) ⇄ Supabase (Auth + Postgres + Edge Functions) ⇄ Engine (Railway).
+Browser (Lovable app) ⇄ Lovable Cloud (Supabase: Auth + Postgres + Edge Functions + Jobs)
+⇄ Engine (Railway). ONE database in the stack, provisioned by the Lovable project (D8).
 The browser NEVER talks to the engine; end-user JWTs never reach the engine; the service
 key and the HMAC secret live ONLY in Supabase edge-function secrets (set by Jim). One
 callback receiver handles every engine callback and verifies the HMAC on the EXACT raw
@@ -106,7 +119,7 @@ compute; the human gate is at PUBLICATION, per P3q §4).
   status `complete`, create the DRAFT report row; any failure ⇒ store the error envelope,
   status `failed`. Unknown run_id ⇒ 404 (the engine treats callbacks as best-effort; the
   poller repairs any miss).
-* `poll-runs` (scheduled, ~1/min): for non-terminal runs past a grace period, `GET
+* `poll-runs` (Lovable Cloud scheduled Job, ~1/min): for non-terminal runs past a grace period, `GET
   /wit/v1/runs/{id}` and apply the same transitions as the callback path (shared handler
   module — ONE state machine, two entry points); engine 404 ⇒ `lost_engine_state` ⇒
   resubmit once (D3). This is the mechanism that makes D1 safe.
@@ -119,7 +132,10 @@ compute; the human gate is at PUBLICATION, per P3q §4).
 Request `{template}` (a filled WIT-02 template JSON). Behavior: `map_template` verbatim —
 success `200 {kind, config, assumptions_applied}`; UnsupportedConstruct ⇒ 400
 UNSUPPORTED_CONSTRUCT {field, mode}; UntestableStrategy ⇒ 200 `{kind: null, class: "C",
-untestable: true}` (Class C is a product outcome, not a 4xx). Same `verify_wit_key` auth.
+untestable: true}` (Class C is a product outcome, not a 4xx) — this INCLUDES an empty template
+(ratified WIT-P4b-1). Callers branch on the 200 body, not the status code alone. Malformed
+non-template input returns 400 INVALID_CONFIG, including inputs that raise AttributeError inside
+the mapper. Same `verify_wit_key` auth.
 Sync (milliseconds, deterministic, no LLM) — no run store, no callback, no budget. The
 existing `/wit/v1/runs` request shape is UNTOUCHED. Goldens: the two anchor templates
 (T-0001 Class A config equality vs the P2 hand-fed mapping; T-0002 Class B) — exact
@@ -127,18 +143,19 @@ equality, never tuned.
 
 ## 7. Slice plan (Phase 4, revised at slice 0)
 
-* P4a (Claude Code, docs only): commit THIS design record + the WIT-03 change-log deltas.
-* P4b (Claude Code, small): `POST /wit/v1/map` per §6 + tests. Gate: suite stays green.
-* P4c (Jim, lead-guided, ~20 min): create the Supabase project; set function secrets
-  (WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET, ENGINE_URL); apply schema §4.
-* P4d: edge functions §5 + the shared state-machine module; prove the chain with ONE real
-  end-to-end: pasted T-0001 transcript → extract → map → run → result row (curl-level,
-  before any UI).
-* P4e (Lovable): swap the fixtures module for live reads (fixtures kept as explicit demo
-  mode); real `progress.stage` display; honest UNSUPPORTED_CONSTRUCT / BUDGET_EXCEEDED /
-  untestable states.
-* P4f: reviewer surface + `publish-report`; first published library page. SEO seeding
-  stays HELD until P4f exists (standing order).
+* P4a DONE — this design record (main @ 5a18069).
+* P4b DONE — `POST /wit/v1/map` (main @ a82cf07); two spec errors found and ratified (P4b-1).
+* P4c DONE — Lovable Cloud enabled (ref `mrlopewzlwsvsxzxdhci`); five §4 tables + `callback_events`
+  with RLS; grants tightened to SELECT-only by Jim; three secrets stored in Lovable Secrets.
+* P4d DONE — `engine-callback` deployed (verify_jwt false, HMAC over the raw body) and THE SEAM
+  PROVEN 2026-07-28 19:14Z: live transcript → k=3 ensemble (22 unanimous / 5 majority / 0 ties)
+  → Class A, completeness 76 → signed callback → verified and stored.
+* P4e NEXT — `submit-evaluation` + the shared state-machine module (extract → map → run,
+  persisting at each hop); fold in the engine-callback fail-closed fix; prove curl-level before UI.
+* P4f — `poll-runs` Cloud Job (the D1 safety net; `lost_engine_state` + resubmit per D3).
+* P4g — app swaps fixtures for live reads (fixtures kept as explicit demo mode).
+* P4h — reviewer surface + `publish-report`; first published library page. SEO seeding HELD until
+  this exists.
 
 Open questions carried (named, not blocking P4a–P4c): YouTube-link ingestion + transcript
 IP policy (Jim's lane, launch gate); pricing/metering wiring (usage table records from day
