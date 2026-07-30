@@ -1744,6 +1744,7 @@ from wit.run_store import WITRunStore
 from wit.vp_orb_runner import run_vp_orb, PARQUET_5MIN as _VPORB_PARQUET
 from wit.event_study import run_config, load_1min_rth, build_candles, PARQUET_1MIN as _ES_PARQUET_1MIN
 from wit.sweeps import build_backtest_sweep, build_event_study_sweep
+from wit.verdict import derive_verdict
 from wit.extraction.ensemble import extract_template_ensemble
 from callback_writer import get_wit_callback_writer
 
@@ -1875,6 +1876,7 @@ def _backtest_result(res, config_hash: str) -> dict:
     # regimes, sweep_results. trades_url null (no signed-URL infra; Supabase-side).
     return {"kind": "backtest", "metrics": metrics, "equity_curve": equity,
             "equity_curve_resolution": equity_resolution,
+            "verdict": derive_verdict("backtest", metrics),   # WIT-P4t: never claims edge
             "trades_url": None,
             "provenance": _provenance(config_hash, os.path.basename(_VPORB_PARQUET))}
 
@@ -1883,6 +1885,7 @@ def _event_study_result(d: dict, config_hash: str) -> dict:
     # The event-study runner natively returns per-cell conditional stats + day-clustered
     # CIs (§3.6: "event-study results replace metrics with conditional distributions+CIs").
     return {"kind": "event_study", "event_study": d,
+            "verdict": derive_verdict("event_study", {}),   # WIT-P4t: never claims edge
             "provenance": _provenance(config_hash, os.path.basename(_ES_PARQUET_1MIN))}
 
 
