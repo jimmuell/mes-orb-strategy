@@ -2,19 +2,21 @@
 
 Read this first, then RECONCILE against git before assigning any work (see Continuity rules).
 Single resume point for the WillItTrade (WIT) project. Rewritten at each close-out; git history
-is the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-29, session 6.
+is the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-30, session 7.
 
-* Last updated: 2026-07-29 (session-6 close-out, WIT-P4r)
+* Last updated: 2026-07-30 (session-7 close-out, WIT-P4x)
 * Project: WillItTrade — willittrade.com (registered, GoDaddy, 2026-07-26). Users drop a
   YouTube link or transcript in; the lab renders a data-backed verdict. Positioning:
   "The AI reads the video; the lab renders the verdict." Reports are "strategy audits."
+  NEW: **PRD v2.0** (docs/wit/WillItTrade-PRD-v2.docx, committed this close-out) merges the
+  founding spec with Jim's platform blueprint — v2 vision: private strategy workspace,
+  builder, experiments, Pine export. FOUR RATIFIED DECISIONS inside (see Decisions below).
 * Where things live: everything WIT is in `docs/wit/` of the mes-orb-strategy repo (the engine
-  repo). Machine contracts: `schema/strategy-template.v1.json` + `contract/` (runtime copies
-  drift-gated under `api/_shipped/`, P3s). Engine code: `api/wit/`. Shipped runtime DATA:
-  `api/data/` (5-min parquet + NEW 1-min RTH parquet, P4m). Authored prompts:
-  `docs/wit/prompts/`. Run reports + adjudications: `docs/wit/log/`. Phase-4 design record:
-  `docs/wit/WIT-04-front-office-design.md`. Business/decision lane: the Notion board
-  **WillItTrade (WIT) — Project Tracker** →
+  repo). Machine contracts: `schema/strategy-template.v1.json` + `contract/` (drift-gated under
+  `api/_shipped/`, P3s). Engine code: `api/wit/`. Shipped runtime DATA: `api/data/` (5-min +
+  1-min RTH parquet, P4m). Authored prompts: `docs/wit/prompts/`. Reports + adjudications:
+  `docs/wit/log/`. Phase-4 design: `docs/wit/WIT-04-front-office-design.md`. Business lane:
+  Notion board **WillItTrade (WIT) — Project Tracker** →
   https://app.notion.com/p/6ccf5af452cc41768441d7dae1a3aca3
 * FRONT END + FRONT OFFICE: Lovable project `Audit Lab` (rename still pending) — id
   6e5983e8-cf92-4fa6-bf7e-cf416ae2d2d9, repo **jimmuell/strategy-verdict-lab**, published at
@@ -23,207 +25,155 @@ is the archive. Written by the lead engineer (Claude, Cowork chat) 2026-07-29, s
   verify it in the Lovable project and the live database.
 * LIVE DEPLOYMENT: Railway project `blissful-fulfillment`, service `mes-orb-strategy`,
   https://mes-orb-strategy-production.up.railway.app. Railway builds from GitHub pushes to
-  main — NO PUSH MEANS NO DEPLOY, and every engine fix this session needed a push before it
-  took effect. Railway's deployment id is NOT the git sha; match on the commit message or the
-  timestamp. Env: DISABLE_EXEC_ENDPOINTS=1, WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET,
-  ANTHROPIC_API_KEY, PORT, DATA_PATH, BACKTEST_API_KEY (values held by JIM ONLY).
+  main — NO PUSH MEANS NO DEPLOY; deployment id is NOT the git sha (match message/timestamp).
+  Env: DISABLE_EXEC_ENDPOINTS=1, WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET,
+  ANTHROPIC_API_KEY (ROTATED 2026-07-30), PORT, DATA_PATH, BACKTEST_API_KEY (values JIM ONLY).
+  Lovable secrets add: WIT_REVIEWER_IDS (comma-separated auth user ids; currently Jim's only).
 
-## ▶▶ THE HEADLINE: THE PRODUCT WORKS END TO END
+## ▶▶ THE HEADLINE: THE EDITORIAL PIPELINE IS COMPLETE
 
-**2026-07-29 — first COMPLETE production audit, from a YouTube link, with no human help.**
-Evaluation `4695e71d-264a-4a59-823f-11bb9bfc1f49`. Source: *"90% of Trading Strategies Are
-Garbage (Use This One Instead)"* — Jesse Rogers | Casper Trading.
-
-Link → Supadata transcript (15,580 chars, ~2s) → k=3 ensemble extraction (23 unanimous /
-4 majority / 0 ties) → Class A, completeness 62 → mapped to a wire config → backtest over the
-FULL 18-year window → result stored → draft report row created.
-
-Result: **4,158 trades, net −$9,672, profit factor 0.90, win rate 35.8%, max drawdown
-−$15,410, avg trade −$2.33.** Equity starts at $10,066, peaks at $10,346, troughs at
-−$5,000.54, ends at $328.15. Sanity cross-check against the published 10-year WIT-0001
-(2,561 trades, −$5,977, PF 0.90): trades scale 1.62x and loss scales 1.62x over 1.8x the
-window, with the same profit factor. Independent runs agree.
-
-It also SELF-HEALED: the run was orphaned by an engine restart, and the poll-runs job detected
-it, marked it lost_engine_state, resubmitted once, and completed it unattended. The D1/D3
-safety net is proven in production, not just designed.
+As of 2026-07-30 the FULL path exists and is verified live: YouTube link → audit → draft
+report **with an engine-rendered verdict** → private reviewer desk (/review, gated by
+WIT_REVIEWER_IDS via the publish-report edge function) → Approve → Publish (freezes a PUBLIC
+SNAPSHOT into headline_json) → public teaser page /library/<slug> with verdict, headline
+metrics, sparkline and sign-up CTA. NOTHING IS PUBLISHED YET — first publish is HELD behind
+the transcript-IP gate (Jim's lane). The Jesse Rogers draft (evaluation 4695e71d…) now carries
+verdict `tested_no_edge` ("Tested — no edge demonstrated", PF 0.90, −$9,672, 4,158 trades),
+backfilled by Jim via data SQL with values the lead computed under the exact ratified rule.
 
 ## Team & process (do not improvise around these)
 
-* Lead engineer = Claude in Cowork chat. Writes every spec and prompt, reviews every report
-  AGAINST THE LIVE SYSTEMS rather than trusting it. This caught, this session: a false claim
-  about email confirmation, a wrong resubmit-marker name, a long-video failure before it shipped,
-  and the access-control drift below. THREE executors: **Claude Code** (engine repo), the
-  **Lovable agent** (app, edge functions, SQL), and **Jim** (decides, approves, holds all
-  secrets, runs every access-control step).
-* PROMPT STANDARD — canonical: **jimmuell/tradinggym → docs/PROMPT_STANDARD.md**; engine-local
-  pointer `docs/PROMPT_STANDARD.md` carries both WIT header blocks and the four ratified
-  exceptions. Every prompt opens with the five-line header block. STILL OPEN: the canonical doc
-  needs WillItTrade rows added (separate repo, Jim's lane).
-* **ACCESS-CONTROL SQL IS NEVER RUN BY THE AGENT OR BY CLAUDE.** Breached again on 2026-07-29 —
-  see SECURITY DRIFT below. This is now a twice-breached rule; check policies and grants at
-  BOTH open and close of every session.
-* REPORTING TO JIM: plain-English numbered tasks, ONE TASK AT A TIME. Jim asked for this
-  explicitly this session: give him exactly one thing to run, wait for the report, verify, then
-  hand him the next. Lay out the full road when asked, but never hand him a queue.
-* Slice rhythm: recon → design → build → lead review with hands-on verification → next slice.
-  STOP-and-report beats forcing a pass; goldens are exact and never tuned. Honoured throughout
-  today: eleven slices, zero goldens moved, zero fixtures touched.
+* Lead engineer = Claude in Cowork chat; executors: Claude Code (engine), Lovable agent (app),
+  Jim (decides, approves, holds secrets, runs ALL access-control and data SQL).
+* PROMPT STANDARD — canonical: jimmuell/tradinggym → docs/PROMPT_STANDARD.md; engine-local
+  pointer docs/PROMPT_STANDARD.md (WIT header blocks + four ratified exceptions).
+* ACCESS-CONTROL SQL IS NEVER RUN BY THE AGENT OR BY CLAUDE. Not breached in session 7.
+  The P4s prompt's explicit "if you think you need a policy, STOP" guard worked.
+* ONE TASK AT A TIME to Jim; verify every report against the live systems. Session-7 catches:
+  P4s ensemble section silently absent (wrong key names), P4v verdict-tone dead codes,
+  leftover browser-delete UI from the P4q drift, reviewer_notes readable via table-wide grant,
+  and a stale "expected 14 staged files" claim of the LEAD's own (LFS noise through the device
+  bridge mimics modified files — trust Claude Code's git over bridge-observed status).
+* Lovable security scanner: its two standing warnings (callback_events no-policy;
+  no client write policies on reports) are INTENTIONAL DESIGN. NEVER "Try to fix all".
 
-* CONTINUITY RULES:
-  1. Authored prompts are committed to `docs/wit/prompts/` at authoring time; a prompt with no
-     report in `log/` is PENDING.
+* CONTINUITY RULES (unchanged 1–5, baseline updated in 6):
+  1. Prompts to docs/wit/prompts/ at authoring time; prompt with no report = PENDING.
   2. Nothing happens after a close-out without touching this file.
-  3. ONE lead session at a time; every session RECONCILES on open (this file, then
-     `git log --oneline -15` + `ls docs/wit/log/` + `ls docs/wit/prompts/`, then the Notion
-     board, then the live database — INCLUDING policies and grants — and /health).
-  4. The Notion tracker is READ on session open and UPDATED on session close (lead's job).
-  5. **NEW (agreed session 5, added now):** every close-out produces (a) this rewritten file and
-     (b) a ready-to-paste SESSION OPEN message for the NEXT session, with the number incremented.
-     Jim never maintains the number.
-  6. **NEW (session 6):** verify RLS policies AND table grants at open and close. Record the
-     counts here so the next session can diff them.
+  3. RECONCILE on open: this file → git log/prompts/log listing → Notion → live DB incl.
+     policies AND grants → /health.
+  4. Notion read on open, updated on close.
+  5. Close-out produces this file + a ready-to-paste SESSION OPEN message (session 8's is in
+     docs/wit/planning/SESSION-8-OPEN.md).
+  6. Verify RLS policies AND grants at open and close; diff against the baseline below.
 
 ## Current state (verify on open, don't assume)
 
-* main = **eae132a** (WIT-P4o) at the time engine work stopped; the session-6 close-out commit
-  follows it. Engine suite **301 passed / 0 failed / 2 skipped**. CI green incl. ADR-050.
-* Live database policy/grant baseline AT CLOSE (diff against this next time):
-  7 policies — and **one of them should not exist** (see drift). Grants: anon SELECT on reports;
-  authenticated SELECT on evaluations/reports/runs/templates/usage, **plus an unauthorised
-  DELETE on evaluations**. Six tables + callback_events. RLS on all six.
-* Data: 1 evaluation, complete; 1 succeeded backtest; 1 draft report. Two throwaway test
-  evaluations from P4q were deleted by the agent.
+* Engine main = **e57162f** (WIT-P4t) + this close-out commit (WIT-P4x) on top. Suite
+  **308 passed / 0 failed / 2 skipped**. /health ok, engine 25.25.0, 1,289,036 bars.
+  NEW engine surface: every backtest/event_study result carries `verdict {code,label,reason}`
+  from api/wit/verdict.py — codes CLOSED to {tested_no_edge, tested_inconclusive}, enforced
+  by an exhaustive grid test. NO EDGE CLAIM IS EXPRESSIBLE until the stats layer ships.
+* SECURITY BASELINE AT CLOSE (Continuity Rule 6 — diff against THIS):
+  - 6 policies, ALL SELECT (evaluations/runs/templates/usage own-rows; reports own + published;
+    exact set as at session-6 open). callback_events: RLS on, zero policies (intentional).
+  - Grants: authenticated TABLE-WIDE SELECT on evaluations, runs, templates, usage.
+    reports: COLUMN-scoped SELECT for anon AND authenticated on exactly
+    (id, evaluation_id, slug, verdict, headline_json, review_status, published_at) —
+    reviewer_notes excluded. Authorized by Jim 2026-07-30 (session 7). NO write grants anywhere.
+* Database data: 1 evaluation (complete; source metadata + verdict backfilled by Jim via data
+  SQL), 1 template, 3 runs (extract succeeded, backtest lost_engine_state, backtest succeeded),
+  1 report (review_status='draft', slug strategy-audit-4695e71d). 3 auth users (Jim + two
+  e2e test accounts wit-e2e-test-1/2@willittrade.com — cleanup candidates, Jim's data SQL).
+* App live: /review (reviewer desk — list, detail w/ verdict+reason, KPIs, equity curve,
+  ensemble 23/4/0 with loud amber fallback if vote data missing, readable assumptions, honest
+  gaps, notes, Approve/Publish/Revert w/ confirm), /library (empty state + fixtures demo
+  under "Demo reports"), /library/$slug (teaser page, 404-honest, share meta). Client-side
+  audit delete REMOVED (P4w) pending the safe edge-function delete.
 
-## 🔴 SECURITY DRIFT — FIRST THING FOR JIM NEXT SESSION
+## What changed this session (session 7, 2026-07-30)
 
-At session-6 OPEN the database had SIX policies, ALL SELECT, and SELECT-only grants. At
-session-6 CLOSE it has SEVEN, including:
+Housekeeping + security (verified live):
+* **P4r da1224a** — the session-6 close-out found STAGED-BUT-UNCOMMITTED on Jim's Mac;
+  committed and pushed (13 files; the 14th expected file was a stale LFS-noise expectation).
+* Security drift REMOVED by Jim (DROP POLICY evaluations_delete_own; REVOKE DELETE) and
+  verified: back to 6 policies/no write grants. Product decision: user delete WILL exist,
+  via an edge function refusing when a published report exists (tracker row).
+* ANTHROPIC_API_KEY rotated in Railway and OLD KEY DELETED in the console. The other three
+  (WIT_ENGINE_SERVICE_KEY + WIT_CALLBACK_HMAC_SECRET — both Railway AND Lovable, must match —
+  and BACKTEST_API_KEY) still pending, non-urgent. Auto-confirm email OFF; min password 8.
 
-    policy `evaluations_delete_own` — DELETE on public.evaluations, role authenticated,
-    USING (user_id = auth.uid())    + a matching DELETE grant to authenticated
+Engine (Claude Code):
+* **P4t e57162f** — verdict block in result payloads (see Current state). 301→308 tests.
 
-Nobody authorised this. Most likely origin: the Lovable agent cleaning up its two throwaway
-test evaluations during WIT-P4q. It breaches the access-control rule and contradicts WIT-04 §4
-("ALL writes go through edge functions (service role). No client-side inserts").
+App (Lovable — NOT in this repo's git log):
+* **P4s + P4s-1** — reviewer desk + publish-report function (fail-closed reviewer gate,
+  service-role reads, transition guards draft→approved→published→revert, error-checked +
+  read-back). P4s-1 fixed: ensemble keys (real names unanimous_fields/majority_fields/
+  tie_fields; silent absence replaced by loud amber), notes duplication (screenshot-stitching
+  artifact, not a bug), raw assumption codes → readable lines.
+* **P4u** — draft reports store verdict + headline_json (label/reason/6 metrics) at creation
+  via buildReportVerdict; reviewer desk renders it; P4n write-ordering untouched.
+* **P4v + P4v-1** — public library: publish action freezes a snapshot (source block +
+  ≤200-point equity_sparkline + published_snapshot_at) into headline_json inside the same
+  read-back-verified update; /library + /library/$slug teaser pages (5-column selects only).
+  P4v-1 fixed verdict-tone code mismatch (tested_no_edge→red etc., green branch DELETED) and
+  currency formatting.
+* **P4w** — removed the browser-delete button/mutation (UI half of the P4q drift) and
+  narrowed getEvaluationBundle's reports select to the 7 public columns; then Jim ran the
+  column-grant tightening (new baseline above).
 
-WHY IT MATTERS: `evaluations` cascade-deletes to `runs`, `templates` and `reports`. A
-browser-side DELETE can therefore destroy a PUBLISHED library report — the exact artifact the
-curated-launch acceptance (P3q §4) depends on being protected.
+Documents & decisions (all founder-ratified 2026-07-30):
+* **PRD v2.0** (docs/wit/WillItTrade-PRD-v2.docx) — audit product + platform vision merged.
+* DECISIONS: (1) launch v1 first, workspace is v2; (2) public depth = TEASER model, decided;
+  (3) Pine Script export = paid, later phase, only with TradingView fidelity testing;
+  (4) markets = ES/MES only, stated plainly; (5) VERDICT RULE v1 — never claim edge:
+  only tested_no_edge / tested_inconclusive / untestable; "evidence of edge" FORBIDDEN until
+  bootstrap CIs + edge-vs-luck ship; (6) user audit-delete via guarded edge function, later.
 
-RAW SQL FOR JIM to run in the Supabase SQL editor after a joint review:
+## ▶ RESUME HERE — WHAT'S NEXT (session 8 candidates)
 
-    DROP POLICY IF EXISTS evaluations_delete_own ON public.evaluations;
-    REVOKE DELETE ON public.evaluations FROM authenticated;
-
-PRODUCT QUESTION TO SETTLE FIRST: should users be able to delete their own audits? If yes, it
-belongs in an edge function that refuses when a published report exists — not a raw client
-DELETE with a cascade behind it.
-
-## What changed this session (11 slices, all verified against live systems)
-
-Engine (Claude Code, in commit order):
-* **P4h** dee4286 — contract conformance: `entry.level` advertised `va_high_low` on a field the
-  mapper never accepts; the prompt generator now refuses to offer a dimension with no carrier
-  field, plus a test binding prompt vocabulary to mapper vocabulary.
-* **P4i** 82921c7 — the WIT-02 §5 Default Assumption Policy was documented and never implemented:
-  the mapper labelled fields "assumed" without supplying the values. Now applies E1/H1/H2/F4/F5
-  defaults per key, only when unspecified. Also: a null entry trigger no longer silently becomes
-  a body entry (a fabricated backtest presented as real).
-* **P4j** a8b272a — WIT supplies the J1 test window (resolved live from the dataset) and
-  normalises the instrument: v1 always tests ES with MES economics and discloses the source's
-  market as proxy_for. Prevented a report that would have claimed it tested NQ while running ES.
-* **P4k** a56ebe2 — machine-channel conformance: one shared FIELD_MODE_VOCAB in `wit/vocab.py`,
-  mode tokens validated at extraction, credited fields must carry a token. Class-scoped so Class
-  B (tokens live in J1.params) is unaffected.
-* **P4l** 12049b1 — profile granularity is a §5 lab default; an unrecognised value now fails
-  typed instead of falling between two branches onto an empty placeholder frame.
-* **P4m** c569bfe — **ships `api/data/ES_full_1min_rth.parquet` (28.3 MB, 1,806,807 rows,
-  2008-01-02 → 2026-04-10)**. The 1-minute data had NEVER been in the container: it lived
-  outside `api/` as LFS text and the path was repo-root-relative. Neither compute path (Class A
-  profiles, Class B event studies) could ever have run in production. Equality proof: all 37
-  KPIs identical to the digit against the raw text. No data path is repo-root-rooted now.
-* **P4o** eae132a — result payload carries a DAILY bounded equity curve. Per-bar was 198,003
-  points / 11.7 MB and could not be written; daily is 2,577 points / 130 KB. KPIs still computed
-  from the full per-bar series. Audit confirms nothing else in either payload scales with bars.
-
-App / front office (Lovable — NOT in this repo's git log):
-* **P4f + P4f-1** — YouTube link ingestion via Supadata (mode=native ONLY, one credit, never
-  mode=generate) and the `poll-runs` pg_cron job every minute. P4f-1 fixed a defect the lead
-  caught before Jim hit it: the Supadata job endpoint returns HTTP 200 for every state and
-  carries progress in a `status` field, so every video over ~20 minutes would have failed a
-  minute after submission.
-* **P4g** — accounts (email + Google via Lovable-managed OAuth), real submission, live progress
-  from real stages, results card, dashboard. Fixtures kept as the explicit demo surface.
-* **P4g-1** — the failure screen now unwraps the engine's nested error envelope and treats
-  UNSUPPORTED_CONSTRUCT as an amber product state, not a red crash.
-* **P4n** — the state machine no longer advances on a failed write. Every DB write and engine
-  call is error-checked; the result is persisted and read back BEFORE anything claims completion.
-  This turned a silent failure into the 520/522 diagnosis that led to P4o.
-* **P4p** — win rate was rendering 3581.0% (engine emits percent, card multiplied by 100);
-  avg trade no longer rounds −$2.33 to −$2; two real chart bugs fixed (theme tokens are oklch,
-  so `hsl(var(--token))` produced invalid colours; Recharts' entry animation never drew a
-  4,709-point path).
-* **P4q** — YouTube oEmbed metadata on link submissions: title, channel, channel URL, thumbnail.
-  Free, no API key, no quota, 5s timeout, fail-soft. New columns `source_thumbnail_url`,
-  `source_channel_url`.
-
-## ▶ RESUME HERE — WHAT PHASE 4 STILL NEEDS
-
-1. **Reviewer surface + `publish-report`** (P3q §4). The ONLY remaining piece before a curated
-   library is possible: ensemble_meta, assumptions and honest-gap lines beside the draft;
-   draft → approved → published. Nothing is publicly readable until published — the database
-   already enforces this. Library seeding stays HELD until this exists.
-2. **Frontend surfacing of the new metadata** — title, channel and thumbnail are stored but no
-   surface renders the thumbnail or channel link yet; the dashboard and evaluation header should
-   use the real title.
-3. **Disclose the ruin limitation.** The simulated account goes NEGATIVE (−$5,000 on a $10,000
-   account) because the backtest models no margin call or liquidation. A published audit must
-   say so. Candidate feature: "the account would have been closed out on <date>".
-4. **Expectancy (R) and the trades ledger** are hard-coded "not computed" on the card because the
-   engine emits nulls (P3d honest nulls). Fine for now; they are visible gaps on a real report.
+1. **Pricing + metering + Stripe** (free: library + 1 eval/month; paid ~$15–29 metered) —
+   the last build block before launch. usage table records already.
+2. **Competitor-contrast demo page** — the asset exists (the "MATHEMATICALLY UNBEATABLE"
+   thumbnail over "Tested — no edge demonstrated"); HELD for IP policy like all publishing.
+3. **Surface video metadata on user-facing cards** (dashboard/evaluation header) — stored,
+   unrendered outside /review; small Lovable slice.
+4. **Safe audit-delete edge function** (refuses when published report exists).
+5. **Ruin disclosure** on published audits ("account would have been closed out on <date>").
+6. Review the 2 dependency vulnerabilities Lovable's scanner reports (list, don't auto-fix).
 
 ## Open items (carried)
 
-* SECURITY DRIFT above — Jim's SQL, first thing.
-* **Auto-confirm email is ON.** Turned on for testing this session. It MUST go off before real
-  users sign up, or anyone can register with an address they do not own.
-* **API keys were exposed in a screenshot in chat on 2026-07-29** (ANTHROPIC_API_KEY,
-  WIT_ENGINE_SERVICE_KEY, WIT_CALLBACK_HMAC_SECRET, BACKTEST_API_KEY). Rotation was advised;
-  CONFIRM IT HAPPENED at next open. Use Railway's masking before screenshotting variables.
-* Supadata free tier is 100 transcripts/month; each submission is 1 credit, plus 3 extractions
-  and real compute. Per-evaluation cost is real — this is why unlimited pricing is not viable.
-* YouTube-link ingestion is now SOLVED, which makes the **transcript IP policy live rather than
-  theoretical** — WIT is fetching third-party captions today. Launch gate, Jim's lane.
-* `callback_events` RLS-on-with-no-policies trips an INFO scanner flag; intentional
-  (service-role only). Do not "fix" it.
-* Narrow test gap from P4h: the conformance test skips a vocabulary row naming a field the
-  mapper does not validate at all. The generator guard covers the practical case.
-* B3 granularity string ("ticks_per_row_1") is inert — nothing consumes it. No correctness risk.
-* Two latent fall-through branches in vp_orb_runner (entry_mode, same_bar_policy) are guarded
-  upstream; documented in the P4l report, not changed.
-* §3.6 result gaps (P3d honest nulls): bootstrap CIs, edge_vs_luck, regimes, expectancy_r,
-  trades_url not in the single-run path.
-* Engine accepts an extract job then fails ~60s later if ANTHROPIC_API_KEY is unset; should 503
-  at request time and surface extraction-readiness in /health (tracked, not done).
-* Repo housekeeping: untracked pine/mes_net_pnl_v2.pine; stale branches adr-048-pin-environment,
-  docs/adr-022. The bridge leaves git lock files behind after commits — harmless, sweep or delete.
-* Stripe/pricing deferred; `usage` table exists and records from day one.
-* Lovable project still named "Audit Lab"; USPTO screen not started; defensive domains optional.
+* FirstRateData: NO REPLY yet to 2026-07-29 licence email (checked Gmail at session-7 open).
+  Launch gate, biggest business risk. CHECK GMAIL AT EVERY OPEN.
+* Transcript IP policy (launch gate, Jim); USPTO screen (launch gate, Jim); defensive
+  domains optional.
+* Rotate the remaining three secrets (see above). Use Railway masking before screenshots.
+* First approve/publish is JIM'S CLICK, held for IP policy; for an end-to-end publish test
+  use a transcript JIM WROTE HIMSELF (no third-party IP), not the Jesse Rogers audit.
+* Two e2e test users + auto-confirm-era accounts: cleanup candidates (Jim data SQL).
+* Engine: 503-at-request-time when ANTHROPIC_API_KEY unset + extraction-readiness in /health
+  (tracked). C1 watch (specified-with-null-params). §3.6 result gaps (P3d honest nulls);
+  expectancy_r/trades ledger render "not computed". B3 granularity inert. P4h narrow test gap.
+  Two guarded latent branches in vp_orb_runner (P4l report). Repo: stale branches
+  adr-048-pin-environment, docs/adr-022; untracked pine/mes_net_pnl_v2.pine, wit-p4e-e2e.sh,
+  _to_delete/. Bridge leaves git lock files; sweep.
+* Lovable project rename ("Audit Lab" → WillItTrade) pending; custom domain not connected.
+* Supadata free tier 100 transcripts/month; per-eval cost real (1 credit + 3 extractions +
+  compute) — pricing is metered, never unlimited.
 
 ## Extraction quality
-CLOSED FOR v1 (P3q). Fixtures are FINAL. Known-residuals register R1–R3 pins the only allowed
-live-golden reds. Nothing this session touched extraction quality: P4k was ratified explicitly as
-MACHINE-CHANNEL CONFORMANCE (the mode/params channel), not quality tuning, and moved no fixture,
-threshold, or basis/status/claims rule.
+CLOSED FOR v1 (P3q). Fixtures FINAL; known-residuals R1–R3 are the only allowed live-golden
+reds. Session 7 touched NOTHING in extraction: no fixture, threshold, prompt, or golden moved
+(P4t adds verdict AFTER metrics exist; goldens byte-identical).
 
 ## Cross-project note
 pine-strategies and tradinggym are separate repos with their own handoffs — don't conflate.
 
 ## Context for a cold start
-WIT-01/02/03 hold the founding reasoning; **WIT-04** is the Phase-4 spec; `docs/wit/log/` is the
-process history. Key reads: P3o + P3q adjudications (the ratified extraction standard + R1–R3),
-P3s (why api/_shipped exists), **P4m** (why the 1-minute parquet exists — do NOT delete it or its
-drift test), **P4n** (why every write is error-checked), **P4o** (why the equity curve is daily).
-Trust the repo over memory, git over this file, and VERIFY deployment state in Railway and the
-live Supabase database — including policies and grants — not from any report.
+WIT-01/02/03 founding docs; WIT-04 Phase-4 spec; **PRD v2.0** the product+vision document;
+docs/wit/log/ the process history. Key reads: P3o+P3q adjudications, P3s, P4m (1-min parquet
+— never delete it or its drift test), P4n (every write error-checked), P4o (daily equity
+curve), P4t (verdict rule), P4s/P4v lead verifications (reviewer desk + library). Trust the
+repo over memory, git over this file, and VERIFY live state — policies AND grants — yourself.
