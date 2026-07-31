@@ -131,7 +131,7 @@
         },
         "params": {
           "type": ["object", "null"],
-          "description": "OPTIONAL machine param channel (WIT-P3c-1). Typed machine-readable parameters for this field, e.g. D2 {range_start,range_end,value_area_pct,granularity}; null when none."
+          "description": "OPTIONAL machine param channel (WIT-P3c-1). Typed machine-readable parameters for this field, e.g. D2 {range_start,range_end,value_area_pct,granularity}; null when none. WIT-P5n: value_area_pct is a FRACTION where 0.70 means seventy percent (the engine computes value_area_pct * total_volume); a value in (1,100] is normalized by /100 and disclosed at the boundary."
         }
       }
     }

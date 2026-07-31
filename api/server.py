@@ -1738,7 +1738,8 @@ import json as _json
 import math as _math
 
 from wit.mapper import (strategy_config_to_vporb, event_study_config_to_engine,
-                        map_template, UnsupportedConstruct, UntestableStrategy)
+                        map_template, UnsupportedConstruct, UntestableStrategy,
+                        InvalidConfig, normalize_and_disclose, validate_wire)
 from wit.config_hash import config_hash as _wit_config_hash
 from wit.run_store import WITRunStore
 from wit.vp_orb_runner import run_vp_orb, PARQUET_5MIN as _VPORB_PARQUET
@@ -2039,10 +2040,15 @@ async def _run_wit_sweep_job(run_id: str, kind: str, engine_cfg, config_hash: st
 
 
 def _adapt_wire(kind: str, config: dict):
-    """Structural hygiene + adapt to the engine config. Raises for the router to map."""
-    missing = [k for k in _WIT_WIRE_REQUIRED[kind] if k not in config]
-    if missing:
-        raise ValueError(f"wire config missing required keys: {missing}")
+    """Normalize + validate against the shipped contract, then adapt to the engine config
+    (WIT-P5n Pillar 2 — the SECOND validation point). Anything bypassing the mapper (e.g. a
+    front-office cache-hit path that replays a stored wire) is caught and normalized here too.
+    Order: normalize (backtest) BEFORE validate, so a source that says '70%' is corrected not
+    rejected; then adapt (whose hard gates raise UNSUPPORTED_CONSTRUCT for their fields). Raises
+    for the router to map to the error envelope."""
+    if kind == "backtest":
+        normalize_and_disclose(config)
+    validate_wire(config, kind)
     if kind == "backtest":
         return strategy_config_to_vporb(config)
     return event_study_config_to_engine(config)
@@ -2066,6 +2072,8 @@ async def wit_submit_run(req: WitRunRequest, background_tasks: BackgroundTasks):
     except UnsupportedConstruct as e:
         return _wit_error(400, "UNSUPPORTED_CONSTRUCT", str(e),
                           {"field": e.field, "mode": e.mode})
+    except InvalidConfig as e:                              # WIT-P5n — must precede ValueError
+        return _wit_error(400, "INVALID_CONFIG", str(e), {"field": e.field})
     except UntestableStrategy as e:
         return _wit_error(400, "INVALID_CONFIG", str(e), {"class": e.cls})
     except (KeyError, TypeError, ValueError) as e:
@@ -2121,6 +2129,8 @@ async def wit_map_template(req: WitMapRequest):
     except UnsupportedConstruct as e:
         return _wit_error(400, "UNSUPPORTED_CONSTRUCT", str(e),
                           {"field": e.field, "mode": e.mode})
+    except InvalidConfig as e:                              # WIT-P5n — must precede ValueError
+        return _wit_error(400, "INVALID_CONFIG", str(e), {"field": e.field})
     except UntestableStrategy as e:
         # Class C is a PRODUCT OUTCOME, not a 4xx (WIT-04 §6).
         return {"kind": None, "class": e.cls, "untestable": True}

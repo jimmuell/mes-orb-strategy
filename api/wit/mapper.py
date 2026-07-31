@@ -16,6 +16,7 @@ This slice is CLASS A ONLY. The Class B path is P3c-3.
 from __future__ import annotations
 
 import json
+import math
 import os
 
 from wit.config import VPORBConfig
@@ -23,6 +24,7 @@ from wit.event_study import EventStudyConfig
 from wit.extraction.completeness import score_completeness
 
 from wit.data_paths import data_path
+from wit.config_validator import validate as _validate_schema
 
 # WIT-P3s: resolved via the shared data-root resolver (env -> repo walk-up -> api/_shipped).
 _STRATEGY_CONFIG_SCHEMA = data_path("contract", "strategy-config.v1.json")
@@ -33,6 +35,89 @@ _EVENT_STUDY_SCHEMA = data_path("contract", "event-study-config.v1.json")
 # here so existing `from wit.mapper import FIELD_MODE_VOCAB` callers are unchanged.
 from wit.vocab import FIELD_MODE_VOCAB
 _ET_TZ = "America/New_York"
+
+
+# ---------------------------------------------------------------------------
+# WIT-P5n — normalization + disclosure + contract validation at the boundary
+# ---------------------------------------------------------------------------
+class InvalidConfig(ValueError):
+    """A wire config that does not conform to its contract (WIT-P5n Pillar 2). Subclasses
+    ValueError so the existing router except-clauses surface it as INVALID_CONFIG with the
+    offending field named — never a bare TypeError from downstream engine arithmetic."""
+    code = "INVALID_CONFIG"
+
+    def __init__(self, message: str, field: str | None = None):
+        self.field = field
+        super().__init__(f"config failed contract validation — {message}")
+
+
+# Class-A fields the runner BAKES rather than honours (WIT-P5i). A specified value that differs
+# from the baked constant is DISCLOSED (notapplied_<path>), never rejected — the run is unaffected,
+# but the report must say so. Arrays compare against the empty baked list.
+_MISSING = object()
+_BAKED_NOT_HONOURED = [
+    (("instrument", "symbol"), "ES"),
+    (("data", "dataset"), "ES_5min_continuous"),
+    (("data", "granularity_needed"), "1min"),
+    (("session", "force_flat"), "15:55"),
+    (("setup_entry", "level"), "va_high_low"),
+    (("exits", "stop", "ref"), "poc"),
+    (("exits", "stop", "mode"), "level_offset"),
+    (("exits", "target", "mode"), "r_multiple"),
+    (("risk_controls", "max_trades_per_day"), 1),
+    (("risk_controls", "reentry"), "none"),
+    (("filters", "regime"), []),
+    (("filters", "calendar"), []),
+    (("exits", "management"), []),
+]
+
+
+def _get_path(cfg: dict, path):
+    cur = cfg
+    for k in path:
+        if not isinstance(cur, dict) or k not in cur:
+            return _MISSING
+        cur = cur[k]
+    return cur
+
+
+def normalize_and_disclose(config: dict) -> dict:
+    """Class-A ONLY. Normalize setup_entry.params.value_area_pct in (1,100] -> /100 (disclosed as
+    D2_value_area_normalized), and disclose every declared-but-not-applied field whose specified
+    value differs from the baked constant (notapplied_<path>). Idempotent: re-running adds nothing
+    (so the mapper and the /wit/v1/runs boundary can both call it). Mutates + returns `config`."""
+    codes = config.setdefault("assumptions_applied", [])
+
+    # 3a — value_area_pct is a FRACTION; a percentage in (1,100] is normalized and disclosed.
+    params = config.get("setup_entry", {}).get("params")
+    if isinstance(params, dict):
+        v = params.get("value_area_pct")
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and 1 < v <= 100:
+            params["value_area_pct"] = v / 100.0
+            if "D2_value_area_normalized" not in codes:
+                codes.append("D2_value_area_normalized")
+
+    # 3b — a not-honoured field carrying a non-baked value is disclosed, not applied.
+    for path, baked in _BAKED_NOT_HONOURED:
+        val = _get_path(config, path)
+        if val is _MISSING or val == baked:
+            continue
+        code = "notapplied_" + "_".join(path)
+        if code not in codes:
+            codes.append(code)
+    return config
+
+
+def validate_wire(config: dict, kind: str) -> None:
+    """Validate a wire config against its shipped JSON-Schema contract (WIT-P5n Pillar 2). Raises
+    InvalidConfig naming the first offending field. `kind` is 'backtest' or 'event_study'."""
+    schema_path = _STRATEGY_CONFIG_SCHEMA if kind == "backtest" else _EVENT_STUDY_SCHEMA
+    with open(schema_path) as fh:
+        schema = json.load(fh)
+    errs = _validate_schema(config, schema)
+    if errs:
+        field = errs[0].split(":", 1)[0].strip() or None
+        raise InvalidConfig(errs[0], field=field)
 
 # Class B (event study) dimension vocabularies (contract/modes.md). The mode tokens live
 # INSIDE the carrier field's params (J1.params.event/path_bucket/regime.mode), not on
@@ -256,7 +341,12 @@ def map_template(template: dict) -> dict:
         "assumptions_applied": assumptions,
     }
     _structural_hygiene(config)
-    return {"kind": "backtest", "config": config, "assumptions_applied": assumptions}
+    # WIT-P5n: normalize + disclose BEFORE validating, so a source that says "70%" is corrected
+    # (not rejected); then refuse anything still non-conforming with a typed InvalidConfig.
+    normalize_and_disclose(config)
+    validate_wire(config, "backtest")
+    return {"kind": "backtest", "config": config,
+            "assumptions_applied": config["assumptions_applied"]}
 
 
 def _structural_hygiene(config: dict) -> None:
@@ -376,6 +466,9 @@ def _map_class_b(template: dict) -> dict:
                  "window": {"start": window.get("start"), "end": window.get("end")}},
     }
     _event_study_hygiene(config)
+    # WIT-P5n Pillar 2: refuse a non-conforming Class-B wire (spike_eff/pullback_p/regime_fixed_er
+    # ranges, etc.). No value_area_pct/not-honoured normalization applies to event studies.
+    validate_wire(config, "event_study")
     return {"kind": "event_study", "config": config, "assumptions_applied": assumptions}
 
 

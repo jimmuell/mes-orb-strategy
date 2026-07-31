@@ -18,7 +18,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["k", "n_baseline"],
-          "properties": {"k": {"type": "number"}, "n_baseline": {"type": "integer"}}
+          "properties": {"k": {"type": "number", "exclusiveMinimum": 0, "description": "HONOURED — body >= k * trailing-median body; a positive multiple."}, "n_baseline": {"type": "integer", "exclusiveMinimum": 0, "description": "HONOURED — trailing-candle count for the median-body baseline; positive."}}
         }
       }
     },
@@ -32,9 +32,9 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "spike_eff": {"type": "number"},
-            "spike_giveback_cap": {"type": "number"},
-            "pullback_p": {"type": "number"},
+            "spike_eff": {"type": "number", "minimum": 0, "maximum": 1, "description": "HONOURED. A FRACTION (0.50 = fifty percent), NOT a percent: efficiency >= spike_eff (event_study.py). A prose value like 50 would make the spike bucket empty; constrain to [0,1]."},
+            "spike_giveback_cap": {"type": "number", "minimum": 0, "maximum": 1, "description": "HONOURED. A FRACTION: retrace_pct <= spike_giveback_cap. Constrain to [0,1]."},
+            "pullback_p": {"type": "number", "minimum": 0, "maximum": 1, "description": "HONOURED. A FRACTION: retrace_pct >= pullback_p. Constrain to [0,1]."},
             "bucket_mode": {"type": "string", "enum": ["threshold", "percentile"]}
           }
         }
@@ -52,11 +52,11 @@
           "type": ["object", "null"],
           "additionalProperties": false,
           "properties": {
-            "regime_er_m": {"type": "integer"},
-            "regime_trailing_window": {"type": "integer"},
-            "regime_fixed_er": {"type": "number"},
-            "regime_adx_len": {"type": "integer"},
-            "regime_adx_thresh": {"type": "number"}
+            "regime_er_m": {"type": "integer", "exclusiveMinimum": 0, "description": "HONOURED — Kaufman ER lookback (prior candles); positive."},
+            "regime_trailing_window": {"type": "integer", "exclusiveMinimum": 0, "description": "HONOURED — trailing window (candles) for the ER median; positive."},
+            "regime_fixed_er": {"type": "number", "minimum": 0, "maximum": 1, "description": "HONOURED. A FRACTION (Kaufman efficiency ratio, 0.30 = thirty percent), NOT a percent: er >= regime_fixed_er (event_study.py). Constrain to [0,1]."},
+            "regime_adx_len": {"type": "integer", "exclusiveMinimum": 0, "description": "HONOURED — ADX length; positive."},
+            "regime_adx_thresh": {"type": "number", "minimum": 0, "maximum": 100, "description": "HONOURED — ADX threshold on the 0-100 scale."}
           }
         }
       }

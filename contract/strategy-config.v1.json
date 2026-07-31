@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://willittrade.com/contract/strategy-config.v1.json",
   "title": "WIT StrategyConfig (Class A) — wire config v1",
-  "$comment": "Machine copy of the WIT-03 §3.4 StrategyConfig, corrected to match the engine (WIT-P3c-1): session is ET wall-clock (America/New_York; 09:30/11:00/15:55 — same instants as the prior CT example), matching vp_orb_runner load_5min. The mode/enum tokens are the Class-A dimensions in contract/modes.md; an out-of-vocabulary mode -> UNSUPPORTED_CONSTRUCT. Derived deterministically from a filled WIT-02 template by the engine-side mapper (P3c-2). config_version stays 1.0 (wire shape unchanged from §3.4).",
+  "$comment": "Machine copy of the WIT-03 §3.4 StrategyConfig, corrected to match the engine (WIT-P3c-1): session is ET wall-clock (America/New_York; 09:30/11:00/15:55 — same instants as the prior CT example), matching vp_orb_runner load_5min. The mode/enum tokens are the Class-A dimensions in contract/modes.md; an out-of-vocabulary mode -> UNSUPPORTED_CONSTRUCT. Derived deterministically from a filled WIT-02 template by the engine-side mapper (P3c-2). config_version stays 1.0 (wire shape unchanged from §3.4). WIT-P5n: every field now carries a declared type/unit/range derived from what the engine ACTUALLY requires; HONOURED fields are range/enum-enforced by wit/config_validator.py at the mapper output and the /wit/v1/runs inbound boundary; fields marked 'declared but NOT applied in v1' are baked to a constant by the runner and are typed but not value-enforced (a specified value that differs from the baked constant is DISCLOSED via a notapplied_* code in assumptions_applied, never rejected).",
   "type": "object",
   "additionalProperties": false,
   "required": ["config_version", "instrument", "data", "session", "bias",
@@ -13,11 +13,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["symbol", "tick_size", "tick_value"],
+      "$comment": "declared but NOT applied in v1 — the engine bakes MES economics ($5/point, tick 0.25); instrument fields are disclosed (notapplied_instrument_*), not enforced.",
       "properties": {
-        "symbol": {"type": "string"},
-        "tick_size": {"type": "number"},
-        "tick_value": {"type": "number"},
-        "proxy_for": {"type": ["string", "null"]}
+        "symbol": {"type": "string", "description": "declared but NOT applied in v1 (engine bakes ES/MES); disclosed via notapplied_instrument_symbol if != 'ES'"},
+        "tick_size": {"type": "number", "description": "declared but NOT applied in v1 (engine bakes tick 0.25)"},
+        "tick_value": {"type": "number", "description": "declared but NOT applied in v1 (engine bakes $5/point)"},
+        "proxy_for": {"type": ["string", "null"], "description": "declared but NOT applied in v1 (disclosure only)"}
       }
     },
     "data": {
@@ -25,12 +26,13 @@
       "additionalProperties": false,
       "required": ["dataset", "granularity_needed", "window"],
       "properties": {
-        "dataset": {"type": "string"},
-        "granularity_needed": {"type": "string", "enum": ["5min", "1min"]},
+        "dataset": {"type": "string", "description": "declared but NOT applied in v1 — the engine always reads the shipped ES 5-min parquet; disclosed via notapplied_data_dataset if != 'ES_5min_continuous'"},
+        "granularity_needed": {"type": "string", "description": "declared but NOT applied in v1 — the profile resolution comes from setup_entry.params.granularity; disclosed via notapplied_data_granularity_needed if != '1min'"},
         "window": {
           "type": "object",
           "additionalProperties": false,
           "required": ["start", "end"],
+          "$comment": "HONOURED — start_date/end_date on the run. ET calendar dates (YYYY-MM-DD).",
           "properties": {"start": {"type": "string"}, "end": {"type": "string"}}
         }
       }
@@ -39,27 +41,29 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["tz", "trade_window", "force_flat"],
-      "$comment": "ET wall-clock, matching the engine (vp_orb_runner load_5min: tz-naive ET). trade_window = [entry_start, entry_cutoff]; force_flat = last RTH bar start.",
+      "$comment": "ET wall-clock, matching the engine (vp_orb_runner load_5min: tz-naive ET). trade_window = [entry_start, entry_cutoff] (HONOURED -> entry_window_start/last_bar); force_flat is baked to the last RTH bar.",
       "properties": {
-        "tz": {"const": "America/New_York"},
+        "tz": {"type": "string", "description": "HONOURED (hard gate) — must be America/New_York; a divergent value raises UNSUPPORTED_CONSTRUCT (C1) at the adapter, so it is documented here rather than const-enforced (which would mis-label it INVALID_CONFIG)."},
         "trade_window": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
-        "force_flat": {"type": "string"}
+        "force_flat": {"type": "string", "description": "declared but NOT applied in v1 — the engine force-flats at the day's last RTH bar; disclosed via notapplied_session_force_flat if != '15:55'"}
       }
     },
     "filters": {
       "type": "object",
       "additionalProperties": false,
+      "$comment": "declared but NOT applied in v1 — the runner has no regime/calendar filtering; disclosed via notapplied_filters_* if non-empty.",
       "properties": {
-        "regime": {"type": "array"},
-        "calendar": {"type": "array"}
+        "regime": {"type": "array", "description": "declared but NOT applied in v1"},
+        "calendar": {"type": "array", "description": "declared but NOT applied in v1"}
       }
     },
     "bias": {
       "type": "object",
       "additionalProperties": false,
       "required": ["mode"],
+      "$comment": "HONOURED (hard gate) — the adapter raises UNSUPPORTED_CONSTRUCT (D1) unless mode == vp_value_area_break. Documented, not enum-enforced here, so the hard gate owns the error type.",
       "properties": {
-        "mode": {"type": "string", "enum": ["vp_value_area_break", "orb_break", "none"]},
+        "mode": {"type": "string", "description": "HONOURED (hard gate D1): must be vp_value_area_break (allowed template tokens: vp_value_area_break | orb_break | none); a divergent value -> UNSUPPORTED_CONSTRUCT at the adapter."},
         "params": {"type": ["object", "null"]}
       }
     },
@@ -68,19 +72,31 @@
       "additionalProperties": false,
       "required": ["trigger", "level", "order"],
       "properties": {
-        "trigger": {"type": "string", "enum": ["bar_close_beyond_level", "bar_body_beyond_level"]},
-        "level": {"type": "string", "enum": ["va_high_low", "orb_high_low"]},
-        "order": {"type": "string", "enum": ["market_on_close", "market_next_open"]},
-        "params": {"type": ["object", "null"]}
+        "trigger": {"type": "string", "description": "HONOURED (hard gate D3) -> entry_mode: must be bar_close_beyond_level (close) or bar_body_beyond_level (body); any other value -> UNSUPPORTED_CONSTRUCT at the adapter."},
+        "level": {"type": "string", "description": "declared but NOT applied in v1 — the runner uses VAH/VAL structurally by direction; disclosed via notapplied_setup_entry_level if != 'va_high_low'"},
+        "order": {"type": "string", "description": "HONOURED (hard gate D4): must be market_on_close (allowed template tokens: market_on_close | market_next_open); a divergent value -> UNSUPPORTED_CONSTRUCT at the adapter."},
+        "params": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["range_start", "range_end", "value_area_pct", "granularity"],
+          "$comment": "HONOURED — the volume-profile parameters.",
+          "properties": {
+            "range_start": {"type": "string"},
+            "range_end": {"type": "string"},
+            "value_area_pct": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "HONOURED. A FRACTION of opening-window volume, NOT a percent: 0.70 means seventy percent. The engine computes the value area as value_area_pct * total_volume (wit/volume_profile.py). A value in (1,100] is normalized by /100 at the boundary and disclosed as D2_value_area_normalized; values <=0, >100, null or non-numeric are rejected (INVALID_CONFIG)."},
+            "granularity": {"type": "string", "description": "HONOURED -> vp_granularity: must be '5min' or '1min'; any other value -> UNSUPPORTED_CONSTRUCT at the runner (WIT-P4l)."}
+          }
+        }
       }
     },
     "sizing": {
       "type": "object",
       "additionalProperties": false,
       "required": ["mode", "value"],
+      "$comment": "HONOURED (hard gate E1) — the adapter requires fixed_contracts / value == 1; documented, not enforced here, so the hard gate owns the error type.",
       "properties": {
-        "mode": {"type": "string", "enum": ["fixed_contracts"]},
-        "value": {"type": "number"}
+        "mode": {"type": "string", "description": "HONOURED (hard gate E1): must be fixed_contracts; else UNSUPPORTED_CONSTRUCT at the adapter."},
+        "value": {"type": "number", "description": "HONOURED (hard gate E1): must be 1 (one MES); else UNSUPPORTED_CONSTRUCT at the adapter."}
       }
     },
     "exits": {
@@ -93,9 +109,9 @@
           "additionalProperties": false,
           "required": ["mode"],
           "properties": {
-            "mode": {"type": "string", "enum": ["level_offset", "structure"]},
-            "ref": {"type": "string", "enum": ["poc", "va", "orb"]},
-            "ticks": {"type": "number"}
+            "mode": {"type": "string", "description": "declared but NOT applied in v1 — the runner bakes level_offset (POC +/- ticks); disclosed via notapplied_exits_stop_mode if != 'level_offset'"},
+            "ref": {"type": "string", "description": "declared but NOT applied in v1 — the runner always uses the point of control; disclosed via notapplied_exits_stop_ref if != 'poc'"},
+            "ticks": {"type": "number", "exclusiveMinimum": 0, "$comment": "HONOURED -> stop_offset_ticks. POSITIVE ONLY: the runner applies the side by direction (POC - off for longs, POC + off for shorts); a negative value would place the stop on the wrong side of the level (WIT-P5i)."}
           }
         },
         "target": {
@@ -103,37 +119,39 @@
           "additionalProperties": false,
           "required": ["mode"],
           "properties": {
-            "mode": {"type": "string", "enum": ["r_multiple", "level", "none"]},
-            "value": {"type": "number"}
+            "mode": {"type": "string", "description": "declared but NOT applied in v1 — the runner bakes r_multiple (entry +/- value*R); disclosed via notapplied_exits_target_mode if != 'r_multiple'"},
+            "value": {"type": "number", "exclusiveMinimum": 0, "$comment": "HONOURED -> rr_target. A positive R-multiple."}
           }
         },
-        "management": {"type": "array"},
-        "time_exit": {"type": "string", "enum": ["force_flat", "fixed_time", "none"]},
-        "same_bar_policy": {"type": "string", "enum": ["stop_first", "target_first"]}
+        "management": {"type": "array", "description": "declared but NOT applied in v1 — no intratrade management; disclosed via notapplied_exits_management if non-empty."},
+        "time_exit": {"type": "string", "description": "HONOURED (hard gate F4): must be force_flat (allowed template tokens: force_flat | fixed_time | none); a divergent value -> UNSUPPORTED_CONSTRUCT at the adapter."},
+        "same_bar_policy": {"type": "string", "enum": ["stop_first", "target_first"], "$comment": "HONOURED -> same_bar_policy in _resolve_exit. Validator-enforced: the runner has NO gate for an unknown value (it would silently fall through to stop_first), so an out-of-set value is rejected here as INVALID_CONFIG."}
       }
     },
     "risk_controls": {
       "type": "object",
       "additionalProperties": false,
       "required": ["max_trades_per_day", "reentry"],
+      "$comment": "declared but NOT applied in v1 — the runner structurally takes at most one trade/day with no re-entry.",
       "properties": {
-        "max_trades_per_day": {"type": "integer"},
-        "reentry": {"type": "string", "enum": ["none"]}
+        "max_trades_per_day": {"type": "integer", "description": "declared but NOT applied in v1 (baked to 1); disclosed via notapplied_risk_controls_max_trades_per_day if != 1"},
+        "reentry": {"type": "string", "description": "declared but NOT applied in v1 (baked to none); disclosed via notapplied_risk_controls_reentry if != 'none'"}
       }
     },
     "costs": {
       "type": "object",
       "additionalProperties": false,
       "required": ["commission_per_side", "slippage_ticks"],
+      "$comment": "HONOURED — commission_per_side (USD/side, >= 0) and slippage_ticks (integer ticks, >= 0).",
       "properties": {
-        "commission_per_side": {"type": "number"},
-        "slippage_ticks": {"type": "integer"}
+        "commission_per_side": {"type": "number", "minimum": 0},
+        "slippage_ticks": {"type": "integer", "minimum": 0}
       }
     },
     "assumptions_applied": {
       "type": "array",
       "items": {"type": "string"},
-      "description": "Field ids / dimensions where a WIT-02 §5 default was injected; echoed into the report."
+      "description": "Field ids / dimensions where a WIT-02 §5 default was injected, plus WIT-P5n disclosure codes (D2_value_area_normalized; notapplied_* for a declared-but-not-applied field whose specified value differs from the baked constant); echoed into the report."
     }
   }
 }
