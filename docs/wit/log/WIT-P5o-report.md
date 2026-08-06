@@ -278,8 +278,8 @@ A	docs/wit/prompts/WIT-P5o.md
 ```
 Commit subject: `WIT-P5o: dataset catalog resolves an id to its two files, honoured end to end`
 
-New HEAD sha: **`<filled after commit — see final message>`**
-Commit URL: **`<filled after commit — see final message>`**
+New HEAD sha: **`e5eb8b207acfe34aa5ba00d3f59396a3afc40a28`**
+Commit URL: **`https://github.com/jimmuell/mes-orb-strategy/commit/e5eb8b207acfe34aa5ba00d3f59396a3afc40a28`**
 
 ## 10. Anything stopped short of
 
