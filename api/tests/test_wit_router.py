@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import time
 import types
 
@@ -18,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import server
+from wit import data_paths as _wit_data_paths, datasets as _wit_datasets_mod
 import callback_writer
 
 _SVC_KEY = "svc-secret-key"
@@ -372,3 +374,107 @@ def test_sweep_idempotency_distinct_from_single(client, monkeypatch):
     single = _submit(client, "backtest", cfg, evaluation_id="ev-S", sweep=False)
     assert s1.json()["run_id"] == s2.json()["run_id"]          # same sweep run
     assert single.json()["run_id"] != s1.json()["run_id"]      # sweep vs single -> different runs
+
+
+# ── WIT-P5p — GET /wit/v1/datasets ──
+def test_datasets_endpoint_missing_bearer_401(client):
+    r = client.get("/wit/v1/datasets")
+    assert r.status_code == 401
+
+
+def test_datasets_endpoint_wrong_bearer_403(client):
+    r = client.get("/wit/v1/datasets", headers={"Authorization": "Bearer nope"})
+    assert r.status_code == 403
+
+
+def test_datasets_endpoint_returns_builtin_with_economics_supported_and_date_range(client):
+    r = client.get("/wit/v1/datasets", headers=_AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    ids = {d["id"]: d for d in body["datasets"]}
+    assert _wit_datasets_mod.BUILT_IN_DEFAULT.id in ids
+    d = ids[_wit_datasets_mod.BUILT_IN_DEFAULT.id]
+    assert d["economics_supported"] is True
+    assert d["symbol"] == _wit_datasets_mod.BUILT_IN_DEFAULT.symbol
+    assert d["point_value"] == _wit_datasets_mod.BUILT_IN_DEFAULT.point_value
+    assert d["tick_size"] == _wit_datasets_mod.BUILT_IN_DEFAULT.tick_size
+    # a real date range read from the actual data, not a hardcoded label
+    assert d["date_range"]["start"] < d["date_range"]["end"]
+    assert d["date_range"]["start"].count("-") == 2 and d["date_range"]["end"].count("-") == 2
+
+
+def test_datasets_endpoint_includes_unsupported_economics_entry_not_omitted(client, monkeypatch, tmp_path):
+    """A catalogued dataset whose economics the engine doesn't apply must still be LISTED
+    (economics_supported: false) — omitting it would make the 'app never claims a dataset the
+    engine doesn't have' guarantee a lie in the other direction (the app wouldn't know it exists)."""
+    real_dir = _wit_data_paths.resolve_engine_data_dir()
+    for name in (_wit_datasets_mod.BUILT_IN_DEFAULT.bars_5min, _wit_datasets_mod.BUILT_IN_DEFAULT.opening_1min):
+        os.symlink(os.path.join(real_dir, name), os.path.join(tmp_path, name))
+    unsupported_id = "UNSUPPORTED_ECONOMICS_PROOF"
+    with open(os.path.join(tmp_path, "datasets.json"), "w") as fh:
+        json.dump({"version": 1, "datasets": [
+            {"id": unsupported_id, "label": "Unsupported-economics proof entry",
+             "bars_5min": _wit_datasets_mod.BUILT_IN_DEFAULT.bars_5min,
+             "opening_1min": _wit_datasets_mod.BUILT_IN_DEFAULT.opening_1min,
+             "symbol": "MNQ", "point_value": 2.0, "tick_size": 0.25}]}, fh)
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+
+    r = client.get("/wit/v1/datasets", headers=_AUTH)
+    assert r.status_code == 200
+    ids = {d["id"]: d for d in r.json()["datasets"]}
+    assert unsupported_id in ids                          # present, not omitted
+    assert ids[unsupported_id]["economics_supported"] is False
+
+
+def test_datasets_endpoint_excludes_entry_with_missing_files(client, monkeypatch, tmp_path):
+    """available() already guarantees a catalogued-but-fileless entry is excluded — assert the
+    endpoint doesn't re-add it."""
+    missing_id = "FILES_MISSING_PROOF"
+    with open(os.path.join(tmp_path, "datasets.json"), "w") as fh:
+        json.dump({"version": 1, "datasets": [
+            {"id": missing_id, "label": "No files on disk", "bars_5min": "nope_5min.parquet",
+             "opening_1min": "nope_1min.parquet", "symbol": "MES",
+             "point_value": 5.0, "tick_size": 0.25}]}, fh)
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+
+    r = client.get("/wit/v1/datasets", headers=_AUTH)
+    assert r.status_code == 200
+    ids = {d["id"] for d in r.json()["datasets"]}
+    assert missing_id not in ids
+    # and since tmp_path also lacks the BUILT-IN files, the built-in id is excluded here too —
+    # proves available()'s file-presence check, not a special case for the built-in id
+    assert _wit_datasets_mod.BUILT_IN_DEFAULT.id not in ids
+
+
+# ── WIT-P5p — honest backtest provenance ──
+def test_backtest_provenance_names_the_dataset_actually_used(client, monkeypatch, tmp_path):
+    real_dir = _wit_data_paths.resolve_engine_data_dir()
+    for name in (_wit_datasets_mod.BUILT_IN_DEFAULT.bars_5min, _wit_datasets_mod.BUILT_IN_DEFAULT.opening_1min):
+        os.symlink(os.path.join(real_dir, name), os.path.join(tmp_path, name))
+    second_id = "SECOND_DATASET_PROVENANCE_PROOF"
+    with open(os.path.join(tmp_path, "datasets.json"), "w") as fh:
+        json.dump({"version": 1, "datasets": [
+            {"id": second_id, "label": "Second id, same files",
+             "bars_5min": _wit_datasets_mod.BUILT_IN_DEFAULT.bars_5min,
+             "opening_1min": _wit_datasets_mod.BUILT_IN_DEFAULT.opening_1min,
+             "symbol": "MES", "point_value": 5.0, "tick_size": 0.25}]}, fh)
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+    _stub_backtest(monkeypatch)
+
+    builtin_cfg = _min_wire_backtest()                     # already declares "ES_5min_continuous"
+    r_builtin = _submit(client, "backtest", builtin_cfg, evaluation_id="ev-prov-builtin")
+    assert r_builtin.status_code == 202
+    g_builtin = client.get(f"/wit/v1/runs/{r_builtin.json()['run_id']}", headers=_AUTH).json()
+    assert g_builtin["status"] == "succeeded"
+    prov_builtin = g_builtin["result"]["provenance"]
+    assert prov_builtin["dataset_id"] == _wit_datasets_mod.BUILT_IN_DEFAULT.id
+
+    second_cfg = _min_wire_backtest()
+    second_cfg["data"]["dataset"] = second_id
+    r_second = _submit(client, "backtest", second_cfg, evaluation_id="ev-prov-second")
+    assert r_second.status_code == 202
+    g_second = client.get(f"/wit/v1/runs/{r_second.json()['run_id']}", headers=_AUTH).json()
+    assert g_second["status"] == "succeeded"
+    prov_second = g_second["result"]["provenance"]
+    assert prov_second["dataset_id"] == second_id
+    assert prov_second["dataset_id"] != prov_builtin["dataset_id"]   # names the dataset ACTUALLY used

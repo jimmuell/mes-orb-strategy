@@ -1742,11 +1742,13 @@ from wit.mapper import (strategy_config_to_vporb, event_study_config_to_engine,
                         InvalidConfig, normalize_and_disclose, validate_wire)
 from wit.config_hash import config_hash as _wit_config_hash
 from wit.run_store import WITRunStore
-from wit.vp_orb_runner import run_vp_orb, PARQUET_5MIN as _VPORB_PARQUET
+from wit.vp_orb_runner import run_vp_orb, dataset_date_range, PARQUET_5MIN as _VPORB_PARQUET
 from wit.event_study import run_config, load_1min_rth, build_candles, PARQUET_1MIN as _ES_PARQUET_1MIN
 from wit.sweeps import build_backtest_sweep, build_event_study_sweep
 from wit.verdict import derive_verdict
 from wit.extraction.ensemble import extract_template_ensemble
+from wit import datasets as _wit_datasets
+from wit.config import POINT_VALUE as _WIT_POINT_VALUE, TICK_SIZE as _WIT_TICK_SIZE
 from callback_writer import get_wit_callback_writer
 
 _WIT_RUNS = WITRunStore()
@@ -1806,10 +1808,16 @@ def _finite(x):
     return x if isinstance(x, (int, float)) and _math.isfinite(x) else None
 
 
-def _provenance(config_hash: str, dataset: str) -> dict:
-    return {"engine_version": ENGINE_VERSION, "dataset_version": dataset,
-            "config_hash": config_hash,
-            "completed_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}
+def _provenance(config_hash: str, dataset: str, dataset_id: str | None = None) -> dict:
+    # WIT-P5p: dataset_id is optional and additive — event_study's call site (unchanged, still
+    # 2-arg) keeps its exact prior shape; only the backtest call site now names the RESOLVED
+    # dataset id alongside its filename, mirroring wit/analysis.py's provenance block (WIT-P5o).
+    out = {"engine_version": ENGINE_VERSION, "dataset_version": dataset,
+          "config_hash": config_hash,
+          "completed_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}
+    if dataset_id is not None:
+        out["dataset_id"] = dataset_id
+    return out
 
 
 # WIT-P4o: the engine appends ONE equity point per BAR (engine.py:958). At 5-min resolution over
@@ -1860,7 +1868,7 @@ def _daily_bounded_equity_curve(raw: list) -> tuple[list, str]:
 
 
 # ── result builders — populate ONLY what the runners actually return (§3.6) ──
-def _backtest_result(res, config_hash: str) -> dict:
+def _backtest_result(res, config_hash: str, dataset: str = _wit_datasets.BUILT_IN_DEFAULT.id) -> dict:
     kpis = res.kpis
     metrics = {
         "trades": kpis.get("total_trades"),
@@ -1875,11 +1883,18 @@ def _backtest_result(res, config_hash: str) -> dict:
     equity, equity_resolution = _daily_bounded_equity_curve(kpis.get("equity_curve"))
     # OMITTED (not computed by run_vp_orb): confidence.bootstrap, confidence.edge_vs_luck,
     # regimes, sweep_results. trades_url null (no signed-URL infra; Supabase-side).
+    # WIT-P5p: name the dataset this SPECIFIC run actually read, never the built-in module
+    # constant — a run against any other dataset must not report the ES filename. `dataset` is
+    # the id the caller (_wit_compute) resolved its engine_cfg from — the SAME value run_vp_orb
+    # itself resolves from internally (WIT-P5o), so datasets.resolve() here reproduces exactly
+    # what the run actually read. Defaults to the built-in id so a direct call with no dataset
+    # argument (as an existing test does) behaves exactly as before this change.
+    _spec = _wit_datasets.resolve(dataset)
     return {"kind": "backtest", "metrics": metrics, "equity_curve": equity,
             "equity_curve_resolution": equity_resolution,
             "verdict": derive_verdict("backtest", metrics),   # WIT-P4t: never claims edge
             "trades_url": None,
-            "provenance": _provenance(config_hash, os.path.basename(_VPORB_PARQUET))}
+            "provenance": _provenance(config_hash, _spec.bars_5min, _spec.id)}
 
 
 def _event_study_result(d: dict, config_hash: str) -> dict:
@@ -1900,7 +1915,7 @@ def _wit_compute(kind: str, engine_cfg, run_id: str, config_hash: str) -> dict:
     """Runs in a worker thread. Sets REAL pipeline stages; returns the §3.6 result."""
     if kind == "backtest":
         _WIT_RUNS.update(run_id, {"progress": {"stage": "simulating"}})
-        return _backtest_result(run_vp_orb(engine_cfg), config_hash)
+        return _backtest_result(run_vp_orb(engine_cfg), config_hash, engine_cfg.dataset)
     # event_study: observable load -> validate boundaries
     _WIT_RUNS.update(run_id, {"progress": {"stage": "loading_data"}})
     candles = _load_and_build_candles(engine_cfg)
@@ -2112,6 +2127,36 @@ async def wit_get_run(run_id: str):
     elif state.get("status") == "failed":
         body["error"] = state.get("error")
     return body
+
+
+# ── GET /wit/v1/datasets (WIT-P5p) — the single source of truth for what data.dataset ids exist ──
+# The app must never be able to claim a dataset the engine doesn't have (WIT-P5o's guarantee, now
+# queryable). datasets.available() already excludes any catalog entry whose files are missing —
+# that is NOT re-checked here. An entry whose ECONOMICS the engine doesn't apply is still listed
+# (economics_supported: false) rather than omitted, so the app knows it exists even if disabled.
+@app.get("/wit/v1/datasets", dependencies=[Depends(verify_wit_key)])
+async def wit_list_datasets():
+    out = []
+    for spec in _wit_datasets.available():
+        try:
+            start, end = dataset_date_range(spec.id)
+        except Exception as e:
+            # A corrupt/unreadable parquet is possible even though the file EXISTS (available()
+            # only checks presence, not readability). Drop just this entry — a broken dataset
+            # should look absent, not take the whole listing down for every other dataset.
+            # (WIT-P5p report: logs exactly what was dropped and why.)
+            print(f"[wit_list_datasets] dropping {spec.id!r}: date-range read failed: {e}")
+            continue
+        out.append({
+            "id": spec.id, "label": spec.label, "description": spec.description,
+            "symbol": spec.symbol, "point_value": spec.point_value, "tick_size": spec.tick_size,
+            # Same comparison run_vp_orb's economics guard makes (DatasetEconomicsUnsupported) —
+            # reuses wit.config.POINT_VALUE/TICK_SIZE directly, never a second literal threshold.
+            "economics_supported": (spec.point_value == _WIT_POINT_VALUE
+                                    and spec.tick_size == _WIT_TICK_SIZE),
+            "date_range": {"start": start, "end": end},
+        })
+    return {"datasets": out}
 
 
 # ── POST /wit/v1/map (WIT-P4b) — filled template → wire config, SYNC ──
