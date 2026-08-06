@@ -242,8 +242,8 @@ A	docs/wit/prompts/WIT-P5p.md
 ```
 Commit subject: `WIT-P5p: dataset listing endpoint + honest backtest provenance`
 
-New HEAD sha: **`<filled after commit — see final printed message>`**
-Commit URL: **`<filled after commit — see final printed message>`**
+New HEAD sha: **`28661f9007ad81589bbe25b97b811c5d57af565a`**
+Commit URL: **`https://github.com/jimmuell/mes-orb-strategy/commit/28661f9007ad81589bbe25b97b811c5d57af565a`**
 
 ## 11. Anything stopped short of
 
