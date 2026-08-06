@@ -57,7 +57,6 @@ class InvalidConfig(ValueError):
 _MISSING = object()
 _BAKED_NOT_HONOURED = [
     (("instrument", "symbol"), "ES"),
-    (("data", "dataset"), "ES_5min_continuous"),
     (("data", "granularity_needed"), "1min"),
     (("session", "force_flat"), "15:55"),
     (("setup_entry", "level"), "va_high_low"),
@@ -409,6 +408,7 @@ def strategy_config_to_vporb(wire: dict) -> VPORBConfig:
         same_bar_policy=wire["exits"]["same_bar_policy"],
         commission_per_side=wire["costs"]["commission_per_side"],
         slippage_ticks=wire["costs"]["slippage_ticks"],
+        dataset=wire["data"]["dataset"],   # WIT-P5o: honoured — unknown ids fail the run, not here
     )
 
 

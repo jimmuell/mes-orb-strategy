@@ -261,3 +261,36 @@ def test_P4l_explicit_1min_honored_not_disclosed():
     cfg = map_template(t)["config"]
     assert cfg["setup_entry"]["params"]["granularity"] == "1min"
     assert "B3_granularity" not in cfg["assumptions_applied"]
+
+
+# ── WIT-P5o — data.dataset is HONOURED, not baked-not-honoured ──
+def test_P5o_dataset_honoured_into_vporbconfig():
+    t = _load("WIT-T-0001.template.json")
+    wire = map_template(t)["config"]
+    assert wire["data"]["dataset"] == "ES_5min_continuous"            # unchanged emission
+    cfg = strategy_config_to_vporb(wire)
+    assert cfg.dataset == "ES_5min_continuous"                        # now HONOURED, not dropped
+
+
+def test_P5o_dataset_not_in_baked_not_honoured_disclosure():
+    """A wire dataset that differs from the built-in id must NOT be disclosed as
+    notapplied_data_dataset any more — it is honoured (and will fail loudly downstream at
+    run_vp_orb if the id is unknown, never silently substituted here)."""
+    from wit.mapper import normalize_and_disclose
+    t = _load("WIT-T-0001.template.json")
+    wire = map_template(t)["config"]
+    wire["data"]["dataset"] = "SOME_OTHER_DATASET"
+    wire["assumptions_applied"] = []
+    normalize_and_disclose(wire)
+    assert "notapplied_data_dataset" not in wire["assumptions_applied"]
+
+
+def test_P5o_unknown_dataset_id_not_rejected_by_the_adapter_itself():
+    """strategy_config_to_vporb only threads the id through — it does not resolve/validate it
+    (that happens once, at the top of run_vp_orb). An unknown id must reach VPORBConfig unchanged,
+    not raise here."""
+    t = _load("WIT-T-0001.template.json")
+    wire = map_template(t)["config"]
+    wire["data"]["dataset"] = "NOT_A_REAL_CATALOG_ID"
+    cfg = strategy_config_to_vporb(wire)
+    assert cfg.dataset == "NOT_A_REAL_CATALOG_ID"

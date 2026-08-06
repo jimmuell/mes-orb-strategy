@@ -259,10 +259,17 @@ def build_all() -> dict:
 
     # provenance
     import engine
+    from wit import datasets
+    # WIT-P5o: report the RESOLVED dataset (its id + the two filenames actually read), not the
+    # built-in module constants — a run against any other dataset must not report the ES
+    # filenames. For the built-in default (primary.dataset) these two filenames are unchanged
+    # from before this change; "dataset_id" is new.
+    _spec = datasets.resolve(primary.dataset)
     out["provenance"] = {
         "engine_version": engine.__version__,
-        "dataset": os.path.basename(R.PARQUET_5MIN),
-        "vp_source": os.path.basename(R.PARQUET_1MIN),
+        "dataset_id": _spec.id,
+        "dataset": _spec.bars_5min,
+        "vp_source": _spec.opening_1min,
         "seed": _VC.seed, "bootstrap_iters": _VC.mc_iterations,
         "commission_per_side": primary.commission_per_side,
         "slippage_ticks": primary.slippage_ticks, "point_value": POINT_VALUE,

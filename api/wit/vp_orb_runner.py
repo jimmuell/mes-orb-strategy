@@ -32,18 +32,21 @@ import numpy as np
 import pandas as pd
 
 from engine import BacktestConfig, run_backtest_long_short
-from wit.config import VPORBConfig, TICK_SIZE
+from wit.config import VPORBConfig, TICK_SIZE, POINT_VALUE
 from wit.data_paths import engine_data_path
 from wit.volume_profile import build_volume_profile
+from wit import datasets
+from wit.datasets import DatasetSpec
 
 # WIT-P4m: both market-data files ship at api/data/ and are resolved through the shared
 # engine-data resolver (env override → api/data), NEVER a _REPO-rooted path. The 1-min source is
 # now the derived, RTH-only parquet (built by tools/build_1min_rth_parquet.py) — it ships in the
 # image, unlike the raw LFS text that lived outside api/ and never reached production.
-_NAME_5MIN = "ES_full_5min_continuous_UNadjusted.parquet"
-_NAME_1MIN = "ES_full_1min_rth.parquet"
-PARQUET_5MIN = engine_data_path(_NAME_5MIN)   # import-time resolution (messages / back-compat)
-PARQUET_1MIN = engine_data_path(_NAME_1MIN)
+# WIT-P5o: filenames now come from the resolved dataset catalog entry (wit.datasets), never a
+# hardcoded module constant — these two names stay as the BUILT-IN default's resolution so
+# api/server.py's PARQUET_5MIN import (provenance) and every existing call site keep working.
+PARQUET_5MIN = engine_data_path(datasets.BUILT_IN_DEFAULT.bars_5min)   # import-time resolution
+PARQUET_1MIN = engine_data_path(datasets.BUILT_IN_DEFAULT.opening_1min)
 
 _RTH_START = dt.time(9, 30)
 _RTH_LAST_START = dt.time(15, 55)   # last RTH 5-min bar start (closes 16:00)
@@ -88,32 +91,57 @@ class EmptyOpeningData(Exception):
                          f"{dataset!r} — empty or non-timestamped frame (cannot build the profile)")
 
 
-@lru_cache(maxsize=1)
-def dataset_date_range() -> tuple[str, str]:
-    """The FULL [start, end] date range of the ES 5-min dataset as YYYY-MM-DD strings, read from the
-    actual data (never a hardcoded pair) so the v1 default test window self-updates as data extends
-    (WIT-P4j). Reads only the parquet index (no data columns); cached once per process."""
-    idx = pd.read_parquet(engine_data_path(_NAME_5MIN), columns=[]).index
+class DatasetEconomicsUnsupported(Exception):
+    """WIT-P5o: DatasetSpec carries point_value/tick_size so the catalog format doesn't change
+    later, but this engine version still bakes MES economics (wit.config.POINT_VALUE/TICK_SIZE).
+    A resolved dataset whose economics differ is REFUSED at the top of the run — a carried-but-
+    ignored economics field is exactly the declared-but-not-applied defect the previous slice
+    (WIT-P5n) removed; silently running under the wrong contract economics is not honest."""
+    code = "UNSUPPORTED_CONSTRUCT"
+
+    def __init__(self, dataset_id: str, point_value: float, tick_size: float):
+        self.dataset_id = dataset_id
+        self.point_value = point_value
+        self.tick_size = tick_size
+        super().__init__(
+            f"dataset {dataset_id!r} declares point_value={point_value!r}, tick_size={tick_size!r} "
+            f"— this engine version does not apply per-dataset contract economics (it bakes "
+            f"point_value={POINT_VALUE!r}, tick_size={TICK_SIZE!r}); refusing rather than running "
+            f"under the wrong contract economics")
+
+
+@lru_cache(maxsize=None)
+def dataset_date_range(dataset_id: str | None = None) -> tuple[str, str]:
+    """The FULL [start, end] date range of a dataset's 5-min bars as YYYY-MM-DD strings, read from
+    the actual data (never a hardcoded pair) so the v1 default test window self-updates as data
+    extends (WIT-P4j). Reads only the parquet index (no data columns). WIT-P5o: cached PER dataset
+    id — a single-entry cache would hand one dataset's date range to another. None/"" -> built-in
+    default, matching resolve()."""
+    spec = datasets.resolve(dataset_id)
+    idx = pd.read_parquet(engine_data_path(spec.bars_5min), columns=[]).index
     return (idx.min().strftime("%Y-%m-%d"), idx.max().strftime("%Y-%m-%d"))
 
 
-def load_5min(start: str, end: str) -> pd.DataFrame:
-    """5-min RTH bars [09:30,15:55] ET, tz-naive index (ET wall-clock)."""
-    df = pd.read_parquet(engine_data_path(_NAME_5MIN))
+def load_5min(start: str, end: str, spec: DatasetSpec = datasets.BUILT_IN_DEFAULT) -> pd.DataFrame:
+    """5-min RTH bars [09:30,15:55] ET, tz-naive index (ET wall-clock), from `spec`'s bars_5min
+    file (WIT-P5o) — the built-in default when `spec` is not given, unchanged from before."""
+    df = pd.read_parquet(engine_data_path(spec.bars_5min))
     df = df.loc[(df.index >= pd.Timestamp(start)) & (df.index <= pd.Timestamp(end) + pd.Timedelta(days=1))]
     t = df.index.time
     df = df[(t >= _RTH_START) & (t <= _RTH_LAST_START)]
     return df
 
 
-def load_1min_opening(start: str, end: str, range_start: str, range_end: str) -> pd.DataFrame:
-    """1-min bars inside the opening [range_start,range_end) window, all days.
+def load_1min_opening(start: str, end: str, range_start: str, range_end: str,
+                      spec: DatasetSpec = datasets.BUILT_IN_DEFAULT) -> pd.DataFrame:
+    """1-min bars inside the opening [range_start,range_end) window, all days, from `spec`'s
+    opening_1min file (WIT-P5o) — the built-in default when `spec` is not given.
 
     WIT-P4m: sourced from the shipped RTH parquet (was the raw LFS text). The opening window
     [range_start,range_end) is a strict subset of the parquet's RTH [09:30,15:59] coverage, so the
     same filter yields a frame identical to the old text path (proven in test_shipped_1min_data.py).
     """
-    df = pd.read_parquet(engine_data_path(_NAME_1MIN))
+    df = pd.read_parquet(engine_data_path(spec.opening_1min))
     df = df.loc[(df.index >= pd.Timestamp(start)) & (df.index <= pd.Timestamp(end) + pd.Timedelta(days=1))]
     t = df.index.time
     rs, re = _parse_hm(range_start), _parse_hm(range_end)
@@ -271,6 +299,16 @@ class RunResult:
 
 def run_vp_orb(cfg: VPORBConfig, five: pd.DataFrame | None = None,
                one_min_open: pd.DataFrame | None = None) -> RunResult:
+    # WIT-P5o: resolve the dataset ONCE, at the top, before any data load. An unknown id raises
+    # UnknownDataset (DATA_UNAVAILABLE); a catalogued id whose files are missing raises
+    # DatasetFilesMissing (DATA_UNAVAILABLE) — both from wit.datasets.resolve().
+    spec = datasets.resolve(cfg.dataset)
+    # Economics guard (WIT-P5o §2): this engine version bakes MES economics everywhere else
+    # (engine.py, config.py, analysis.py, server.py) — a dataset declaring different economics
+    # must be refused, not silently run under the wrong contract.
+    if spec.point_value != POINT_VALUE or spec.tick_size != TICK_SIZE:
+        raise DatasetEconomicsUnsupported(spec.id, spec.point_value, spec.tick_size)
+
     # WIT-P4l: vp_granularity must be a resolution the runner can build a profile from. Fail typed
     # at the TOP, BEFORE any data load — instead of falling through to the 1-min path with an empty
     # placeholder frame and crashing on `.index.normalize()` (the 'ticks_per_row_1' bug). Both the
@@ -279,15 +317,15 @@ def run_vp_orb(cfg: VPORBConfig, five: pd.DataFrame | None = None,
         raise UnsupportedGranularity(cfg.vp_granularity)
 
     if five is None:
-        five = load_5min(cfg.start_date, cfg.end_date)
+        five = load_5min(cfg.start_date, cfg.end_date, spec)
     if cfg.vp_granularity == "1min":
         if one_min_open is None:
             one_min_open = load_1min_opening(cfg.start_date, cfg.end_date,
-                                             cfg.range_start, cfg.range_end)
+                                             cfg.range_start, cfg.range_end, spec)
         # WIT-P4l: the 1-min path indexes by timestamp (`.index.normalize()`); an empty or
         # non-DatetimeIndex frame is a typed data error, never a pandas AttributeError.
         if len(one_min_open) == 0 or not isinstance(one_min_open.index, pd.DatetimeIndex):
-            raise EmptyOpeningData(cfg.start_date, cfg.end_date, _NAME_1MIN)
+            raise EmptyOpeningData(cfg.start_date, cfg.end_date, spec.opening_1min)
     else:  # "5min" — the 1-min frame is never used; a stable empty placeholder keeps the type
         if one_min_open is None:
             one_min_open = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
@@ -296,7 +334,7 @@ def run_vp_orb(cfg: VPORBConfig, five: pd.DataFrame | None = None,
     # engine error naming the window + dataset — never reach run_backtest_long_short's df.index[0]
     # and crash with a pandas IndexError.
     if len(five) == 0:
-        raise EmptyDataWindow(cfg.start_date, cfg.end_date, _NAME_5MIN)
+        raise EmptyDataWindow(cfg.start_date, cfg.end_date, spec.bars_5min)
 
     df = five.copy()
     for c in ("long_entry", "long_exit", "short_entry", "short_exit"):

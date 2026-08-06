@@ -35,9 +35,14 @@ _ET_RTH_LAST_1MIN = dt.time(15, 59)
 
 # WIT-P4m: 1-min bars now come from the shipped RTH parquet via the shared engine-data resolver
 # (env override → api/data), never a _REPO-rooted raw-text path that could not reach the image.
+# WIT-P5o: the filename is now read through the dataset catalog resolver too, so nothing here is
+# hardcoded — but event studies stay pinned to the BUILT-IN DEFAULT in this slice. The Class-B
+# mapper emits a literal data.dataset of "ES_1min_continuous", which is not a catalog id and would
+# fail loudly (UnknownDataset) if wired through as-is; wiring Class B to the catalog is a later
+# slice, not this one.
 from wit.data_paths import engine_data_path
-_NAME_1MIN = "ES_full_1min_rth.parquet"
-PARQUET_1MIN = engine_data_path(_NAME_1MIN)   # public: server provenance imports this
+from wit import datasets
+PARQUET_1MIN = engine_data_path(datasets.BUILT_IN_DEFAULT.opening_1min)  # public: server provenance imports this
 
 HORIZONS = (1, 3, 5, 10)
 _SEED = 42
@@ -73,7 +78,9 @@ class EventStudyConfig:
 def load_1min_rth(start: str, end: str) -> pd.DataFrame:
     # WIT-P4m: the parquet already holds exactly RTH [09:30,15:59], so the RTH filter below is
     # idempotent and the returned frame is identical to the old raw-text path.
-    df = pd.read_parquet(engine_data_path(_NAME_1MIN))
+    # WIT-P5o: resolved through the catalog (built-in default — see module docstring above).
+    spec = datasets.resolve(None)
+    df = pd.read_parquet(engine_data_path(spec.opening_1min))
     df = df.loc[(df.index >= pd.Timestamp(start)) &
                 (df.index <= pd.Timestamp(end) + pd.Timedelta(days=1))]
     t = df.index.time

@@ -26,7 +26,7 @@
       "additionalProperties": false,
       "required": ["dataset", "granularity_needed", "window"],
       "properties": {
-        "dataset": {"type": "string", "description": "declared but NOT applied in v1 — the engine always reads the shipped ES 5-min parquet; disclosed via notapplied_data_dataset if != 'ES_5min_continuous'"},
+        "dataset": {"type": "string", "description": "HONOURED (WIT-P5o) — must match an id in the engine's dataset catalog (wit.datasets); an unknown id fails the run (DATA_UNAVAILABLE) rather than falling back to any default. 'ES_5min_continuous' is the built-in default and always resolves."},
         "granularity_needed": {"type": "string", "description": "declared but NOT applied in v1 — the profile resolution comes from setup_entry.params.granularity; disclosed via notapplied_data_granularity_needed if != '1min'"},
         "window": {
           "type": "object",

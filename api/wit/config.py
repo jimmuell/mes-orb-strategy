@@ -45,6 +45,9 @@ class VPORBConfig:
     # ── economics / capital ──
     initial_capital: float = 10_000.0
 
+    # ── data source (WIT-P5o) ──
+    dataset: str = "ES_5min_continuous"     # catalog id; unspecified behaves exactly as today
+
     def with_(self, **kw) -> "VPORBConfig":
         """Return a copy with overrides (used to build sweep variants)."""
         return replace(self, **kw)
