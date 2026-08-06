@@ -32,8 +32,16 @@ from wit.data_paths import resolve_engine_data_dir
 
 _CATALOG_FILENAME = "datasets.json"
 
-_REQUIRED_KEYS = {"id", "label", "bars_5min", "opening_1min", "symbol", "point_value", "tick_size"}
-_STRING_KEYS = {"id", "label", "bars_5min", "opening_1min", "symbol"}
+# WIT-P5q: valid values for bars_granularity — the granularity of a dataset's OWN bars_5min file
+# (that field is misnamed from WIT-P5o but stays as-is; renaming it is bigger churn than this
+# prompt is scoped for). Deliberately a SEPARATE tuple from mapper.py's _VP_GRANULARITIES — same
+# vocabulary, different concept (this describes what a dataset's file actually IS; that one picks
+# how the opening profile is built) — no cross-module import for it.
+_BARS_GRANULARITIES = ("1min", "5min")
+
+_REQUIRED_KEYS = {"id", "label", "bars_5min", "opening_1min", "symbol", "point_value", "tick_size",
+                 "bars_granularity"}
+_STRING_KEYS = {"id", "label", "bars_5min", "opening_1min", "symbol", "bars_granularity"}
 _NUMERIC_KEYS = {"point_value", "tick_size"}
 _FILENAME_KEYS = {"bars_5min", "opening_1min"}
 
@@ -47,6 +55,7 @@ class DatasetSpec:
     symbol: str
     point_value: float
     tick_size: float
+    bars_granularity: str
     description: str = ""
 
 
@@ -61,6 +70,7 @@ BUILT_IN_DEFAULT = DatasetSpec(
     symbol="MES",
     point_value=5.0,
     tick_size=0.25,
+    bars_granularity="5min",   # what it has always actually been (WIT-P5q makes it explicit)
 )
 
 
@@ -116,6 +126,9 @@ def _validate_entry(entry: object, index: int, path: str) -> DatasetSpec:
         if os.path.basename(v) != v or not v or ".." in v:
             _fail(path, f"datasets[{index}].{key} must be a plain filename "
                         f"(no path separators, no '..'), got {v!r}")
+    if entry["bars_granularity"] not in _BARS_GRANULARITIES:
+        _fail(path, f"datasets[{index}].bars_granularity must be one of {_BARS_GRANULARITIES}, "
+                    f"got {entry['bars_granularity']!r}")
     description = entry.get("description", "")
     if not isinstance(description, str):
         _fail(path, f"datasets[{index}].description must be a string, got {description!r}")
@@ -123,6 +136,7 @@ def _validate_entry(entry: object, index: int, path: str) -> DatasetSpec:
         id=entry["id"], label=entry["label"], bars_5min=entry["bars_5min"],
         opening_1min=entry["opening_1min"], symbol=entry["symbol"],
         point_value=float(entry["point_value"]), tick_size=float(entry["tick_size"]),
+        bars_granularity=entry["bars_granularity"],
         description=description,
     )
 

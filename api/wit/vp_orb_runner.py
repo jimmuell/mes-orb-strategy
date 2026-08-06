@@ -49,7 +49,16 @@ PARQUET_5MIN = engine_data_path(datasets.BUILT_IN_DEFAULT.bars_5min)   # import-
 PARQUET_1MIN = engine_data_path(datasets.BUILT_IN_DEFAULT.opening_1min)
 
 _RTH_START = dt.time(9, 30)
-_RTH_LAST_START = dt.time(15, 55)   # last RTH 5-min bar start (closes 16:00)
+_RTH_LAST_START = dt.time(15, 55)   # last RTH 5-min bar start (closes 16:00) — 5-minute bars ONLY
+_RTH_LAST_START_1MIN = dt.time(15, 59)   # last RTH 1-min bar start (closes 16:00)
+
+
+def _rth_last_bar_start(spec: DatasetSpec) -> dt.time:
+    """WIT-P5q: the last legitimate RTH primary-bar start depends on the dataset's OWN
+    bars_granularity — 15:55 for 5-minute bars, 15:59 for 1-minute bars (both close 16:00). Using
+    the 5-minute cutoff against a 1-minute-primary dataset would silently drop each day's last 4
+    minutes of bars, including whatever bar the force-flat/time-exit lands on."""
+    return _RTH_LAST_START_1MIN if spec.bars_granularity == "1min" else _RTH_LAST_START
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +119,25 @@ class DatasetEconomicsUnsupported(Exception):
             f"under the wrong contract economics")
 
 
+class VpGranularityUnsupportedForDataset(Exception):
+    """WIT-P5q: vp_granularity="5min" picks the "5-minute robustness" opening-profile branch —
+    which builds the profile from the PRIMARY bars_5min file. For a dataset whose bars_granularity
+    is "1min", that file has no true 5-minute bars to build from; running anyway would silently
+    build the "5min" profile from finer data under the wrong label, defeating the point of the
+    robustness comparison (WIT-T-0001 §J2). Refusing at the top of the run, before any data load."""
+    code = "UNSUPPORTED_CONSTRUCT"
+
+    def __init__(self, dataset_id: str, bars_granularity: str, vp_granularity: str):
+        self.dataset_id = dataset_id
+        self.bars_granularity = bars_granularity
+        self.vp_granularity = vp_granularity
+        super().__init__(
+            f"dataset {dataset_id!r}'s bars_granularity is {bars_granularity!r}; "
+            f"vp_granularity={vp_granularity!r} has no true 5-minute bars to build from for this "
+            f"dataset — refusing rather than silently building the \"5min\" profile from finer "
+            f"data under the wrong label")
+
+
 @lru_cache(maxsize=None)
 def dataset_date_range(dataset_id: str | None = None) -> tuple[str, str]:
     """The FULL [start, end] date range of a dataset's 5-min bars as YYYY-MM-DD strings, read from
@@ -123,12 +151,14 @@ def dataset_date_range(dataset_id: str | None = None) -> tuple[str, str]:
 
 
 def load_5min(start: str, end: str, spec: DatasetSpec = datasets.BUILT_IN_DEFAULT) -> pd.DataFrame:
-    """5-min RTH bars [09:30,15:55] ET, tz-naive index (ET wall-clock), from `spec`'s bars_5min
-    file (WIT-P5o) — the built-in default when `spec` is not given, unchanged from before."""
+    """Primary RTH bars [09:30, last-bar-start] ET, tz-naive index (ET wall-clock), from `spec`'s
+    bars_5min file (WIT-P5o) — the built-in default when `spec` is not given, unchanged from
+    before. WIT-P5q: the upper cutoff is derived from spec.bars_granularity (15:55 for 5-minute
+    bars, 15:59 for 1-minute bars) — no longer a bare 5-minute-shaped constant."""
     df = pd.read_parquet(engine_data_path(spec.bars_5min))
     df = df.loc[(df.index >= pd.Timestamp(start)) & (df.index <= pd.Timestamp(end) + pd.Timedelta(days=1))]
     t = df.index.time
-    df = df[(t >= _RTH_START) & (t <= _RTH_LAST_START)]
+    df = df[(t >= _RTH_START) & (t <= _rth_last_bar_start(spec))]
     return df
 
 
@@ -315,6 +345,11 @@ def run_vp_orb(cfg: VPORBConfig, five: pd.DataFrame | None = None,
     # loader branch below and _opening_profile now handle exactly {"1min","5min"} and nothing else.
     if cfg.vp_granularity not in ("1min", "5min"):
         raise UnsupportedGranularity(cfg.vp_granularity)
+    # WIT-P5q: a "5min" opening profile is built from the PRIMARY bars_5min file — a dataset whose
+    # bars_granularity is "1min" has no true 5-minute bars to build it from. Checked after the
+    # genuinely-bogus-value check above (so that error still wins first) and before any data load.
+    if cfg.vp_granularity == "5min" and spec.bars_granularity != "5min":
+        raise VpGranularityUnsupportedForDataset(spec.id, spec.bars_granularity, cfg.vp_granularity)
 
     if five is None:
         five = load_5min(cfg.start_date, cfg.end_date, spec)

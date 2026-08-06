@@ -16,8 +16,9 @@ import pytest
 from wit import datasets
 from wit.config import VPORBConfig, POINT_VALUE, TICK_SIZE
 from wit.data_paths import engine_data_path, resolve_engine_data_dir
-from wit.vp_orb_runner import (DatasetEconomicsUnsupported, PARQUET_5MIN, PARQUET_1MIN,
-                               dataset_date_range, run_vp_orb)
+from wit.vp_orb_runner import (DatasetEconomicsUnsupported, VpGranularityUnsupportedForDataset,
+                               PARQUET_5MIN, PARQUET_1MIN, dataset_date_range, load_5min,
+                               run_vp_orb)
 
 
 def _write_catalog(data_dir, payload):
@@ -41,9 +42,11 @@ def _symlink_builtin(tmp_path):
 
 
 def _entry(**over):
+    # WIT-P5q: bars_granularity is now required — defaults to "5min" here (test-fixture change,
+    # not a production one; the prompt that added the field expects this).
     base = {"id": "OTHER", "label": "Other dataset", "bars_5min": "other_5min.parquet",
            "opening_1min": "other_1min.parquet", "symbol": "MES",
-           "point_value": 5.0, "tick_size": 0.25}
+           "point_value": 5.0, "tick_size": 0.25, "bars_granularity": "5min"}
     base.update(over)
     return base
 
@@ -278,3 +281,140 @@ def test_config_with_no_dataset_specified_behaves_identically_to_today():
     assert spec == datasets.BUILT_IN_DEFAULT
     assert engine_data_path(spec.bars_5min) == PARQUET_5MIN
     assert engine_data_path(spec.opening_1min) == PARQUET_1MIN
+
+
+# ---------------------------------------------------------------------------
+# WIT-P5q — bars_granularity: required field, validated, drives the RTH cutoff and a new guard
+# ---------------------------------------------------------------------------
+def test_malformed_catalog_missing_bars_granularity_raises(tmp_path, monkeypatch):
+    """Mirrors test_malformed_catalog_missing_key_raises's missing-"symbol" case exactly."""
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+    bad = _entry()
+    del bad["bars_granularity"]
+    _write_catalog(tmp_path, {"version": 1, "datasets": [bad]})
+    with pytest.raises(datasets.DatasetCatalogError, match="bars_granularity"):
+        datasets.resolve(None)
+
+
+def test_malformed_catalog_invalid_bars_granularity_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+    _write_catalog(tmp_path, {"version": 1, "datasets": [_entry(bars_granularity="15min")]})
+    with pytest.raises(datasets.DatasetCatalogError, match="bars_granularity"):
+        datasets.resolve(None)
+
+
+def test_builtin_default_bars_granularity_is_5min():
+    assert datasets.BUILT_IN_DEFAULT.bars_granularity == "5min"
+
+
+# ── load_5min's RTH cutoff is derived from the spec, not a bare 5-minute-shaped constant ──
+def _one_bar_at(ts: str) -> pd.DataFrame:
+    idx = pd.DatetimeIndex([pd.Timestamp(ts)])
+    return pd.DataFrame({"Open": 100.0, "High": 100.0, "Low": 100.0, "Close": 100.0, "Volume": 1},
+                        index=idx)
+
+
+def test_load_5min_cutoff_includes_1559_for_1min_dataset(tmp_path, monkeypatch):
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+    _one_bar_at("2024-01-02 15:59:00").to_parquet(os.path.join(tmp_path, "bars.parquet"))
+    spec = datasets.DatasetSpec(id="X", label="x", bars_5min="bars.parquet",
+                                opening_1min="bars.parquet", symbol="MES",
+                                point_value=5.0, tick_size=0.25, bars_granularity="1min")
+    out = load_5min("2024-01-02", "2024-01-02", spec)
+    assert pd.Timestamp("2024-01-02 15:59:00") in out.index   # NOT dropped
+
+
+def test_load_5min_cutoff_excludes_1559_for_5min_dataset(tmp_path, monkeypatch):
+    """Identical synthetic bar, only bars_granularity differs -> proves the derivation reads
+    the spec, not a hardcoded always-15:59 (or always-15:55) cutoff."""
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+    _one_bar_at("2024-01-02 15:59:00").to_parquet(os.path.join(tmp_path, "bars.parquet"))
+    spec = datasets.DatasetSpec(id="X", label="x", bars_5min="bars.parquet",
+                                opening_1min="bars.parquet", symbol="MES",
+                                point_value=5.0, tick_size=0.25, bars_granularity="5min")
+    out = load_5min("2024-01-02", "2024-01-02", spec)
+    assert pd.Timestamp("2024-01-02 15:59:00") not in out.index   # dropped — past the 5-min cutoff
+
+
+# ── the new guard: vp_granularity="5min" has nothing real to build from for a 1-min dataset ──
+def test_vp_granularity_5min_refused_for_1min_primary_dataset(tmp_path, monkeypatch):
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+    _touch(tmp_path, "oneminute_5min.parquet")
+    _touch(tmp_path, "oneminute_1min.parquet")
+    _write_catalog(tmp_path, {"version": 1, "datasets": [
+        _entry(id="ONE_MIN_PRIMARY", bars_5min="oneminute_5min.parquet",
+              opening_1min="oneminute_1min.parquet", bars_granularity="1min")]})
+    cfg = VPORBConfig(dataset="ONE_MIN_PRIMARY", vp_granularity="5min")
+    with pytest.raises(VpGranularityUnsupportedForDataset) as exc:
+        run_vp_orb(cfg)
+    assert exc.value.code == "UNSUPPORTED_CONSTRUCT"
+    assert exc.value.dataset_id == "ONE_MIN_PRIMARY"
+    assert exc.value.bars_granularity == "1min"
+    assert exc.value.vp_granularity == "5min"
+
+
+def test_vp_granularity_1min_not_refused_for_1min_primary_dataset(tmp_path, monkeypatch):
+    """Same 1-min-primary dataset, vp_granularity='1min' -> the NEW guard does not fire (a
+    different failure, e.g. an unreadable placeholder parquet, is fine and expected downstream —
+    only the guard's own behaviour is under test)."""
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+    _touch(tmp_path, "oneminute_5min.parquet")
+    _touch(tmp_path, "oneminute_1min.parquet")
+    _write_catalog(tmp_path, {"version": 1, "datasets": [
+        _entry(id="ONE_MIN_PRIMARY", bars_5min="oneminute_5min.parquet",
+              opening_1min="oneminute_1min.parquet", bars_granularity="1min")]})
+    cfg = VPORBConfig(dataset="ONE_MIN_PRIMARY", vp_granularity="1min")
+    with pytest.raises(Exception) as exc:
+        run_vp_orb(cfg)
+    assert not isinstance(exc.value, VpGranularityUnsupportedForDataset)
+
+
+def test_vp_granularity_unaffected_for_synthetic_5min_primary_dataset(tmp_path, monkeypatch):
+    """A 5-minute-primary dataset (synthetic) must not trip the new guard at EITHER
+    vp_granularity value."""
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+    _touch(tmp_path, "fivemin_5min.parquet")
+    _touch(tmp_path, "fivemin_1min.parquet")
+    _write_catalog(tmp_path, {"version": 1, "datasets": [
+        _entry(id="FIVE_MIN_PRIMARY", bars_5min="fivemin_5min.parquet",
+              opening_1min="fivemin_1min.parquet", bars_granularity="5min")]})
+    for vp_g in ("1min", "5min"):
+        cfg = VPORBConfig(dataset="FIVE_MIN_PRIMARY", vp_granularity=vp_g)
+        with pytest.raises(Exception) as exc:
+            run_vp_orb(cfg)   # placeholder files aren't readable parquet -> fails downstream
+        assert not isinstance(exc.value, VpGranularityUnsupportedForDataset), vp_g
+
+
+def test_vp_granularity_5min_unaffected_for_builtin_dataset():
+    """The REAL built-in (5-minute-primary) dataset at vp_granularity="5min" — the one thing
+    every published sweep (WIT-0001's "vp_5min" cell) already relies on — must not move. A short
+    window keeps this fast; no existing test actually executes run_vp_orb this way (test_sweeps.py
+    only checks the sweep-grid dataclass, never runs it), so this is new, real-data coverage."""
+    cfg = VPORBConfig(vp_granularity="5min", start_date="2024-01-02", end_date="2024-03-28")
+    res = run_vp_orb(cfg)
+    assert res.kpis["total_trades"] >= 0   # completes; no VpGranularityUnsupportedForDataset
+
+
+# ── end-to-end proof against the REAL shipped 1-minute file, not only synthetic tmp_path data ──
+def test_real_1min_file_as_primary_bars_runs_end_to_end(tmp_path, monkeypatch):
+    """api/data/ES_full_1min_rth.parquet ALREADY EXISTS and is already the built-in dataset's own
+    opening_1min file — this test points a temporary catalog entry's bars_5min AND opening_1min at
+    that same real file with bars_granularity="1min", and proves the wiring (cutoff derivation +
+    guard + the ordinary load/run path) works against real data, not only synthetic fixtures."""
+    real_dir = resolve_engine_data_dir()
+    real_1min = datasets.BUILT_IN_DEFAULT.opening_1min   # "ES_full_1min_rth.parquet"
+    os.symlink(os.path.join(real_dir, real_1min), os.path.join(tmp_path, real_1min))
+    monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
+    _write_catalog(tmp_path, {"version": 1, "datasets": [
+        {"id": "ES_1min_rth_verify", "label": "1-min RTH as primary bars (verify)",
+         "bars_5min": real_1min, "opening_1min": real_1min, "symbol": "MES",
+         "point_value": 5.0, "tick_size": 0.25, "bars_granularity": "1min"}]})
+
+    cfg = VPORBConfig(dataset="ES_1min_rth_verify", vp_granularity="1min",
+                      start_date="2026-01-01", end_date="2026-04-09")   # short window, keep it fast
+    res = run_vp_orb(cfg)
+    k = res.kpis
+    assert isinstance(k["net_profit"], float)
+    assert isinstance(k["total_trades"], int)
+    assert k["total_trades"] >= 0
+    assert k["actual_start_date"] and k["actual_end_date"]

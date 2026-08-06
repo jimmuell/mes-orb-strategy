@@ -416,7 +416,8 @@ def test_datasets_endpoint_includes_unsupported_economics_entry_not_omitted(clie
             {"id": unsupported_id, "label": "Unsupported-economics proof entry",
              "bars_5min": _wit_datasets_mod.BUILT_IN_DEFAULT.bars_5min,
              "opening_1min": _wit_datasets_mod.BUILT_IN_DEFAULT.opening_1min,
-             "symbol": "MNQ", "point_value": 2.0, "tick_size": 0.25}]}, fh)
+             "symbol": "MNQ", "point_value": 2.0, "tick_size": 0.25,
+             "bars_granularity": "5min"}]}, fh)
     monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
 
     r = client.get("/wit/v1/datasets", headers=_AUTH)
@@ -434,7 +435,7 @@ def test_datasets_endpoint_excludes_entry_with_missing_files(client, monkeypatch
         json.dump({"version": 1, "datasets": [
             {"id": missing_id, "label": "No files on disk", "bars_5min": "nope_5min.parquet",
              "opening_1min": "nope_1min.parquet", "symbol": "MES",
-             "point_value": 5.0, "tick_size": 0.25}]}, fh)
+             "point_value": 5.0, "tick_size": 0.25, "bars_granularity": "5min"}]}, fh)
     monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
 
     r = client.get("/wit/v1/datasets", headers=_AUTH)
@@ -457,7 +458,8 @@ def test_backtest_provenance_names_the_dataset_actually_used(client, monkeypatch
             {"id": second_id, "label": "Second id, same files",
              "bars_5min": _wit_datasets_mod.BUILT_IN_DEFAULT.bars_5min,
              "opening_1min": _wit_datasets_mod.BUILT_IN_DEFAULT.opening_1min,
-             "symbol": "MES", "point_value": 5.0, "tick_size": 0.25}]}, fh)
+             "symbol": "MES", "point_value": 5.0, "tick_size": 0.25,
+             "bars_granularity": "5min"}]}, fh)
     monkeypatch.setenv("WIT_ENGINE_DATA_DIR", str(tmp_path))
     _stub_backtest(monkeypatch)
 

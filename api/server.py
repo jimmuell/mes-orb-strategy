@@ -2150,6 +2150,7 @@ async def wit_list_datasets():
         out.append({
             "id": spec.id, "label": spec.label, "description": spec.description,
             "symbol": spec.symbol, "point_value": spec.point_value, "tick_size": spec.tick_size,
+            "bars_granularity": spec.bars_granularity,   # WIT-P5q
             # Same comparison run_vp_orb's economics guard makes (DatasetEconomicsUnsupported) —
             # reuses wit.config.POINT_VALUE/TICK_SIZE directly, never a second literal threshold.
             "economics_supported": (spec.point_value == _WIT_POINT_VALUE
