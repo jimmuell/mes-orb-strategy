@@ -236,8 +236,8 @@ A	docs/wit/prompts/WIT-P5q.md
 ```
 Commit subject: `WIT-P5q: dataset-aware RTH cutoff + granularity guard for a real 1-minute dataset`
 
-New HEAD sha: **`<filled after commit — see final printed message>`**
-Commit URL: **`<filled after commit — see final printed message>`**
+New HEAD sha: **`e13a2f395aa58d8af617a3daba8018547be8c1a5`**
+Commit URL: **`https://github.com/jimmuell/mes-orb-strategy/commit/e13a2f395aa58d8af617a3daba8018547be8c1a5`**
 
 ## 9. Anything stopped short of
 
